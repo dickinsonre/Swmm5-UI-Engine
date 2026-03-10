@@ -36,6 +36,18 @@ interface Props {
   preferences?: SwmmPreferences;
   queryMatchIds?: Set<string> | null;
   queryObjectType?: 'node' | 'link' | 'subcatchment' | null;
+  onCreateNode?: (wx: number, wy: number, mode: string) => void;
+  onStartLink?: (nodeId: string) => void;
+  onCompleteLink?: (nodeId: string, vertices: [number, number][]) => void;
+  onAddLinkVertex?: (wx: number, wy: number) => void;
+  onMoveNode?: (nodeId: string, wx: number, wy: number) => void;
+  onContextMenu?: (screenX: number, screenY: number, obj: SelectedObject) => void;
+  onGroupSelectPoint?: (wx: number, wy: number) => void;
+  onGroupSelectComplete?: () => void;
+  onEscapeMode?: () => void;
+  linkDrawState?: { fromNodeId: string; vertices: [number, number][] } | null;
+  groupSelectPoints?: [number, number][];
+  groupSelectedIds?: Set<string> | null;
 }
 
 export interface NetworkMapHandle {
@@ -59,16 +71,30 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   preferences,
   queryMatchIds,
   queryObjectType,
+  onCreateNode,
+  onStartLink,
+  onCompleteLink,
+  onAddLinkVertex,
+  onMoveNode,
+  onContextMenu,
+  onGroupSelectPoint,
+  onGroupSelectComplete,
+  onEscapeMode,
+  linkDrawState,
+  groupSelectPoints,
+  groupSelectedIds,
 }: Props, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mapState, setMapState] = useState<MapState>({ panX: 0, panY: 0, zoom: 1 });
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 500 });
   const [tooltip, setTooltip] = useState<{ x: number; y: number; id: string; info: string } | null>(null);
+  const [rubberBandPos, setRubberBandPos] = useState<[number, number] | null>(null);
   const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
   const hasDragged = useRef(false);
   const mouseButton = useRef(0);
   const hasInitialized = useRef(false);
+  const movingNode = useRef<string | null>(null);
   const isLayerVisible = useCallback((layer: string) => layerVisibility[layer] !== false, [layerVisibility]);
 
   useEffect(() => {
@@ -85,6 +111,16 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     ro.observe(container);
     return () => ro.disconnect();
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onEscapeMode) {
+        onEscapeMode();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onEscapeMode]);
 
   const getExtent = useCallback(() => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -176,7 +212,54 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     ];
   }, [mapState]);
 
+  const hitTestNode = useCallback((sx: number, sy: number, hitRadius = 12): { nodeId: string; nodeType: string } | null => {
+    for (const [nodeId, [nx, ny]] of Object.entries(project.coordinates)) {
+      const nType = project.outfalls.find(o => o.id === nodeId) ? 'outfall'
+        : project.storageUnits.find(s => s.id === nodeId) ? 'storage'
+        : project.dividers.find(dd => dd.id === nodeId) ? 'divider'
+        : 'junction';
+
+      if (nType === 'junction' && !isLayerVisible('junctions')) continue;
+      if (nType === 'outfall' && !isLayerVisible('outfalls')) continue;
+      if (nType === 'storage' && !isLayerVisible('storage')) continue;
+
+      const [nsx, nsy] = worldToScreen(nx, ny);
+      const d = Math.sqrt((sx - nsx) ** 2 + (sy - nsy) ** 2);
+      if (d < hitRadius) return { nodeId, nodeType: nType };
+    }
+    return null;
+  }, [project, worldToScreen, isLayerVisible]);
+
+  const hitTestLink = useCallback((sx: number, sy: number): { linkId: string; linkType: string } | null => {
+    const allLinks = [
+      ...project.conduits.map(c => ({ id: c.id, from: c.fromNode, to: c.toNode, type: 'conduit', layer: 'conduits' })),
+      ...project.pumps.map(p => ({ id: p.id, from: p.fromNode, to: p.toNode, type: 'pump', layer: 'pumps' })),
+      ...project.orifices.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'orifice', layer: 'orifices' })),
+      ...project.weirs.map(w => ({ id: w.id, from: w.fromNode, to: w.toNode, type: 'weir', layer: 'weirs' })),
+      ...project.outlets.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'outlet', layer: 'outlets' })),
+    ];
+    for (const link of allLinks) {
+      if (!isLayerVisible(link.layer)) continue;
+      const fromCoord = project.coordinates[link.from];
+      const toCoord = project.coordinates[link.to];
+      if (!fromCoord || !toCoord) continue;
+      const verts = project.vertices[link.id] || [];
+      const pts: [number, number][] = [
+        worldToScreen(fromCoord[0], fromCoord[1]),
+        ...verts.map(v => worldToScreen(v[0], v[1])),
+        worldToScreen(toCoord[0], toCoord[1]),
+      ];
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (distToSegment(sx, sy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 8) {
+          return { linkId: link.id, linkType: link.type };
+        }
+      }
+    }
+    return null;
+  }, [project, worldToScreen, isLayerVisible]);
+
   const getNodeColor = useCallback((nodeId: string, nodeType: string) => {
+    if (groupSelectedIds && groupSelectedIds.has(nodeId)) return '#ffaa33';
     if (queryMatchIds && queryObjectType === 'node') {
       if (queryMatchIds.has(nodeId)) return '#ff4444';
       return '#555566';
@@ -195,9 +278,10 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     if (nodeType === 'outfall') return '#82e0a8';
     if (nodeType === 'storage') return '#f0c060';
     return COLORS.nodeDefault;
-  }, [results, timeStep, nodeTheme, queryMatchIds, queryObjectType]);
+  }, [results, timeStep, nodeTheme, queryMatchIds, queryObjectType, groupSelectedIds]);
 
   const getLinkColor = useCallback((linkId: string) => {
+    if (groupSelectedIds && groupSelectedIds.has(linkId)) return '#ffaa33';
     if (queryMatchIds && queryObjectType === 'link') {
       if (queryMatchIds.has(linkId)) return '#ff4444';
       return '#555566';
@@ -213,7 +297,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
     return COLORS.linkDefault;
-  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType]);
+  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds]);
 
   const getLinkWidth = useCallback((linkId: string) => {
     if (results && results.timeSteps[timeStep]) {
@@ -489,7 +573,66 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
 
-  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences]);
+    if (linkDrawState) {
+      const fromCoord = project.coordinates[linkDrawState.fromNodeId];
+      if (fromCoord) {
+        const pts: [number, number][] = [
+          worldToScreen(fromCoord[0], fromCoord[1]),
+          ...linkDrawState.vertices.map(v => worldToScreen(v[0], v[1])),
+        ];
+        if (rubberBandPos) {
+          pts.push(rubberBandPos);
+        }
+        ctx.strokeStyle = '#4ea8de';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i][0], pts[i][1]);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        for (const pt of pts) {
+          ctx.fillStyle = '#4ea8de';
+          ctx.beginPath();
+          ctx.arc(pt[0], pt[1], 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    if (groupSelectPoints && groupSelectPoints.length > 0) {
+      const screenPts = groupSelectPoints.map(p => worldToScreen(p[0], p[1]));
+      ctx.strokeStyle = '#ffaa33';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(screenPts[0][0], screenPts[0][1]);
+      for (let i = 1; i < screenPts.length; i++) {
+        ctx.lineTo(screenPts[i][0], screenPts[i][1]);
+      }
+      if (rubberBandPos && interactionMode === 'groupSelect') {
+        ctx.lineTo(rubberBandPos[0], rubberBandPos[1]);
+      }
+      if (groupSelectedIds && groupSelectedIds.size > 0) {
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,170,51,0.08)';
+        ctx.fill();
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      for (const pt of screenPts) {
+        ctx.fillStyle = '#ffaa33';
+        ctx.beginPath();
+        ctx.arc(pt[0], pt[1], 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences, linkDrawState, rubberBandPos, groupSelectPoints, groupSelectedIds, interactionMode]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -510,11 +653,33 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       mouseDownPos.current = { x: e.clientX, y: e.clientY };
       hasDragged.current = false;
       mouseButton.current = e.button;
+
+      if (e.button === 0 && e.ctrlKey && interactionMode === 'select' && selectedObj) {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
+          const sx = e.clientX - rect.left;
+          const sy = e.clientY - rect.top;
+          const hit = hitTestNode(sx, sy);
+          if (hit && hit.nodeId === selectedObj.id) {
+            movingNode.current = hit.nodeId;
+          }
+        }
+      }
+
       e.preventDefault();
     }
-  }, []);
+  }, [interactionMode, selectedObj, hitTestNode]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    if (linkDrawState || (interactionMode === 'groupSelect' && groupSelectPoints && groupSelectPoints.length > 0)) {
+      setRubberBandPos([sx, sy]);
+    }
+
     if (mouseDownPos.current) {
       const dx = e.clientX - mouseDownPos.current.x;
       const dy = e.clientY - mouseDownPos.current.y;
@@ -523,6 +688,13 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
       if (hasDragged.current) {
         setTooltip(null);
+
+        if (movingNode.current && onMoveNode) {
+          const [wx, wy] = screenToWorld(sx, sy);
+          onMoveNode(movingNode.current, wx, wy);
+          return;
+        }
+
         setMapState(prev => ({
           ...prev,
           panX: prev.panX + (e.movementX || 0),
@@ -532,10 +704,6 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       return;
     }
 
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
     const hitRadius = 12;
 
     for (const [nodeId, [nx, ny]] of Object.entries(project.coordinates)) {
@@ -639,12 +807,15 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     }
 
     setTooltip(null);
-  }, [project, worldToScreen, isLayerVisible, showSubcatchments, results, timeStep, nodeTheme, linkTheme, subcatchTheme]);
+  }, [project, worldToScreen, screenToWorld, isLayerVisible, showSubcatchments, results, timeStep, nodeTheme, linkTheme, subcatchTheme, linkDrawState, interactionMode, groupSelectPoints, onMoveNode]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
     const wasClick = mouseDownPos.current && !hasDragged.current && mouseButton.current === 0;
+    const wasMoving = movingNode.current !== null;
     mouseDownPos.current = null;
+    movingNode.current = null;
 
+    if (wasMoving) return;
     if (!wasClick) return;
 
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -652,53 +823,48 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
-    const hitRadius = 12;
-
-    for (const [nodeId, [nx, ny]] of Object.entries(project.coordinates)) {
-      const nType = project.outfalls.find(o => o.id === nodeId) ? 'outfall'
-        : project.storageUnits.find(s => s.id === nodeId) ? 'storage'
-        : project.dividers.find(dd => dd.id === nodeId) ? 'divider'
-        : 'junction';
-
-      if (nType === 'junction' && !isLayerVisible('junctions')) continue;
-      if (nType === 'outfall' && !isLayerVisible('outfalls')) continue;
-      if (nType === 'storage' && !isLayerVisible('storage')) continue;
-
-      const [nsx, nsy] = worldToScreen(nx, ny);
-      const d = Math.sqrt((sx - nsx) ** 2 + (sy - nsy) ** 2);
-      if (d < hitRadius) {
-        onSelectObj({ id: nodeId, objType: nType });
-        return;
-      }
+    const isNodeCreationMode = interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage';
+    if (isNodeCreationMode && onCreateNode) {
+      const [wx, wy] = screenToWorld(sx, sy);
+      onCreateNode(wx, wy, interactionMode);
+      return;
     }
 
-    const allLinks: { id: string; from: string; to: string; type: 'conduit' | 'pump' | 'orifice' | 'weir' | 'outlet'; layer: string }[] = [
-      ...project.conduits.map(c => ({ id: c.id, from: c.fromNode, to: c.toNode, type: 'conduit' as const, layer: 'conduits' })),
-      ...project.pumps.map(p => ({ id: p.id, from: p.fromNode, to: p.toNode, type: 'pump' as const, layer: 'pumps' })),
-      ...project.orifices.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'orifice' as const, layer: 'orifices' })),
-      ...project.weirs.map(w => ({ id: w.id, from: w.fromNode, to: w.toNode, type: 'weir' as const, layer: 'weirs' })),
-      ...project.outlets.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'outlet' as const, layer: 'outlets' })),
-    ];
-
-    for (const link of allLinks) {
-      if (!isLayerVisible(link.layer)) continue;
-      const fromCoord = project.coordinates[link.from];
-      const toCoord = project.coordinates[link.to];
-      if (!fromCoord || !toCoord) continue;
-
-      const verts = project.vertices[link.id] || [];
-      const pts: [number, number][] = [
-        worldToScreen(fromCoord[0], fromCoord[1]),
-        ...verts.map(v => worldToScreen(v[0], v[1])),
-        worldToScreen(toCoord[0], toCoord[1]),
-      ];
-
-      for (let i = 0; i < pts.length - 1; i++) {
-        if (distToSegment(sx, sy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 8) {
-          onSelectObj({ id: link.id, objType: link.type });
-          return;
+    const isLinkCreationMode = interactionMode === 'addConduit' || interactionMode === 'addPump';
+    if (isLinkCreationMode) {
+      const hitNode = hitTestNode(sx, sy);
+      if (hitNode) {
+        if (!linkDrawState) {
+          onStartLink?.(hitNode.nodeId);
+        } else if (hitNode.nodeId !== linkDrawState.fromNodeId) {
+          onCompleteLink?.(hitNode.nodeId, linkDrawState.vertices);
+          setRubberBandPos(null);
         }
+      } else if (linkDrawState) {
+        const [wx, wy] = screenToWorld(sx, sy);
+        onAddLinkVertex?.(wx, wy);
       }
+      return;
+    }
+
+    if (interactionMode === 'groupSelect') {
+      const [wx, wy] = screenToWorld(sx, sy);
+      onGroupSelectPoint?.(wx, wy);
+      return;
+    }
+
+    const hitRadius = 12;
+
+    const hitNode = hitTestNode(sx, sy, hitRadius);
+    if (hitNode) {
+      onSelectObj({ id: hitNode.nodeId, objType: hitNode.nodeType as any });
+      return;
+    }
+
+    const hitLink = hitTestLink(sx, sy);
+    if (hitLink) {
+      onSelectObj({ id: hitLink.linkId, objType: hitLink.linkType as any });
+      return;
     }
 
     if (showSubcatchments) {
@@ -712,16 +878,67 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     }
 
     onSelectObj(null);
-  }, [project, worldToScreen, onSelectObj, isLayerVisible, showSubcatchments]);
+  }, [project, worldToScreen, screenToWorld, onSelectObj, isLayerVisible, showSubcatchments, interactionMode, onCreateNode, linkDrawState, onStartLink, onCompleteLink, onAddLinkVertex, onGroupSelectPoint, hitTestNode, hitTestLink]);
+
+  const handleRightClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+
+    if (interactionMode === 'groupSelect' && groupSelectPoints && groupSelectPoints.length >= 3) {
+      onGroupSelectComplete?.();
+      setRubberBandPos(null);
+      return;
+    }
+
+    if (interactionMode !== 'select') {
+      onEscapeMode?.();
+      setRubberBandPos(null);
+      return;
+    }
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    const hitNode = hitTestNode(sx, sy);
+    if (hitNode) {
+      onSelectObj({ id: hitNode.nodeId, objType: hitNode.nodeType as any });
+      onContextMenu?.(e.clientX, e.clientY, { id: hitNode.nodeId, objType: hitNode.nodeType as any });
+      return;
+    }
+
+    const hitLink = hitTestLink(sx, sy);
+    if (hitLink) {
+      onSelectObj({ id: hitLink.linkId, objType: hitLink.linkType as any });
+      onContextMenu?.(e.clientX, e.clientY, { id: hitLink.linkId, objType: hitLink.linkType as any });
+      return;
+    }
+
+    onContextMenu?.(e.clientX, e.clientY, null);
+  }, [interactionMode, groupSelectPoints, onGroupSelectComplete, onEscapeMode, hitTestNode, hitTestLink, onSelectObj, onContextMenu]);
 
   const handleMouseLeave = useCallback(() => {
     mouseDownPos.current = null;
+    movingNode.current = null;
     setTooltip(null);
   }, []);
 
   const handleDoubleClick = useCallback(() => {
+    if (interactionMode === 'groupSelect' && groupSelectPoints && groupSelectPoints.length >= 3) {
+      onGroupSelectComplete?.();
+      setRubberBandPos(null);
+      return;
+    }
     fitExtent();
-  }, [fitExtent]);
+  }, [fitExtent, interactionMode, groupSelectPoints, onGroupSelectComplete]);
+
+  const cursorStyle = interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage'
+    ? 'copy'
+    : interactionMode === 'addConduit' || interactionMode === 'addPump'
+    ? (linkDrawState ? 'crosshair' : 'cell')
+    : interactionMode === 'groupSelect'
+    ? 'crosshair'
+    : 'crosshair';
 
   return (
     <div ref={containerRef} className="w-full h-full relative overflow-hidden" data-testid="network-map-container">
@@ -735,7 +952,8 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onDoubleClick={handleDoubleClick}
-        style={{ width: '100%', height: '100%', cursor: 'crosshair', display: 'block' }}
+        onContextMenu={handleRightClick}
+        style={{ width: '100%', height: '100%', cursor: cursorStyle, display: 'block' }}
         data-testid="network-map-canvas"
       />
       {tooltip && (

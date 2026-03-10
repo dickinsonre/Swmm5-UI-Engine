@@ -13,7 +13,7 @@ import {
   FolderOpen, Save, FilePlus, Play, Pause, Download, Upload, Settings,
   ZoomIn, ZoomOut, Maximize, Info, HelpCircle, FileText, Clipboard,
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
-  Loader2, Check, AlertTriangle,
+  Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,17 @@ function savePreferences(prefs: SwmmPreferences) {
 
 type MenuTab = 'File' | 'Edit' | 'View' | 'Map' | 'Project' | 'Help';
 
+interface ContextMenuState {
+  x: number;
+  y: number;
+  obj: SelectedObject;
+}
+
+interface LinkDrawState {
+  fromNodeId: string;
+  vertices: [number, number][];
+}
+
 export default function SwmmUI() {
   const { toast } = useToast();
   const [project, setProject] = useState<SwmmProject>(() => parseInpFile(SAMPLE_INP));
@@ -74,7 +85,7 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | null>(null);
   const [githubUrl, setGithubUrl] = useState('');
   const [preferences, setPreferences] = useState<SwmmPreferences>(loadPreferences);
 
@@ -97,6 +108,13 @@ export default function SwmmUI() {
     active: false,
   });
   const [exportIncludeLegend, setExportIncludeLegend] = useState(true);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [linkDrawState, setLinkDrawState] = useState<LinkDrawState | null>(null);
+  const [copiedObj, setCopiedObj] = useState<{ objType: string; props: any } | null>(null);
+  const [groupSelectPoints, setGroupSelectPoints] = useState<[number, number][]>([]);
+  const [groupSelectedIds, setGroupSelectedIds] = useState<Set<string> | null>(null);
+  const [groupEditProp, setGroupEditProp] = useState('elevation');
+  const [groupEditValue, setGroupEditValue] = useState('0');
   const animRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const networkMapRef = useRef<NetworkMapHandle>(null);
@@ -391,12 +409,11 @@ export default function SwmmUI() {
 
   const menus: MenuTab[] = ['File', 'Edit', 'View', 'Map', 'Project', 'Help'];
 
-  const handleDelete = useCallback(() => {
-    if (!selectedObj) return;
+  const deleteObject = useCallback((obj: NonNullable<SelectedObject>) => {
     setProject(prev => {
       const next = { ...prev };
-      const id = selectedObj.id;
-      const t = selectedObj.objType;
+      const id = obj.id;
+      const t = obj.objType;
       if (t === 'junction') next.junctions = prev.junctions.filter(j => j.id !== id);
       else if (t === 'outfall') next.outfalls = prev.outfalls.filter(o => o.id !== id);
       else if (t === 'storage') next.storageUnits = prev.storageUnits.filter(s => s.id !== id);
@@ -416,26 +433,334 @@ export default function SwmmUI() {
         const newCoords = { ...prev.coordinates };
         delete newCoords[id];
         next.coordinates = newCoords;
+        next.conduits = prev.conduits.filter(c => c.fromNode !== id && c.toNode !== id);
+        next.pumps = prev.pumps.filter(p => p.fromNode !== id && p.toNode !== id);
+        next.orifices = prev.orifices.filter(o => o.fromNode !== id && o.toNode !== id);
+        next.weirs = prev.weirs.filter(w => w.fromNode !== id && w.toNode !== id);
+        next.outlets = prev.outlets.filter(o => o.fromNode !== id && o.toNode !== id);
+        const removedLinks = [
+          ...prev.conduits.filter(c => c.fromNode === id || c.toNode === id),
+          ...prev.pumps.filter(p => p.fromNode === id || p.toNode === id),
+          ...prev.orifices.filter(o => o.fromNode === id || o.toNode === id),
+          ...prev.weirs.filter(w => w.fromNode === id || w.toNode === id),
+          ...prev.outlets.filter(o => o.fromNode === id || o.toNode === id),
+        ];
+        const newVerts = { ...prev.vertices };
+        const newXsections = { ...prev.xsections };
+        const newLosses = { ...prev.losses };
+        for (const rl of removedLinks) {
+          delete newVerts[rl.id];
+          delete newXsections[rl.id];
+          delete newLosses[rl.id];
+        }
+        next.vertices = newVerts;
+        next.xsections = newXsections;
+        next.losses = newLosses;
       }
       if (['conduit', 'pump', 'orifice', 'weir', 'outlet'].includes(t)) {
         const newVerts = { ...prev.vertices };
+        const newXsections = { ...prev.xsections };
+        const newLosses = { ...prev.losses };
         delete newVerts[id];
+        delete newXsections[id];
+        delete newLosses[id];
         next.vertices = newVerts;
+        next.xsections = newXsections;
+        next.losses = newLosses;
       }
       return next;
     });
     setSelectedObj(null);
-  }, [selectedObj]);
+  }, []);
+
+  const handleDelete = useCallback(() => {
+    if (!selectedObj) return;
+    deleteObject(selectedObj);
+  }, [selectedObj, deleteObject]);
 
   const handleFullExtent = useCallback(() => {
     networkMapRef.current?.fitExtent();
   }, []);
+
+  const generateId = useCallback((prefix: string, existing: string[]) => {
+    let i = 1;
+    while (existing.includes(`${prefix}${i}`)) i++;
+    return `${prefix}${i}`;
+  }, []);
+
+  const handleCreateNode = useCallback((wx: number, wy: number, mode: string) => {
+    setProject(prev => {
+      const next = { ...prev };
+      const allIds = Object.keys(prev.coordinates);
+      let id: string;
+      if (mode === 'addJunction') {
+        id = generateId('J', allIds);
+        next.junctions = [...prev.junctions, { id, elevation: 0, maxDepth: 0, initDepth: 0, surDepth: 0, aponded: 0 }];
+      } else if (mode === 'addOutfall') {
+        id = generateId('OF', allIds);
+        next.outfalls = [...prev.outfalls, { id, elevation: 0, type: 'FREE', gated: 'NO' }];
+      } else if (mode === 'addStorage') {
+        id = generateId('SU', allIds);
+        next.storageUnits = [...prev.storageUnits, { id, elevation: 0, maxDepth: 10, initDepth: 0, shape: 'TABULAR', curveParams: [], surDepth: 0, fevap: 0 }];
+      } else return prev;
+
+      next.coordinates = { ...prev.coordinates, [id]: [wx, wy] };
+      return next;
+    });
+    toast({ title: 'Node Created', description: `New ${mode.replace('add', '')} placed on map` });
+  }, [generateId, toast]);
+
+  const handleStartLink = useCallback((nodeId: string) => {
+    setLinkDrawState({ fromNodeId: nodeId, vertices: [] });
+  }, []);
+
+  const handleCompleteLink = useCallback((toNodeId: string, vertices: [number, number][]) => {
+    if (!linkDrawState) return;
+    const fromId = linkDrawState.fromNodeId;
+    setProject(prev => {
+      const next = { ...prev };
+      const allLinkIds = [...prev.conduits, ...prev.pumps, ...prev.orifices, ...prev.weirs, ...prev.outlets].map(l => l.id);
+
+      if (interactionMode === 'addConduit') {
+        const id = generateId('C', allLinkIds);
+        const fromCoord = prev.coordinates[fromId];
+        const toCoord = prev.coordinates[toNodeId];
+        let length = 400;
+        if (fromCoord && toCoord) {
+          length = Math.round(Math.sqrt((toCoord[0] - fromCoord[0]) ** 2 + (toCoord[1] - fromCoord[1]) ** 2));
+        }
+        next.conduits = [...prev.conduits, { id, fromNode: fromId, toNode: toNodeId, length, roughness: 0.01, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 }];
+        next.xsections = { ...prev.xsections, [id]: { linkId: id, shape: 'CIRCULAR', geom1: 1, geom2: 0, geom3: 0, geom4: 0, barrels: 1 } };
+        if (vertices.length > 0) {
+          next.vertices = { ...prev.vertices, [id]: vertices };
+        }
+      } else if (interactionMode === 'addPump') {
+        const id = generateId('P', allLinkIds);
+        next.pumps = [...prev.pumps, { id, fromNode: fromId, toNode: toNodeId, pumpCurve: '*', status: 'ON' }];
+        if (vertices.length > 0) {
+          next.vertices = { ...prev.vertices, [id]: vertices };
+        }
+      }
+      return next;
+    });
+    setLinkDrawState(null);
+    toast({ title: 'Link Created', description: `New ${interactionMode === 'addConduit' ? 'Conduit' : 'Pump'} drawn` });
+  }, [linkDrawState, interactionMode, generateId, toast]);
+
+  const handleAddLinkVertex = useCallback((wx: number, wy: number) => {
+    setLinkDrawState(prev => {
+      if (!prev) return prev;
+      return { ...prev, vertices: [...prev.vertices, [wx, wy]] };
+    });
+  }, []);
+
+  const handleMoveNode = useCallback((nodeId: string, wx: number, wy: number) => {
+    setProject(prev => ({
+      ...prev,
+      coordinates: { ...prev.coordinates, [nodeId]: [wx, wy] },
+    }));
+  }, []);
+
+  const handleContextMenu = useCallback((screenX: number, screenY: number, obj: SelectedObject) => {
+    setContextMenu({ x: screenX, y: screenY, obj });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    const target = contextMenu?.obj || selectedObj;
+    if (!target) return;
+    const t = target.objType;
+    const id = target.id;
+    let props: any = null;
+    if (t === 'junction') props = project.junctions.find(j => j.id === id);
+    else if (t === 'outfall') props = project.outfalls.find(o => o.id === id);
+    else if (t === 'storage') props = project.storageUnits.find(s => s.id === id);
+    else if (t === 'conduit') props = project.conduits.find(c => c.id === id);
+    else if (t === 'pump') props = project.pumps.find(p => p.id === id);
+    if (props) {
+      setCopiedObj({ objType: t, props: { ...props } });
+      toast({ title: 'Copied', description: `${t} ${id} properties copied` });
+    }
+    closeContextMenu();
+  }, [contextMenu, selectedObj, project, toast, closeContextMenu]);
+
+  const handlePaste = useCallback(() => {
+    const target = contextMenu?.obj || selectedObj;
+    if (!copiedObj || !target || copiedObj.objType !== target.objType) {
+      toast({ title: 'Cannot Paste', description: 'No compatible object copied', variant: 'destructive' });
+      closeContextMenu();
+      return;
+    }
+    const id = target.id;
+    const t = target.objType;
+    setProject(prev => {
+      const next = { ...prev };
+      if (t === 'junction') {
+        next.junctions = prev.junctions.map(j => j.id === id ? { ...copiedObj.props, id } : j);
+      } else if (t === 'outfall') {
+        next.outfalls = prev.outfalls.map(o => o.id === id ? { ...copiedObj.props, id } : o);
+      } else if (t === 'storage') {
+        next.storageUnits = prev.storageUnits.map(s => s.id === id ? { ...copiedObj.props, id } : s);
+      } else if (t === 'conduit') {
+        next.conduits = prev.conduits.map(c => c.id === id ? { ...copiedObj.props, id, fromNode: c.fromNode, toNode: c.toNode } : c);
+      } else if (t === 'pump') {
+        next.pumps = prev.pumps.map(p => p.id === id ? { ...copiedObj.props, id, fromNode: p.fromNode, toNode: p.toNode } : p);
+      }
+      return next;
+    });
+    toast({ title: 'Pasted', description: `Properties applied to ${id}` });
+    closeContextMenu();
+  }, [copiedObj, selectedObj, toast, closeContextMenu]);
+
+  const handleReverseLink = useCallback(() => {
+    const target = contextMenu?.obj || selectedObj;
+    if (!target) return;
+    const id = target.id;
+    const t = target.objType;
+    if (!['conduit', 'pump', 'orifice', 'weir', 'outlet'].includes(t)) return;
+    setProject(prev => {
+      const next = { ...prev };
+      if (t === 'conduit') next.conduits = prev.conduits.map(c => c.id === id ? { ...c, fromNode: c.toNode, toNode: c.fromNode } : c);
+      else if (t === 'pump') next.pumps = prev.pumps.map(p => p.id === id ? { ...p, fromNode: p.toNode, toNode: p.fromNode } : p);
+      else if (t === 'orifice') next.orifices = prev.orifices.map(o => o.id === id ? { ...o, fromNode: o.toNode, toNode: o.fromNode } : o);
+      else if (t === 'weir') next.weirs = prev.weirs.map(w => w.id === id ? { ...w, fromNode: w.toNode, toNode: w.fromNode } : w);
+      else if (t === 'outlet') next.outlets = prev.outlets.map(o => o.id === id ? { ...o, fromNode: o.toNode, toNode: o.fromNode } : o);
+      const verts = prev.vertices[id];
+      if (verts) {
+        next.vertices = { ...prev.vertices, [id]: [...verts].reverse() };
+      }
+      return next;
+    });
+    toast({ title: 'Reversed', description: `Link ${id} direction reversed` });
+    closeContextMenu();
+  }, [selectedObj, toast, closeContextMenu]);
+
+  const handleEscapeMode = useCallback(() => {
+    setInteractionMode('select');
+    setLinkDrawState(null);
+    setGroupSelectPoints([]);
+    setGroupSelectedIds(null);
+  }, []);
+
+  const handleGroupSelectPoint = useCallback((wx: number, wy: number) => {
+    setGroupSelectPoints(prev => [...prev, [wx, wy]]);
+  }, []);
+
+  const handleGroupSelectComplete = useCallback(() => {
+    if (groupSelectPoints.length < 3) return;
+    const ids = new Set<string>();
+    for (const [nodeId, [nx, ny]] of Object.entries(project.coordinates)) {
+      if (pointInPolygonWorld(nx, ny, groupSelectPoints)) {
+        ids.add(nodeId);
+      }
+    }
+    const allLinks = [...project.conduits, ...project.pumps, ...project.orifices, ...project.weirs, ...project.outlets];
+    for (const link of allLinks) {
+      const from = project.coordinates[(link as any).fromNode];
+      const to = project.coordinates[(link as any).toNode];
+      if (from && to) {
+        const mx = (from[0] + to[0]) / 2;
+        const my = (from[1] + to[1]) / 2;
+        if (pointInPolygonWorld(mx, my, groupSelectPoints)) {
+          ids.add(link.id);
+        }
+      }
+    }
+    setGroupSelectedIds(ids);
+    if (ids.size > 0) {
+      setOpenDialog('groupEdit');
+    }
+    toast({ title: 'Group Selected', description: `${ids.size} objects selected` });
+  }, [groupSelectPoints, project, toast]);
+
+  const handleGroupEdit = useCallback(() => {
+    if (!groupSelectedIds || groupSelectedIds.size === 0) return;
+    const val = parseFloat(groupEditValue);
+    if (isNaN(val)) return;
+    setProject(prev => {
+      const next = { ...prev };
+      next.junctions = prev.junctions.map(j => groupSelectedIds.has(j.id) && groupEditProp in j ? { ...j, [groupEditProp]: val } : j);
+      next.outfalls = prev.outfalls.map(o => groupSelectedIds.has(o.id) && groupEditProp in o ? { ...o, [groupEditProp]: val } : o);
+      next.storageUnits = prev.storageUnits.map(s => groupSelectedIds.has(s.id) && groupEditProp in s ? { ...s, [groupEditProp]: val } : s);
+      next.conduits = prev.conduits.map(c => groupSelectedIds.has(c.id) && groupEditProp in c ? { ...c, [groupEditProp]: val } : c);
+      next.pumps = prev.pumps.map(p => groupSelectedIds.has(p.id) && groupEditProp in p ? { ...p, [groupEditProp]: val } : p);
+      return next;
+    });
+    toast({ title: 'Group Edited', description: `${groupEditProp} set to ${val} for ${groupSelectedIds.size} objects` });
+    setOpenDialog(null);
+    setGroupSelectedIds(null);
+    setGroupSelectPoints([]);
+    setInteractionMode('select');
+  }, [groupSelectedIds, groupEditProp, groupEditValue, toast]);
+
+  const handleGroupDelete = useCallback(() => {
+    if (!groupSelectedIds || groupSelectedIds.size === 0) return;
+    setProject(prev => {
+      const next = { ...prev };
+      const deletedNodeIds = new Set<string>();
+      for (const id of groupSelectedIds) {
+        if (prev.coordinates[id]) deletedNodeIds.add(id);
+      }
+      next.junctions = prev.junctions.filter(j => !groupSelectedIds.has(j.id));
+      next.outfalls = prev.outfalls.filter(o => !groupSelectedIds.has(o.id));
+      next.storageUnits = prev.storageUnits.filter(s => !groupSelectedIds.has(s.id));
+      next.dividers = prev.dividers.filter(d => !groupSelectedIds.has(d.id));
+      next.conduits = prev.conduits.filter(c => !groupSelectedIds.has(c.id) && !deletedNodeIds.has(c.fromNode) && !deletedNodeIds.has(c.toNode));
+      next.pumps = prev.pumps.filter(p => !groupSelectedIds.has(p.id) && !deletedNodeIds.has(p.fromNode) && !deletedNodeIds.has(p.toNode));
+      next.orifices = prev.orifices.filter(o => !groupSelectedIds.has(o.id) && !deletedNodeIds.has(o.fromNode) && !deletedNodeIds.has(o.toNode));
+      next.weirs = prev.weirs.filter(w => !groupSelectedIds.has(w.id) && !deletedNodeIds.has(w.fromNode) && !deletedNodeIds.has(w.toNode));
+      next.outlets = prev.outlets.filter(o => !groupSelectedIds.has(o.id) && !deletedNodeIds.has(o.fromNode) && !deletedNodeIds.has(o.toNode));
+      const newCoords = { ...prev.coordinates };
+      const newVerts = { ...prev.vertices };
+      const newXsections = { ...prev.xsections };
+      const newLosses = { ...prev.losses };
+      const allPrevLinks = [...prev.conduits, ...prev.pumps, ...prev.orifices, ...prev.weirs, ...prev.outlets];
+      for (const id of groupSelectedIds) {
+        delete newCoords[id];
+        delete newVerts[id];
+        delete newXsections[id];
+        delete newLosses[id];
+      }
+      for (const link of allPrevLinks) {
+        if (deletedNodeIds.has((link as any).fromNode) || deletedNodeIds.has((link as any).toNode)) {
+          delete newVerts[link.id];
+          delete newXsections[link.id];
+          delete newLosses[link.id];
+        }
+      }
+      next.coordinates = newCoords;
+      next.vertices = newVerts;
+      next.xsections = newXsections;
+      next.losses = newLosses;
+      return next;
+    });
+    toast({ title: 'Group Deleted', description: `${groupSelectedIds.size} objects deleted` });
+    setOpenDialog(null);
+    setGroupSelectedIds(null);
+    setGroupSelectPoints([]);
+    setInteractionMode('select');
+    setSelectedObj(null);
+  }, [groupSelectedIds, toast]);
+
+  useEffect(() => {
+    const handleClick = () => {
+      if (contextMenu) setContextMenu(null);
+    };
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, [contextMenu]);
 
   const flowUnits = project.options['FLOW_UNITS'] || 'CFS';
   const routingModel = project.options['FLOW_ROUTING'] || 'DYNWAVE';
   const infiltModel = project.options['INFILTRATION'] || 'GREEN_AMPT';
 
   const currentTime = results?.timeSteps[timeStep]?.dateTime || '';
+
+  const ctxObj = contextMenu?.obj;
+  const isLinkType = ctxObj && ['conduit', 'pump', 'orifice', 'weir', 'outlet'].includes(ctxObj.objType);
 
   return (
     <div
@@ -494,11 +819,11 @@ export default function SwmmUI() {
         )}
         {activeMenu === 'Edit' && (
           <div className="flex items-center gap-0.5">
-            <ToolbarButton icon={<Clipboard className="w-4 h-4" />} label="Copy" testId="btn-copy" />
-            <ToolbarButton icon={<Clipboard className="w-4 h-4" />} label="Paste" testId="btn-paste" />
-            <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Reverse" testId="btn-reverse" />
+            <ToolbarButton icon={<Copy className="w-4 h-4" />} label="Copy" onClick={handleCopy} testId="btn-copy" />
+            <ToolbarButton icon={<ClipboardPaste className="w-4 h-4" />} label="Paste" onClick={handlePaste} testId="btn-paste" />
+            <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Reverse" onClick={handleReverseLink} testId="btn-reverse" />
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Group Edit" testId="btn-group-edit" />
-            <ToolbarButton icon={<Trash2 className="w-4 h-4" />} label="Delete" testId="btn-delete" />
+            <ToolbarButton icon={<Trash2 className="w-4 h-4" />} label="Delete" onClick={handleDelete} testId="btn-delete" />
           </div>
         )}
         {activeMenu === 'View' && (
@@ -633,18 +958,54 @@ export default function SwmmUI() {
             preferences={preferences}
             queryMatchIds={queryMatchIds}
             queryObjectType={queryObjectType}
+            onCreateNode={handleCreateNode}
+            onStartLink={handleStartLink}
+            onCompleteLink={handleCompleteLink}
+            onAddLinkVertex={handleAddLinkVertex}
+            onMoveNode={handleMoveNode}
+            onContextMenu={handleContextMenu}
+            onGroupSelectPoint={handleGroupSelectPoint}
+            onGroupSelectComplete={handleGroupSelectComplete}
+            onEscapeMode={handleEscapeMode}
+            linkDrawState={linkDrawState}
+            groupSelectPoints={groupSelectPoints}
+            groupSelectedIds={groupSelectedIds}
           />
 
           <SpeedBar
             interactionMode={interactionMode}
-            onSetMode={setInteractionMode}
+            onSetMode={(mode) => {
+              setInteractionMode(mode);
+              setLinkDrawState(null);
+              if (mode !== 'groupSelect') {
+                setGroupSelectPoints([]);
+                setGroupSelectedIds(null);
+              }
+            }}
             onDelete={handleDelete}
             onRunSimulation={handleRunSimulation}
             onFullExtent={handleFullExtent}
             simRunning={simStatus === 'running'}
           />
 
-          {!results && Object.keys(project.coordinates).length > 0 && (
+          {interactionMode !== 'select' && (
+            <div
+              className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded text-[11px] z-10"
+              style={{ backgroundColor: 'rgba(30,30,46,0.92)', border: '1px solid #4ea8de', color: '#4ea8de' }}
+              data-testid="mode-indicator"
+            >
+              {interactionMode === 'addJunction' && 'Click to place Junction (Esc to cancel)'}
+              {interactionMode === 'addOutfall' && 'Click to place Outfall (Esc to cancel)'}
+              {interactionMode === 'addStorage' && 'Click to place Storage (Esc to cancel)'}
+              {interactionMode === 'addConduit' && (linkDrawState ? 'Click node to complete Conduit, or click map for vertex (Esc to cancel)' : 'Click start node for Conduit (Esc to cancel)')}
+              {interactionMode === 'addPump' && (linkDrawState ? 'Click node to complete Pump (Esc to cancel)' : 'Click start node for Pump (Esc to cancel)')}
+              {interactionMode === 'addLabel' && 'Click to place Label (Esc to cancel)'}
+              {interactionMode === 'groupSelect' && 'Click to add polygon points, double-click or right-click to close (Esc to cancel)'}
+              {interactionMode === 'query' && 'Query mode active'}
+            </div>
+          )}
+
+          {!results && Object.keys(project.coordinates).length > 0 && interactionMode === 'select' && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-[11px] text-[#8888a0] bg-[#1e1e2e]/80 backdrop-blur-sm border border-[#3a3a52]" data-testid="hint-run">
               Click <strong className="text-[#4ea8de]">Project &gt; Run</strong> to simulate, or drag an .inp file here
             </div>
@@ -905,7 +1266,135 @@ export default function SwmmUI() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={openDialog === 'groupEdit'} onOpenChange={v => { if (!v) { setOpenDialog(null); setGroupSelectedIds(null); setGroupSelectPoints([]); setInteractionMode('select'); } }}>
+        <DialogContent className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] max-w-sm" data-testid="group-edit-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#e0e0e8]">
+              Group Edit — {groupSelectedIds?.size || 0} Objects
+            </DialogTitle>
+            <DialogDescription className="text-[#8888a0]">
+              Apply a property change to all selected objects
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Label className="text-[#e0e0e8] text-xs w-20">Property</Label>
+              <select
+                value={groupEditProp}
+                onChange={e => setGroupEditProp(e.target.value)}
+                className="flex-1 text-xs rounded px-2 py-1.5"
+                style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+                data-testid="select-group-property"
+              >
+                <option value="elevation">Elevation</option>
+                <option value="maxDepth">Max Depth</option>
+                <option value="initDepth">Init Depth</option>
+                <option value="surDepth">Surcharge Depth</option>
+                <option value="roughness">Roughness</option>
+                <option value="length">Length</option>
+                <option value="inOffset">Inlet Offset</option>
+                <option value="outOffset">Outlet Offset</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-[#e0e0e8] text-xs w-20">Value</Label>
+              <Input
+                value={groupEditValue}
+                onChange={e => setGroupEditValue(e.target.value)}
+                className="bg-[#1e1e2e] border-[#3a3a52] text-[#e0e0e8]"
+                data-testid="input-group-value"
+              />
+            </div>
+            <div className="flex justify-between gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGroupDelete}
+                className="bg-transparent border-[#f07070] text-[#f07070] hover:bg-[#f07070]/10"
+                data-testid="btn-group-delete"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                Delete All
+              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setOpenDialog(null); setGroupSelectedIds(null); setGroupSelectPoints([]); setInteractionMode('select'); }}
+                  className="bg-[#323248] border-[#3a3a52] text-[#e0e0e8]"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleGroupEdit}
+                  className="bg-[#4ea8de] text-white"
+                  data-testid="btn-group-apply"
+                >
+                  <Check className="w-3.5 h-3.5 mr-1" />
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[140px] py-1 rounded shadow-xl"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            backgroundColor: '#2a2a3e',
+            border: '1px solid #3a3a52',
+          }}
+          data-testid="context-menu"
+        >
+          {contextMenu.obj && (
+            <>
+              <div className="px-3 py-1 text-[10px] text-[#8888a0] border-b border-[#3a3a52]" data-testid="context-menu-title">
+                {contextMenu.obj.objType} — {contextMenu.obj.id}
+              </div>
+              <ContextMenuItem icon={<Copy className="w-3 h-3" />} label="Copy" onClick={handleCopy} testId="ctx-copy" />
+              <ContextMenuItem icon={<ClipboardPaste className="w-3 h-3" />} label="Paste" onClick={handlePaste} disabled={!copiedObj || copiedObj.objType !== ctxObj?.objType} testId="ctx-paste" />
+              {isLinkType && (
+                <ContextMenuItem icon={<RotateCcw className="w-3 h-3" />} label="Reverse" onClick={handleReverseLink} testId="ctx-reverse" />
+              )}
+              <div className="h-px my-0.5" style={{ backgroundColor: '#3a3a52' }} />
+              <ContextMenuItem icon={<Trash2 className="w-3 h-3" />} label="Delete" onClick={() => { if (contextMenu?.obj) deleteObject(contextMenu.obj); closeContextMenu(); }} danger testId="ctx-delete" />
+            </>
+          )}
+          {!contextMenu.obj && (
+            <div className="px-3 py-1.5 text-[10px] text-[#6666a0]">No object selected</div>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ContextMenuItem({ icon, label, onClick, disabled, danger, testId }: {
+  icon: React.ReactNode;
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  testId?: string;
+}) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onClick?.(); }}
+      disabled={disabled}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] transition-colors
+        ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/[0.06] cursor-pointer'}
+        ${danger ? 'text-[#f07070]' : 'text-[#e0e0e8]'}`}
+      data-testid={testId}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
@@ -989,4 +1478,16 @@ function StatusItem({ text, color, bold }: { text: string; color?: string; bold?
       {text}
     </div>
   );
+}
+
+function pointInPolygonWorld(x: number, y: number, polygon: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
