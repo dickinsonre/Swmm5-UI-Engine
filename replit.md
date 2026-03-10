@@ -15,11 +15,12 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 - `client/src/components/swmm/Panels.tsx` - Legend panel, Project Explorer, Object Locator, Map Query panel
 - `client/src/components/swmm/SpeedBar.tsx` - Vertical speed bar with interaction mode buttons
 - `client/src/lib/swmm-types.ts` - TypeScript interfaces for all SWMM5 model objects
-- `client/src/lib/inp-parser.ts` - Complete SWMM5 INP file parser (all major sections)
-- `client/src/lib/swmm-engine.ts` - WASM engine wrapper with mock fallback
+- `client/src/lib/inp-parser.ts` - Complete SWMM5 INP file parser and INP file rebuild with safe column padding (`padField`)
+- `client/src/lib/swmm-engine.ts` - Remote/mock engine wrapper with WebSocket progress
+- `client/src/lib/cfl-analysis.ts` - ReSWMM CFL analysis and conduit discretization engine
 
 ### Backend
-- `server/routes.ts` - GitHub file proxy (`/api/fetch-github`, SSRF-secured), GitHub repo browser (`/api/github-browse`), SWMM engine proxy
+- `server/routes.ts` - GitHub file proxy (`/api/fetch-github`, SSRF-secured), GitHub repo browser (`/api/github-browse`), SWMM engine proxy (`/api/swmm-proxy/*`), WebSocket proxy for BatchSWMM progress
 
 ## Features
 - Parse all SWMM5 INP sections: TITLE, OPTIONS, RAINGAGES, SUBCATCHMENTS, SUBAREAS, INFILTRATION, JUNCTIONS, OUTFALLS, DIVIDERS, STORAGE, CONDUITS, PUMPS, ORIFICES, WEIRS, OUTLETS, XSECTIONS, LOSSES, CURVES, TIMESERIES, PATTERNS, CONTROLS, DWF, POLLUTANTS, LANDUSES, COORDINATES, VERTICES, POLYGONS, SYMBOLS, LABELS, MAP
@@ -52,12 +53,13 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 Title Bar | Menu Bar (File|Edit|View|Map|Project|Help)
 Context Toolbar (changes per menu)
 Legend/Locator/Query | Network Map (Canvas) + SpeedBar | Project Explorer + Properties
-Status Bar
+Status Bar (with "Created by SWMMEnablement" credit link)
 ```
 
 ## Design Theme
-- Background: `#1e1e2e`, Surface: `#2a2a3e`, Accent: `#4ea8de`
-- Font: JetBrains Mono for labels
+- Title bar: `#2c3e6b`, Menu bar: `#3a5070`, Toolbar/status: `#f0f0f4`, Panels: `#f8f8fa`
+- Borders: `#d0d0d8`, Primary text: `#2a2a3e`, Secondary: `#6b6b7b`, Accent blue: `#2c6eb5`
+- Map canvas: `#ffffff`, Grid: `rgba(0,0,0,0.06)`, Labels: `rgba(0,0,0,0.65)`
 - Y-axis inverted in worldToScreen: `[wx * zoom + panX, -wy * zoom + panY]`
 
 ## Mouse Interaction
@@ -76,32 +78,79 @@ Status Bar
 - `NetworkMapHandle` interface (getCanvas, fitExtent, centerOnWorld) from `NetworkMap.tsx`
 
 ## Sample Projects
-- Two Greenville, NC models available via File > Samples dropdown or empty state screen
+- Seven sample models available via File > Samples dropdown or empty state screen
 - `client/public/samples/Greenville_US.inp` — US Customary units (CFS), ~14,000 lines, 172 nodes
 - `client/public/samples/Greenville_SI.inp` — SI/Metric units (CMS), same network
+- `client/public/samples/User1.inp` — Mountain Drainage (58 subcatchments, CMS, Horton, DynWave)
+- `client/public/samples/User2.inp` — Urban Collection (17 subcatchments, CFS, storage nodes, DynWave)
+- `client/public/samples/User3.inp` — Large Metro Network (100+ subcatchments, CMS, dual drainage, DynWave)
+- `client/public/samples/User4.inp` — Regional Stormwater (98 subcatchments, CFS, large network, DynWave)
+- `client/public/samples/User5.inp` — Complex Watershed (96 subcatchments, CFS, Froude-limited, DynWave)
 - Both demonstrate all SWMM5 features (LID, aquifers, groundwater, transects, etc.)
 - Loaded on-demand via fetch (not bundled into JS)
 - Parser silently skips unrecognized sections
 
-## CFL Analysis & Discretization (ReSWMM)
-- Automatic CFL stability analysis runs on every model load
-- Flags conduits violating Courant-Friedrichs-Lewy criterion (Courant number > 1)
-- Formula: celerity = sqrt(g × D), Courant = (celerity × routingStep) / length
-- Gravity: 32.174 ft/s² (US), 9.81 m/s² (SI) based on FLOW_UNITS
-- Flagged conduits highlighted red on map (toggleable)
-- CFL panel accessible via Project > CFL button
-- One-click discretization splits flagged conduits with interpolated intermediate junctions
-- Two methods: Fixed Interval (min/max lengths) and Δx/D Ratio
-- Optional conduit lengthening (short pipe stabilization)
-- New junctions rendered as small green diamonds on map
-- `client/src/lib/cfl-analysis.ts` — CFL engine and discretization logic
+## ReSWMM Engine (`client/src/lib/cfl-analysis.ts`)
+
+The ReSWMM engine runs entirely in the browser (client-side). It takes a parsed SWMM .inp file and splits long conduits into shorter segments to improve hydraulic model stability and CFL compliance.
+
+### 1. Input Parsing (`client/src/lib/inp-parser.ts`)
+The INP file is parsed into structured data. The parser reads the raw text file and extracts every section — [JUNCTIONS], [CONDUITS], [XSECTIONS], [COORDINATES], [LOSSES], [OPTIONS], etc. — by splitting on whitespace-delimited columns. Each section becomes a typed array (e.g., `Conduit[]`, `Junction[]`, `XSection`). The parser also reads [OPTIONS] to determine flow units (CFS vs LPS), which controls whether US or SI gravity constants are used.
+
+### 2. CFL Analysis (`computeCflAnalysis`)
+Before discretizing, the engine computes the Courant-Friedrichs-Lewy (CFL) time step for every conduit. The formula is:
+
+```
+CFL time step = Length / sqrt(g × diameter)
+```
+
+Where g is 32.174 ft/s² (US) or 9.81 m/s² (SI). This tells you the maximum stable time step for each conduit. Short, fat pipes have tiny CFL time steps and cause instability — those are the ones that benefit from discretization.
+
+### 3. Conduit Lengthening (optional)
+If enabled, the engine first applies "lengthening" — a pre-pass that extends any conduit whose length is below the minimum CFL-stable length for the configured time step. The minimum length is `sqrt(g × diameter) × lengtheningStep`. This adjusts short conduits without splitting them.
+
+### 4. Discretization (`discretizeProject`)
+This is the core algorithm. For each conduit:
+
+- **Look up cross-section** from the xsection map to get the pipe diameter
+- **Calculate target segment length** based on the chosen method:
+  - Fixed Interval: Clamp between user-specified min/max lengths
+  - dx/D Ratio: Target length = diameter × user ratio
+- **Determine segment count**: `ceil(conduit.length / targetLength)`
+- **Skip unsplittable shapes**: Conduits with DUMMY or IRREGULAR cross-sections are preserved as-is (SWMM doesn't allow intermediate nodes on these)
+- **Skip if only 1 segment needed** (conduit already short enough)
+- **Split the conduit** into N equal-length segments:
+  - New conduits: Named `OriginalName_1`, `OriginalName_2`, etc. Each gets the same roughness and cross-section shape. Inlet/outlet offsets are only applied to the first/last segment.
+  - New intermediate junctions: Named `OriginalName_N1`, `OriginalName_N2`, etc. Elevation is linearly interpolated between the upstream and downstream nodes. Max depth is inherited from the upstream node. The MNSA (minimum nodal surface area / ponded area) is set from the user config.
+  - New coordinates: X/Y positions are linearly interpolated along the line between endpoint coordinates for visualization.
+  - Losses: Entry loss goes on the first segment, exit loss on the last, average loss distributed across all.
+
+### 5. INP File Rebuild (`projectToInp` in `inp-parser.ts`)
+After discretization, the engine reconstructs a valid .inp file:
+
+- Writes all sections — JUNCTIONS, CONDUITS, XSECTIONS, LOSSES, COORDINATES — with the new discretized data
+- Preserves non-conduit XSECTIONS — Cross-sections for orifices, weirs, and outlets are identified (link names not matching any conduit) and included. Without this, SWMM throws ERROR 143.
+- Preserves everything else verbatim via `rawSections` — subcatchments, raingages, timeseries, rules, controls, pollutants, LIDs, etc.
+- Uses safe column padding (`padField`) — guarantees at least one space between fields even when values exceed the column width, preventing SWMM parse errors like ERROR 211
+
+### 6. Running the Simulation
+The rebuilt INP file is uploaded to the Express backend, which proxies to the BatchSWMM remote engine:
+
+- **Upload**: `POST /api/swmm-proxy/upload` sends the INP file
+- **Start**: `POST /api/swmm-proxy/batch/:jobId/start` triggers the SWMM 5.2.4 engine
+- **Progress**: WebSocket proxy at `/api/swmm-proxy/ws` relays real-time progress messages from the remote BatchSWMM server (progress, file_progress, result, completed)
+- **Results**: The `.rpt` report content is parsed by `parseRptToResults` in `swmm-engine.ts` to extract node depth summaries, link flow summaries, subcatchment runoff summaries into `SimulationResults`
+
+Both the remote engine and mock engine send progress updates and final results back to the frontend for display in the progress monitor dialog.
+
+The key engineering challenge was making the rebuilt INP file perfectly SWMM-compatible — column alignment, preserving non-conduit sections, handling edge cases like DUMMY shapes, and ensuring numeric fields never bleed into adjacent columns. Each bug fix came from running real models and tracing SWMM error codes back to the generated file.
 
 ## Simulation Engine
 - Two modes: **Remote** (EPA SWMM 5.2.4) and **Mock** (simulated results)
 - Remote engine connects to BatchSWMM app at `https://batch-swmm-runner-robertdickinson.replit.app`
 - Server proxies API calls through `/api/swmm-proxy/*` endpoints
-- WebSocket connects directly to BatchSWMM for real-time progress during simulation
-- Upload flow: POST INP to `/api/swmm-proxy/upload` → start batch → WS for progress/results → parse RPT report
+- WebSocket proxy on server relays progress from remote BatchSWMM to browser client
+- Upload flow: POST INP to `/api/swmm-proxy/upload` → start batch → WS proxy for progress/results → parse RPT report
 - Engine mode toggle in Project toolbar; auto-detects remote availability on load
 - Status bar shows current engine mode
 - `swmm-engine.ts` exports: `createMockEngine()`, `createRemoteEngine()`, `checkRemoteEngine()`

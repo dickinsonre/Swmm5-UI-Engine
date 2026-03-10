@@ -649,6 +649,11 @@ export function parseInpFile(text: string): SwmmProject {
   return project;
 }
 
+function padField(value: string | number, width: number): string {
+  const s = String(value);
+  return s.length >= width ? s + ' ' : s.padEnd(width);
+}
+
 export function projectToInp(project: SwmmProject): string {
   const lines: string[] = [];
 
@@ -697,7 +702,7 @@ export function projectToInp(project: SwmmProject): string {
   if (project.junctions.length) {
     lines.push('[JUNCTIONS]');
     for (const j of project.junctions) {
-      lines.push(`${j.id.padEnd(16)} ${j.elevation}    ${j.maxDepth}    ${j.initDepth}    ${j.surDepth}    ${j.aponded}`);
+      lines.push(`${padField(j.id, 16)} ${padField(j.elevation, 10)} ${padField(j.maxDepth, 10)} ${padField(j.initDepth, 10)} ${padField(j.surDepth, 10)} ${j.aponded}`);
     }
     lines.push('');
   }
@@ -721,7 +726,7 @@ export function projectToInp(project: SwmmProject): string {
   if (project.conduits.length) {
     lines.push('[CONDUITS]');
     for (const c of project.conduits) {
-      lines.push(`${c.id.padEnd(16)} ${c.fromNode.padEnd(16)} ${c.toNode.padEnd(16)} ${c.length}    ${c.roughness}    ${c.inOffset}    ${c.outOffset}    ${c.initFlow}    ${c.maxFlow}`);
+      lines.push(`${padField(c.id, 16)} ${padField(c.fromNode, 16)} ${padField(c.toNode, 16)} ${padField(c.length, 12)} ${padField(c.roughness, 12)} ${padField(c.inOffset, 10)} ${padField(c.outOffset, 10)} ${padField(c.initFlow, 10)} ${c.maxFlow}`);
     }
     lines.push('');
   }
@@ -745,7 +750,15 @@ export function projectToInp(project: SwmmProject): string {
   if (Object.keys(project.xsections).length) {
     lines.push('[XSECTIONS]');
     for (const [id, xs] of Object.entries(project.xsections)) {
-      lines.push(`${id.padEnd(16)} ${xs.shape.padEnd(12)} ${xs.geom1}    ${xs.geom2}    ${xs.geom3}    ${xs.geom4}    ${xs.barrels}`);
+      lines.push(`${padField(id, 16)} ${padField(xs.shape, 12)} ${padField(xs.geom1, 10)} ${padField(xs.geom2, 10)} ${padField(xs.geom3, 10)} ${padField(xs.geom4, 10)} ${xs.barrels}`);
+    }
+    lines.push('');
+  }
+
+  if (Object.keys(project.losses).length) {
+    lines.push('[LOSSES]');
+    for (const [id, loss] of Object.entries(project.losses)) {
+      lines.push(`${padField(id, 16)} ${padField(loss.entryLoss, 10)} ${padField(loss.exitLoss, 10)} ${padField(loss.avgLoss, 10)} ${padField(loss.flapGate ? 'YES' : 'NO', 6)} ${loss.seepageRate}`);
     }
     lines.push('');
   }
@@ -753,7 +766,7 @@ export function projectToInp(project: SwmmProject): string {
   if (Object.keys(project.coordinates).length) {
     lines.push('[COORDINATES]');
     for (const [id, [x, y]] of Object.entries(project.coordinates)) {
-      lines.push(`${id.padEnd(16)} ${x.toFixed(3).padStart(18)} ${y.toFixed(3).padStart(18)}`);
+      lines.push(`${padField(id, 16)} ${x.toFixed(3).padStart(18)} ${y.toFixed(3).padStart(18)}`);
     }
     lines.push('');
   }
