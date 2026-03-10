@@ -347,26 +347,34 @@ export default function SwmmUI() {
     }
   }, [project]);
 
+  const simAbortRef = useRef<AbortController | null>(null);
+
   const handleRunSimulation = useCallback(async () => {
     setSimStatus('running');
     setSimProgress(0);
     setSimProgressMsg('Initializing...');
+
+    const abortCtrl = new AbortController();
+    simAbortRef.current = abortCtrl;
 
     const engine: SwmmEngine = engineMode === 'remote' ? createRemoteEngine() : createMockEngine();
 
     let progressInterval: ReturnType<typeof setInterval> | null = null;
     if (engine.mode === 'mock') {
       progressInterval = setInterval(() => {
+        if (abortCtrl.signal.aborted) return;
         setSimProgress(prev => Math.min(prev + 3, 95));
       }, 50);
     }
 
     try {
       const res = await engine.run(project, (pct, msg) => {
+        if (abortCtrl.signal.aborted) return;
         setSimProgress(pct);
         setSimProgressMsg(msg);
       });
       if (progressInterval) clearInterval(progressInterval);
+      if (abortCtrl.signal.aborted) return;
       setSimProgress(100);
       setSimProgressMsg('Complete');
       setResults(res);
@@ -376,11 +384,28 @@ export default function SwmmUI() {
       toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed (${engineLabel})` });
     } catch (e: any) {
       if (progressInterval) clearInterval(progressInterval);
+      if (abortCtrl.signal.aborted) {
+        setSimStatus('none');
+        setSimProgressMsg('');
+        toast({ title: 'Simulation Stopped', description: 'Simulation was cancelled by user' });
+        return;
+      }
       setSimStatus('none');
       setSimProgressMsg('');
       toast({ title: 'Simulation Error', description: e.message, variant: 'destructive' });
+    } finally {
+      simAbortRef.current = null;
     }
   }, [project, toast, engineMode]);
+
+  const handleStopSimulation = useCallback(() => {
+    if (simAbortRef.current) {
+      simAbortRef.current.abort();
+      setSimStatus('none');
+      setSimProgress(0);
+      setSimProgressMsg('');
+    }
+  }, []);
 
   const buildExportCanvas = useCallback(async (includeLegend: boolean): Promise<HTMLCanvasElement | null> => {
     const mapCanvas = networkMapRef.current?.getCanvas();
@@ -1133,11 +1158,20 @@ export default function SwmmUI() {
                   data-testid="progress-bar-fill"
                 />
               </div>
-              <div className="text-[9px] text-[#9090a0] text-center">
-                {simProgress < 30 ? 'Initializing hydraulic engine...' :
-                 simProgress < 60 ? 'Computing hydraulic routing...' :
-                 simProgress < 90 ? 'Processing time steps...' :
-                 'Finalizing results...'}
+              <div className="flex items-center justify-between">
+                <div className="text-[9px] text-[#9090a0]">
+                  {simProgress < 30 ? 'Initializing hydraulic engine...' :
+                   simProgress < 60 ? 'Computing hydraulic routing...' :
+                   simProgress < 90 ? 'Processing time steps...' :
+                   'Finalizing results...'}
+                </div>
+                <button
+                  onClick={handleStopSimulation}
+                  className="flex items-center gap-1 px-2.5 py-1 text-[10px] text-[#d04040] bg-[#d04040]/10 border border-[#d04040]/30 rounded hover:bg-[#d04040]/20 transition-colors"
+                  data-testid="btn-stop-simulation"
+                >
+                  <X className="w-3 h-3" /> Stop
+                </button>
               </div>
             </div>
           </div>
