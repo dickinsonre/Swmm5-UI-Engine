@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
 
 const ALLOWED_HOSTS = [
   'raw.githubusercontent.com',
@@ -138,28 +139,19 @@ export async function registerRoutes(
   app.post("/api/swmm-proxy/batch/:jobId/start", async (req: Request, res: Response) => {
     try {
       const { jobId } = req.params;
-      const chunks: Buffer[] = [];
-      req.on('data', (chunk: Buffer) => chunks.push(chunk));
-      req.on('end', async () => {
-        try {
-          const body = Buffer.concat(chunks).toString();
-          const response = await fetch(`${BATCH_SWMM_URL}/api/batch/${jobId}/start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: body,
-          });
-
-          if (!response.ok) {
-            const text = await response.text();
-            return res.status(response.status).json({ error: text });
-          }
-
-          const data = await response.json();
-          res.json(data);
-        } catch (error: any) {
-          res.status(500).json({ error: error.message });
-        }
+      const response = await fetch(`${BATCH_SWMM_URL}/api/batch/${jobId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body || {}),
       });
+
+      if (!response.ok) {
+        const text = await response.text();
+        return res.status(response.status).json({ error: text });
+      }
+
+      const data = await response.json();
+      res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -192,6 +184,59 @@ export async function registerRoutes(
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url || '', `http://${req.headers.host}`);
+    if (url.pathname === '/api/swmm-proxy/ws') {
+      wss.handleUpgrade(req, socket, head, (clientWs) => {
+        const jobId = url.searchParams.get('jobId');
+        if (!jobId) {
+          clientWs.close(1008, 'Missing jobId');
+          return;
+        }
+
+        const remoteWsUrl = `wss://batch-swmm-runner-robertdickinson.replit.app/api/ws?jobId=${jobId}`;
+        const remoteWs = new WebSocket(remoteWsUrl);
+
+        remoteWs.on('open', () => {
+          clientWs.send(JSON.stringify({ type: 'proxy_connected' }));
+        });
+
+        remoteWs.on('message', (data) => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(data.toString());
+          }
+        });
+
+        remoteWs.on('error', (err) => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(JSON.stringify({ type: 'error', message: err.message }));
+            clientWs.close(1011, 'Remote WS error');
+          }
+        });
+
+        remoteWs.on('close', () => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.close();
+          }
+        });
+
+        clientWs.on('close', () => {
+          if (remoteWs.readyState === WebSocket.OPEN) {
+            remoteWs.close();
+          }
+        });
+
+        clientWs.on('error', () => {
+          if (remoteWs.readyState === WebSocket.OPEN) {
+            remoteWs.close();
+          }
+        });
+      });
     }
   });
 
