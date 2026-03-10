@@ -185,19 +185,30 @@ export default function SwmmUI() {
 
   const handleGithubLoad = useCallback(async () => {
     if (!githubUrl.trim()) return;
+    const url = githubUrl.trim();
+    const repoPattern = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/;
+    const match = url.match(repoPattern);
+    if (match) {
+      toast({ title: 'Repo URL Detected', description: 'Use the file browser above to pick an INP file from this repository' });
+      return;
+    }
+    if (!url.toLowerCase().endsWith('.inp')) {
+      toast({ title: 'Invalid URL', description: 'URL must point to a .inp file', variant: 'destructive' });
+      return;
+    }
     setLoading(true);
     try {
-      let url = githubUrl.trim();
-      if (url.includes('github.com') && !url.includes('raw.githubusercontent.com')) {
-        url = url
+      let fetchUrl = url;
+      if (fetchUrl.includes('github.com') && !fetchUrl.includes('raw.githubusercontent.com')) {
+        fetchUrl = fetchUrl
           .replace('github.com', 'raw.githubusercontent.com')
           .replace('/blob/', '/');
       }
-      const resp = await fetch(`/api/fetch-github?url=${encodeURIComponent(url)}`);
+      const resp = await fetch(`/api/fetch-github?url=${encodeURIComponent(fetchUrl)}`);
       if (!resp.ok) throw new Error(`Failed to fetch: ${resp.statusText}`);
       const text = await resp.text();
       const parsed = parseInpFile(text);
-      const name = url.split('/').pop() || 'github_file.inp';
+      const name = fetchUrl.split('/').pop() || 'github_file.inp';
       setProject(parsed);
       setFileName(name);
       setResults(null);
@@ -205,12 +216,11 @@ export default function SwmmUI() {
       setTimeStep(0);
       setSelectedObj(null);
       toast({ title: 'File Loaded', description: `${name} loaded from GitHub` });
+      setOpenDialog(null);
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
     setLoading(false);
-    setOpenDialog(null);
-    setGithubUrl('https://github.com/SWMMEnablement/1729-SWMM5-Models');
   }, [githubUrl, toast]);
 
   const ghBrowse = useCallback(async (path: string) => {
@@ -229,10 +239,10 @@ export default function SwmmUI() {
   }, [ghBrowseOwner, ghBrowseRepo]);
 
   const handleGhFileSelect = useCallback(async (item: {name:string;path:string;download_url?:string}) => {
-    if (!item.download_url) return;
+    const dlUrl = item.download_url || `https://raw.githubusercontent.com/${ghBrowseOwner}/${ghBrowseRepo}/main/${item.path}`;
     setLoading(true);
     try {
-      const resp = await fetch(`/api/fetch-github?url=${encodeURIComponent(item.download_url)}`);
+      const resp = await fetch(`/api/fetch-github?url=${encodeURIComponent(dlUrl)}`);
       if (!resp.ok) throw new Error(`Failed to fetch: ${resp.statusText}`);
       const text = await resp.text();
       const parsed = parseInpFile(text);
@@ -248,7 +258,7 @@ export default function SwmmUI() {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
     setLoading(false);
-  }, [toast]);
+  }, [toast, ghBrowseOwner, ghBrowseRepo]);
 
   const handleNewProject = useCallback(() => {
     setProject(createEmptyProject());
