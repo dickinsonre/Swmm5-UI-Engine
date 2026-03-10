@@ -83,5 +83,12 @@ Status Bar
 - Loaded on-demand via fetch (not bundled into JS)
 - Parser silently skips unrecognized sections
 
-## WASM Engine
-Currently uses a mock engine that generates plausible time-varying results. The `swmm-engine.ts` file has the integration point for a real SWMM5 WASM binary (`createWasmEngine()`).
+## Simulation Engine
+- Two modes: **Remote** (EPA SWMM 5.2.4) and **Mock** (simulated results)
+- Remote engine connects to BatchSWMM app at `https://batch-swmm-runner-robertdickinson.replit.app`
+- Server proxies API calls through `/api/swmm-proxy/*` endpoints
+- WebSocket connects directly to BatchSWMM for real-time progress during simulation
+- Upload flow: POST INP to `/api/swmm-proxy/upload` → start batch → WS for progress/results → parse RPT report
+- Engine mode toggle in Project toolbar; auto-detects remote availability on load
+- Status bar shows current engine mode
+- `swmm-engine.ts` exports: `createMockEngine()`, `createRemoteEngine()`, `checkRemoteEngine()`

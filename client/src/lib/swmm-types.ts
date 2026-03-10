@@ -302,6 +302,7 @@ export interface SimulationResults {
       quality: number;
     };
   };
+  reportContent?: string;
 }
 
 export type SelectedObject = {

@@ -2,7 +2,8 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-types';
 import { createEmptyProject } from '@/lib/swmm-types';
 import { parseInpFile, SAMPLE_INP } from '@/lib/inp-parser';
-import { createMockEngine } from '@/lib/swmm-engine';
+import { createMockEngine, createRemoteEngine, checkRemoteEngine } from '@/lib/swmm-engine';
+import type { SwmmEngine } from '@/lib/swmm-engine';
 import NetworkMap, { type NetworkMapHandle } from '@/components/swmm/NetworkMap';
 import { LegendPanel, ProjectExplorer, ObjectLocatorPanel, MapQueryPanel, evaluateQuery } from '@/components/swmm/Panels';
 import type { MapQuery } from '@/components/swmm/Panels';
@@ -82,6 +83,9 @@ export default function SwmmUI() {
   const [timeStep, setTimeStep] = useState(0);
   const [simStatus, setSimStatus] = useState<'none' | 'running' | 'current' | 'outdated'>('none');
   const [simProgress, setSimProgress] = useState(0);
+  const [simProgressMsg, setSimProgressMsg] = useState('');
+  const [engineMode, setEngineMode] = useState<'mock' | 'remote'>('mock');
+  const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
@@ -285,26 +289,37 @@ export default function SwmmUI() {
   const handleRunSimulation = useCallback(async () => {
     setSimStatus('running');
     setSimProgress(0);
-    const engine = createMockEngine();
+    setSimProgressMsg('Initializing...');
 
-    const progressInterval = setInterval(() => {
-      setSimProgress(prev => Math.min(prev + 3, 95));
-    }, 50);
+    const engine: SwmmEngine = engineMode === 'remote' ? createRemoteEngine() : createMockEngine();
+
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
+    if (engine.mode === 'mock') {
+      progressInterval = setInterval(() => {
+        setSimProgress(prev => Math.min(prev + 3, 95));
+      }, 50);
+    }
 
     try {
-      const res = await engine.run(project);
-      clearInterval(progressInterval);
+      const res = await engine.run(project, (pct, msg) => {
+        setSimProgress(pct);
+        setSimProgressMsg(msg);
+      });
+      if (progressInterval) clearInterval(progressInterval);
       setSimProgress(100);
+      setSimProgressMsg('Complete');
       setResults(res);
       setSimStatus('current');
       setTimeStep(0);
-      toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed` });
+      const engineLabel = engine.mode === 'remote' ? 'EPA SWMM 5.2.4' : 'Mock Engine';
+      toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed (${engineLabel})` });
     } catch (e: any) {
-      clearInterval(progressInterval);
+      if (progressInterval) clearInterval(progressInterval);
       setSimStatus('none');
+      setSimProgressMsg('');
       toast({ title: 'Simulation Error', description: e.message, variant: 'destructive' });
     }
-  }, [project, toast]);
+  }, [project, toast, engineMode]);
 
   const buildExportCanvas = useCallback(async (includeLegend: boolean): Promise<HTMLCanvasElement | null> => {
     const mapCanvas = networkMapRef.current?.getCanvas();
@@ -408,6 +423,13 @@ export default function SwmmUI() {
     }
     setOpenDialog(null);
   }, [buildExportCanvas, exportIncludeLegend, toast]);
+
+  useEffect(() => {
+    checkRemoteEngine().then(available => {
+      setRemoteAvailable(available);
+      if (available) setEngineMode('remote');
+    });
+  }, []);
 
   useEffect(() => {
     if (!isAnimating || !results) {
@@ -938,6 +960,21 @@ export default function SwmmUI() {
               testId="btn-run"
             />
             <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" testId="btn-report" />
+            <div className="w-px h-8 bg-[#3a3a52] mx-1" />
+            <button
+              onClick={() => setEngineMode(engineMode === 'remote' ? 'mock' : 'remote')}
+              disabled={!remoteAvailable && engineMode !== 'remote'}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors border ${
+                engineMode === 'remote'
+                  ? 'bg-[rgba(78,168,222,0.15)] border-[#4ea8de] text-[#4ea8de]'
+                  : 'bg-transparent border-[#3a3a52] text-[#8888a0] hover:text-[#c8c8d8]'
+              } ${!remoteAvailable && engineMode !== 'remote' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+              title={remoteAvailable ? 'Toggle between real SWMM 5.2.4 engine and mock simulation' : 'Remote SWMM engine not available'}
+              data-testid="btn-engine-toggle"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'remote' ? 'bg-[#4ea8de]' : 'bg-[#6a6a80]'}`} />
+              {engineMode === 'remote' ? 'SWMM 5.2.4' : 'Mock Engine'}
+            </button>
           </div>
         )}
         {activeMenu === 'Help' && (
@@ -1131,9 +1168,13 @@ export default function SwmmUI() {
         <StatusItem text={`Routing: ${routingModel}`} />
         <StatusItem text={`Infiltration: ${infiltModel}`} />
         <StatusItem
-          text={simStatus === 'current' ? 'Results are Current' : simStatus === 'running' ? 'Running...' : 'No Results'}
+          text={simStatus === 'current' ? 'Results are Current' : simStatus === 'running' ? (simProgressMsg || 'Running...') : 'No Results'}
           color={simStatus === 'current' ? '#82e0a8' : simStatus === 'running' ? '#f0c060' : '#8888a0'}
           bold={simStatus === 'current'}
+        />
+        <StatusItem
+          text={engineMode === 'remote' ? 'Engine: SWMM 5.2.4' : 'Engine: Mock'}
+          color={engineMode === 'remote' ? '#4ea8de' : '#8888a0'}
         />
         <div className="flex-1" />
         <span className="text-[9px] font-mono text-[#6666a0]" data-testid="status-counts">

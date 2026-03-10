@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 
 const ALLOWED_HOSTS = [
@@ -6,6 +6,8 @@ const ALLOWED_HOSTS = [
   'gist.githubusercontent.com',
   'raw.github.com',
 ];
+
+const BATCH_SWMM_URL = 'https://batch-swmm-runner-robertdickinson.replit.app';
 
 export async function registerRoutes(
   httpServer: Server,
@@ -40,6 +42,80 @@ export async function registerRoutes(
 
       const text = await response.text();
       res.type("text/plain").send(text);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/swmm-proxy/status", async (_req: Request, res: Response) => {
+    try {
+      const response = await fetch(`${BATCH_SWMM_URL}/api/swmm-status`);
+      if (!response.ok) {
+        return res.status(response.status).json({ found: false, error: `Remote returned ${response.status}` });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      res.json({ found: false, error: error.message });
+    }
+  });
+
+  app.post("/api/swmm-proxy/upload", async (req: Request, res: Response) => {
+    try {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', async () => {
+        try {
+          const body = Buffer.concat(chunks);
+          const contentType = req.headers['content-type'] || '';
+
+          const response = await fetch(`${BATCH_SWMM_URL}/api/upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': contentType },
+            body: body,
+          });
+
+          if (!response.ok) {
+            const text = await response.text();
+            return res.status(response.status).json({ error: text });
+          }
+
+          const data = await response.json();
+          res.json(data);
+        } catch (error: any) {
+          res.status(500).json({ error: error.message });
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/swmm-proxy/batch/:jobId/start", async (req: Request, res: Response) => {
+    try {
+      const { jobId } = req.params;
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', async () => {
+        try {
+          const body = Buffer.concat(chunks).toString();
+          const response = await fetch(`${BATCH_SWMM_URL}/api/batch/${jobId}/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body,
+          });
+
+          if (!response.ok) {
+            const text = await response.text();
+            return res.status(response.status).json({ error: text });
+          }
+
+          const data = await response.json();
+          res.json(data);
+        } catch (error: any) {
+          res.status(500).json({ error: error.message });
+        }
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
