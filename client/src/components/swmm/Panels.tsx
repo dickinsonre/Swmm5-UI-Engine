@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { SwmmProject, SelectedObject } from '@/lib/swmm-types';
-import { ChevronDown, ChevronRight, Droplets, CircleDot, Minus, CloudRain, Triangle, Square, ArrowLeftRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Droplets, CircleDot, Minus, CloudRain, Triangle, Square, ArrowLeftRight, X, Search, List } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 const LEGEND_COLORS = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
@@ -310,6 +310,153 @@ function TreeItem({ label, indent = 0, expandable, isExpanded, onToggle, selecte
   );
 }
 
+const OBJECT_TYPES = [
+  { value: 'junction', label: 'Junction', collection: 'junctions' },
+  { value: 'outfall', label: 'Outfall', collection: 'outfalls' },
+  { value: 'storage', label: 'Storage Unit', collection: 'storageUnits' },
+  { value: 'divider', label: 'Divider', collection: 'dividers' },
+  { value: 'conduit', label: 'Conduit', collection: 'conduits' },
+  { value: 'pump', label: 'Pump', collection: 'pumps' },
+  { value: 'orifice', label: 'Orifice', collection: 'orifices' },
+  { value: 'weir', label: 'Weir', collection: 'weirs' },
+  { value: 'outlet', label: 'Outlet', collection: 'outlets' },
+  { value: 'subcatchment', label: 'Subcatchment', collection: 'subcatchments' },
+  { value: 'raingage', label: 'Rain Gage', collection: 'raingages' },
+] as const;
+
+interface ObjectLocatorProps {
+  project: SwmmProject;
+  onLocate: (objType: string, id: string) => void;
+  onClose: () => void;
+}
+
+export function ObjectLocatorPanel({ project, onLocate, onClose }: ObjectLocatorProps) {
+  const [objType, setObjType] = useState<string>('junction');
+  const [searchId, setSearchId] = useState('');
+  const [showList, setShowList] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const getObjectIds = (type: string): string[] => {
+    const typeDef = OBJECT_TYPES.find(t => t.value === type);
+    if (!typeDef) return [];
+    const collection = (project as any)[typeDef.collection];
+    if (!collection) return [];
+    return collection.map((item: any) => item.id);
+  };
+
+  const objectIds = useMemo(() => getObjectIds(objType), [objType, project]);
+
+  const handleLocate = () => {
+    setErrorMsg('');
+    const trimmed = searchId.trim();
+    if (!trimmed) {
+      setErrorMsg('Enter an object ID');
+      return;
+    }
+    const ids = getObjectIds(objType);
+    const found = ids.find((id: string) => id.toLowerCase() === trimmed.toLowerCase());
+    if (found) {
+      onLocate(objType, found);
+      setErrorMsg('');
+    } else {
+      setErrorMsg(`${OBJECT_TYPES.find(t => t.value === objType)?.label || objType} "${trimmed}" not found`);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleLocate();
+    }
+  };
+
+  return (
+    <div className="border-b border-[#3a3a52]" data-testid="object-locator-panel">
+      <div className="flex items-center justify-between px-2 py-1.5 bg-[#323248]">
+        <span className="text-[11px] font-bold text-[#e0e0e8]">Object Locator</span>
+        <button
+          onClick={onClose}
+          className="text-[#8888a0] hover:text-[#e0e0e8] transition-colors"
+          data-testid="btn-locator-close"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="p-2 space-y-2">
+        <div>
+          <label className="text-[9px] text-[#8888a0] mb-0.5 block">Object Type</label>
+          <select
+            value={objType}
+            onChange={e => { setObjType(e.target.value); setShowList(false); setErrorMsg(''); }}
+            className="w-full text-[10px] rounded px-1.5 py-1"
+            style={{ backgroundColor: '#1e1e2e', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            data-testid="select-locator-type"
+          >
+            {OBJECT_TYPES.map(t => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-[9px] text-[#8888a0] mb-0.5 block">Object ID</label>
+          <input
+            type="text"
+            value={searchId}
+            onChange={e => { setSearchId(e.target.value); setErrorMsg(''); }}
+            onKeyDown={handleKeyDown}
+            placeholder="Enter ID..."
+            className="w-full text-[10px] rounded px-1.5 py-1"
+            style={{ backgroundColor: '#1e1e2e', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            data-testid="input-locator-id"
+          />
+        </div>
+        {errorMsg && (
+          <div className="text-[9px] text-[#f07070]" data-testid="text-locator-error">{errorMsg}</div>
+        )}
+        <div className="flex gap-1.5">
+          <button
+            onClick={handleLocate}
+            className="flex-1 flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded bg-[rgba(78,168,222,0.15)] text-[#4ea8de] border border-[#4ea8de]/30 hover:bg-[rgba(78,168,222,0.25)] transition-colors"
+            data-testid="btn-locator-find"
+          >
+            <Search className="w-3 h-3" /> Find
+          </button>
+          <button
+            onClick={() => setShowList(!showList)}
+            className="flex-1 flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded border border-[#3a3a52] text-[#c0c0d0] hover:bg-white/[0.05] transition-colors"
+            data-testid="btn-locator-list"
+          >
+            <List className="w-3 h-3" /> List
+          </button>
+        </div>
+        {showList && (
+          <ScrollArea className="max-h-[120px]">
+            <div className="space-y-px" data-testid="locator-list">
+              {objectIds.length === 0 ? (
+                <div className="text-[9px] text-[#6666a0] py-1 text-center">No objects</div>
+              ) : (
+                objectIds.map((id: string) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      setSearchId(id);
+                      onLocate(objType, id);
+                      setShowList(false);
+                    }}
+                    className="w-full text-left text-[10px] px-1.5 py-0.5 rounded text-[#e0e0e8] hover:bg-white/[0.05] transition-colors cursor-pointer"
+                    data-testid={`locator-item-${id}`}
+                  >
+                    {id}
+                  </button>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function getProperties(
   project: SwmmProject,
   selectedObj: SelectedObject,
@@ -511,4 +658,195 @@ function getProperties(
   }
 
   return [['ID', id], ['Type', objType]];
+}
+
+export interface MapQuery {
+  objectType: 'node' | 'link' | 'subcatchment';
+  property: string;
+  operator: '>' | '<' | '=' | '>=' | '<=';
+  value: number;
+  active: boolean;
+}
+
+const NODE_QUERY_PROPERTIES: [string, string][] = [
+  ['elevation', 'Invert Elevation'],
+  ['maxDepth', 'Max Depth'],
+  ['initDepth', 'Init Depth'],
+  ['surDepth', 'Surcharge Depth'],
+  ['aponded', 'Ponded Area'],
+];
+
+const LINK_QUERY_PROPERTIES: [string, string][] = [
+  ['length', 'Length'],
+  ['roughness', 'Roughness'],
+  ['inOffset', 'Inlet Offset'],
+  ['outOffset', 'Outlet Offset'],
+  ['initFlow', 'Init Flow'],
+  ['maxFlow', 'Max Flow'],
+];
+
+const SUBCATCH_QUERY_PROPERTIES: [string, string][] = [
+  ['area', 'Area'],
+  ['pctImperv', '% Imperv'],
+  ['width', 'Width'],
+  ['slope', 'Slope'],
+  ['curbLen', 'Curb Length'],
+];
+
+function getQueryPropertyOptions(objectType: string): [string, string][] {
+  if (objectType === 'node') return NODE_QUERY_PROPERTIES;
+  if (objectType === 'link') return LINK_QUERY_PROPERTIES;
+  return SUBCATCH_QUERY_PROPERTIES;
+}
+
+export function evaluateQuery(query: MapQuery, project: SwmmProject): Set<string> {
+  const matching = new Set<string>();
+  if (!query.active) return matching;
+
+  const compare = (val: number) => {
+    switch (query.operator) {
+      case '>': return val > query.value;
+      case '<': return val < query.value;
+      case '=': return Math.abs(val - query.value) < 0.0001;
+      case '>=': return val >= query.value;
+      case '<=': return val <= query.value;
+      default: return false;
+    }
+  };
+
+  if (query.objectType === 'node') {
+    const allNodes = [
+      ...project.junctions.map(j => ({ id: j.id, elevation: j.elevation, maxDepth: j.maxDepth, initDepth: j.initDepth, surDepth: j.surDepth, aponded: j.aponded })),
+      ...project.outfalls.map(o => ({ id: o.id, elevation: o.elevation, maxDepth: 0, initDepth: 0, surDepth: 0, aponded: 0 })),
+      ...project.storageUnits.map(s => ({ id: s.id, elevation: s.elevation, maxDepth: s.maxDepth, initDepth: s.initDepth, surDepth: s.surDepth, aponded: 0 })),
+      ...project.dividers.map(d => ({ id: d.id, elevation: d.elevation, maxDepth: d.maxDepth, initDepth: d.initDepth, surDepth: d.surDepth, aponded: d.aponded })),
+    ];
+    for (const node of allNodes) {
+      const val = (node as any)[query.property];
+      if (val !== undefined && compare(val)) {
+        matching.add(node.id);
+      }
+    }
+  } else if (query.objectType === 'link') {
+    const allLinks = [
+      ...project.conduits.map(c => ({ id: c.id, length: c.length, roughness: c.roughness, inOffset: c.inOffset, outOffset: c.outOffset, initFlow: c.initFlow, maxFlow: c.maxFlow })),
+      ...project.pumps.map(p => ({ id: p.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
+      ...project.weirs.map(w => ({ id: w.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
+      ...project.orifices.map(o => ({ id: o.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
+      ...project.outlets.map(o => ({ id: o.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
+    ];
+    for (const link of allLinks) {
+      const val = (link as any)[query.property];
+      if (val !== undefined && compare(val)) {
+        matching.add(link.id);
+      }
+    }
+  } else {
+    for (const sc of project.subcatchments) {
+      const val = (sc as any)[query.property];
+      if (val !== undefined && compare(val)) {
+        matching.add(sc.id);
+      }
+    }
+  }
+
+  return matching;
+}
+
+interface MapQueryPanelProps {
+  query: MapQuery;
+  onQueryChange: (q: MapQuery) => void;
+  onClose: () => void;
+  matchCount: number;
+}
+
+export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: MapQueryPanelProps) {
+  const propertyOptions = getQueryPropertyOptions(query.objectType);
+
+  return (
+    <div className="p-2.5 space-y-2 border-b border-[#3a3a52]" data-testid="map-query-panel">
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[11px] font-bold text-[#e0e0e8]">Map Query</span>
+        <button
+          onClick={onClose}
+          className="p-0.5 text-[#8888a0] hover:text-[#e0e0e8] transition-colors"
+          data-testid="btn-query-close"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-[#8888a0] w-12 shrink-0">Type:</span>
+          <select
+            value={query.objectType}
+            onChange={e => onQueryChange({ ...query, objectType: e.target.value as MapQuery['objectType'], property: getQueryPropertyOptions(e.target.value)[0][0], active: false })}
+            className="flex-1 text-[10px] rounded px-1 py-0.5"
+            style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            data-testid="select-query-type"
+          >
+            <option value="node">Node</option>
+            <option value="link">Link</option>
+            <option value="subcatchment">Subcatchment</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-[#8888a0] w-12 shrink-0">Prop:</span>
+          <select
+            value={query.property}
+            onChange={e => onQueryChange({ ...query, property: e.target.value, active: false })}
+            className="flex-1 text-[10px] rounded px-1 py-0.5"
+            style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            data-testid="select-query-property"
+          >
+            {propertyOptions.map(([val, lbl]) => (
+              <option key={val} value={val}>{lbl}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-[#8888a0] w-12 shrink-0">Op:</span>
+          <select
+            value={query.operator}
+            onChange={e => onQueryChange({ ...query, operator: e.target.value as MapQuery['operator'] })}
+            className="text-[10px] rounded px-1 py-0.5 w-12"
+            style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            data-testid="select-query-operator"
+          >
+            <option value=">">&gt;</option>
+            <option value="<">&lt;</option>
+            <option value="=">=</option>
+            <option value=">=">&gt;=</option>
+            <option value="<=">&lt;=</option>
+          </select>
+          <input
+            type="number"
+            value={query.value}
+            onChange={e => onQueryChange({ ...query, value: parseFloat(e.target.value) || 0 })}
+            className="flex-1 text-[10px] rounded px-1 py-0.5"
+            style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            data-testid="input-query-value"
+          />
+        </div>
+
+        <button
+          onClick={() => onQueryChange({ ...query, active: true })}
+          className="w-full text-[10px] py-1 rounded border transition-colors"
+          style={{ backgroundColor: 'rgba(78,168,222,0.15)', borderColor: '#4ea8de', color: '#4ea8de' }}
+          data-testid="btn-query-submit"
+        >
+          Run Query
+        </button>
+
+        {query.active && (
+          <div className="text-[10px] text-[#82e0a8] text-center" data-testid="text-query-match-count">
+            {matchCount} object{matchCount !== 1 ? 's' : ''} matched
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

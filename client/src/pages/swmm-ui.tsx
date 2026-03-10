@@ -1,10 +1,13 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-types';
 import { createEmptyProject } from '@/lib/swmm-types';
 import { parseInpFile, SAMPLE_INP } from '@/lib/inp-parser';
 import { createMockEngine } from '@/lib/swmm-engine';
-import NetworkMap from '@/components/swmm/NetworkMap';
-import { LegendPanel, ProjectExplorer } from '@/components/swmm/Panels';
+import NetworkMap, { type NetworkMapHandle } from '@/components/swmm/NetworkMap';
+import { LegendPanel, ProjectExplorer, ObjectLocatorPanel, MapQueryPanel, evaluateQuery } from '@/components/swmm/Panels';
+import type { MapQuery } from '@/components/swmm/Panels';
+import SpeedBar from '@/components/swmm/SpeedBar';
+import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
 import {
   FolderOpen, Save, FilePlus, Play, Pause, Download, Upload, Settings,
@@ -16,6 +19,42 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+
+export interface SwmmPreferences {
+  flyoverHints: boolean;
+  confirmDeletions: boolean;
+  numericalPrecision: number;
+  blinkingMapMarker: boolean;
+  showNodeIds: boolean;
+  showLinkIds: boolean;
+  mapBackgroundColor: string;
+}
+
+const DEFAULT_PREFERENCES: SwmmPreferences = {
+  flyoverHints: true,
+  confirmDeletions: true,
+  numericalPrecision: 2,
+  blinkingMapMarker: true,
+  showNodeIds: true,
+  showLinkIds: true,
+  mapBackgroundColor: '#141a26',
+};
+
+function loadPreferences(): SwmmPreferences {
+  try {
+    const stored = localStorage.getItem('swmm5-preferences');
+    if (stored) {
+      return { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) };
+    }
+  } catch {}
+  return { ...DEFAULT_PREFERENCES };
+}
+
+function savePreferences(prefs: SwmmPreferences) {
+  localStorage.setItem('swmm5-preferences', JSON.stringify(prefs));
+}
 
 type MenuTab = 'File' | 'Edit' | 'View' | 'Map' | 'Project' | 'Help';
 
@@ -35,13 +74,40 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | null>(null);
   const [githubUrl, setGithubUrl] = useState('');
+  const [preferences, setPreferences] = useState<SwmmPreferences>(loadPreferences);
+
+  const updatePreference = useCallback(<K extends keyof SwmmPreferences>(key: K, value: SwmmPreferences[K]) => {
+    setPreferences(prev => {
+      const next = { ...prev, [key]: value };
+      savePreferences(next);
+      return next;
+    });
+  }, []);
   const [loading, setLoading] = useState(false);
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>('select');
+  const [showLocator, setShowLocator] = useState(false);
+  const [showQueryPanel, setShowQueryPanel] = useState(false);
+  const [mapQuery, setMapQuery] = useState<MapQuery>({
+    objectType: 'node',
+    property: 'elevation',
+    operator: '>',
+    value: 0,
+    active: false,
+  });
+  const [exportIncludeLegend, setExportIncludeLegend] = useState(true);
   const animRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const networkMapRef = useRef<NetworkMapHandle>(null);
 
   const maxTimeStep = results ? results.timeSteps.length - 1 : 0;
+
+  const queryMatchIds = useMemo(() => {
+    if (!mapQuery.active) return null;
+    return evaluateQuery(mapQuery, project);
+  }, [mapQuery, project]);
+  const queryObjectType = mapQuery.active ? mapQuery.objectType : null;
 
   const handleFileOpen = useCallback(async (file: File) => {
     try {
@@ -132,6 +198,51 @@ export default function SwmmUI() {
     toast({ title: 'Saved', description: `${fileName} downloaded` });
   }, [project, fileName, toast]);
 
+  const handleLocateObject = useCallback((objType: string, id: string) => {
+    type ObjType = 'junction' | 'outfall' | 'divider' | 'storage' | 'conduit' | 'pump' | 'orifice' | 'weir' | 'outlet' | 'subcatchment' | 'raingage' | 'label';
+    const objTypeMap: Record<string, ObjType | undefined> = {
+      junction: 'junction', outfall: 'outfall', storage: 'storage', divider: 'divider',
+      conduit: 'conduit', pump: 'pump', orifice: 'orifice', weir: 'weir', outlet: 'outlet',
+      subcatchment: 'subcatchment', raingage: 'raingage',
+    };
+    const mappedType = objTypeMap[objType];
+    if (!mappedType) return;
+
+    setSelectedObj({ id, objType: mappedType });
+
+    let wx: number | undefined;
+    let wy: number | undefined;
+
+    if (['junction', 'outfall', 'storage', 'divider'].includes(objType)) {
+      const coord = project.coordinates[id];
+      if (coord) { wx = coord[0]; wy = coord[1]; }
+    } else if (['conduit', 'pump', 'orifice', 'weir', 'outlet'].includes(objType)) {
+      const allLinks = [...project.conduits, ...project.pumps, ...project.orifices, ...project.weirs, ...project.outlets];
+      const link = allLinks.find((l: any) => l.id === id);
+      if (link) {
+        const fromCoord = project.coordinates[(link as any).fromNode];
+        const toCoord = project.coordinates[(link as any).toNode];
+        if (fromCoord && toCoord) {
+          wx = (fromCoord[0] + toCoord[0]) / 2;
+          wy = (fromCoord[1] + toCoord[1]) / 2;
+        }
+      }
+    } else if (objType === 'subcatchment') {
+      const poly = project.polygons[id];
+      if (poly && poly.length > 0) {
+        wx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+        wy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+      }
+    } else if (objType === 'raingage') {
+      const sym = project.symbols[id];
+      if (sym) { wx = sym[0]; wy = sym[1]; }
+    }
+
+    if (wx !== undefined && wy !== undefined) {
+      networkMapRef.current?.centerOnWorld(wx, wy);
+    }
+  }, [project]);
+
   const handleRunSimulation = useCallback(async () => {
     setSimStatus('running');
     setSimProgress(0);
@@ -156,6 +267,109 @@ export default function SwmmUI() {
     }
   }, [project, toast]);
 
+  const buildExportCanvas = useCallback(async (includeLegend: boolean): Promise<HTMLCanvasElement | null> => {
+    const mapCanvas = networkMapRef.current?.getCanvas();
+    if (!mapCanvas) return null;
+
+    if (!includeLegend) return mapCanvas;
+
+    const exportCanvas = document.createElement('canvas');
+    const legendWidth = 170;
+    exportCanvas.width = mapCanvas.width + legendWidth;
+    exportCanvas.height = mapCanvas.height;
+    const ctx = exportCanvas.getContext('2d');
+    if (!ctx) return mapCanvas;
+
+    ctx.drawImage(mapCanvas, 0, 0);
+
+    ctx.fillStyle = '#2a2a3e';
+    ctx.fillRect(mapCanvas.width, 0, legendWidth, mapCanvas.height);
+
+    ctx.strokeStyle = '#3a3a52';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(mapCanvas.width, 0);
+    ctx.lineTo(mapCanvas.width, mapCanvas.height);
+    ctx.stroke();
+
+    const x = mapCanvas.width + 12;
+    let y = 20;
+
+    ctx.fillStyle = '#e0e0e8';
+    ctx.font = 'bold 12px "JetBrains Mono", monospace';
+    ctx.fillText('Legend', x, y);
+    y += 24;
+
+    const legendColors = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
+    const nodeLabel = nodeTheme === 'depth' ? 'Node Depth' : 'Node Head';
+    const linkLabel = linkTheme === 'flow' ? 'Link Flow' : linkTheme === 'velocity' ? 'Link Velocity' : 'Link Depth';
+
+    ctx.fillStyle = '#8888a0';
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillText(nodeLabel, x, y);
+    y += 14;
+    legendColors.forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.fillRect(x, y, 10, 10);
+      ctx.fillStyle = '#e0e0e8';
+      ctx.font = '9px "JetBrains Mono", monospace';
+      ctx.fillText(`Level ${i + 1}`, x + 16, y + 9);
+      y += 14;
+    });
+    y += 8;
+
+    ctx.fillStyle = '#8888a0';
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillText(linkLabel, x, y);
+    y += 14;
+    legendColors.forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.fillRect(x, y, 10, 10);
+      ctx.fillStyle = '#e0e0e8';
+      ctx.font = '9px "JetBrains Mono", monospace';
+      ctx.fillText(`Level ${i + 1}`, x + 16, y + 9);
+      y += 14;
+    });
+
+    return exportCanvas;
+  }, [nodeTheme, linkTheme]);
+
+  const handleExportToFile = useCallback(async () => {
+    const canvas = await buildExportCanvas(exportIncludeLegend);
+    if (!canvas) {
+      toast({ title: 'Export Failed', description: 'No map canvas available', variant: 'destructive' });
+      return;
+    }
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName.replace(/\.inp$/i, '') + '_map.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: 'Exported', description: 'Map saved as PNG file' });
+    }, 'image/png');
+    setOpenDialog(null);
+  }, [buildExportCanvas, exportIncludeLegend, fileName, toast]);
+
+  const handleExportToClipboard = useCallback(async () => {
+    const canvas = await buildExportCanvas(exportIncludeLegend);
+    if (!canvas) {
+      toast({ title: 'Export Failed', description: 'No map canvas available', variant: 'destructive' });
+      return;
+    }
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Failed to create image blob');
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast({ title: 'Copied', description: 'Map copied to clipboard as PNG' });
+    } catch (e: any) {
+      toast({ title: 'Clipboard Error', description: e.message || 'Failed to copy to clipboard', variant: 'destructive' });
+    }
+    setOpenDialog(null);
+  }, [buildExportCanvas, exportIncludeLegend, toast]);
+
   useEffect(() => {
     if (!isAnimating || !results) {
       if (animRef.current) cancelAnimationFrame(animRef.current);
@@ -176,6 +390,46 @@ export default function SwmmUI() {
   }, [isAnimating, results]);
 
   const menus: MenuTab[] = ['File', 'Edit', 'View', 'Map', 'Project', 'Help'];
+
+  const handleDelete = useCallback(() => {
+    if (!selectedObj) return;
+    setProject(prev => {
+      const next = { ...prev };
+      const id = selectedObj.id;
+      const t = selectedObj.objType;
+      if (t === 'junction') next.junctions = prev.junctions.filter(j => j.id !== id);
+      else if (t === 'outfall') next.outfalls = prev.outfalls.filter(o => o.id !== id);
+      else if (t === 'storage') next.storageUnits = prev.storageUnits.filter(s => s.id !== id);
+      else if (t === 'divider') next.dividers = prev.dividers.filter(d => d.id !== id);
+      else if (t === 'conduit') next.conduits = prev.conduits.filter(c => c.id !== id);
+      else if (t === 'pump') next.pumps = prev.pumps.filter(p => p.id !== id);
+      else if (t === 'orifice') next.orifices = prev.orifices.filter(o => o.id !== id);
+      else if (t === 'weir') next.weirs = prev.weirs.filter(w => w.id !== id);
+      else if (t === 'outlet') next.outlets = prev.outlets.filter(o => o.id !== id);
+      else if (t === 'subcatchment') {
+        next.subcatchments = prev.subcatchments.filter(s => s.id !== id);
+        const newPolygons = { ...prev.polygons };
+        delete newPolygons[id];
+        next.polygons = newPolygons;
+      }
+      if (['junction', 'outfall', 'storage', 'divider'].includes(t)) {
+        const newCoords = { ...prev.coordinates };
+        delete newCoords[id];
+        next.coordinates = newCoords;
+      }
+      if (['conduit', 'pump', 'orifice', 'weir', 'outlet'].includes(t)) {
+        const newVerts = { ...prev.vertices };
+        delete newVerts[id];
+        next.vertices = newVerts;
+      }
+      return next;
+    });
+    setSelectedObj(null);
+  }, [selectedObj]);
+
+  const handleFullExtent = useCallback(() => {
+    networkMapRef.current?.fitExtent();
+  }, []);
 
   const flowUnits = project.options['FLOW_UNITS'] || 'CFS';
   const routingModel = project.options['FLOW_ROUTING'] || 'DYNWAVE';
@@ -235,7 +489,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save" onClick={handleSave} testId="btn-save-file" />
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" testId="btn-export" />
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" testId="btn-import" />
-            <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" testId="btn-prefs" />
+            <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
           </div>
         )}
         {activeMenu === 'Edit' && (
@@ -291,14 +545,14 @@ export default function SwmmUI() {
             <ToolbarButton icon={<ZoomOut className="w-4 h-4" />} label="Zoom Out" testId="btn-zoom-out" />
             <ToolbarButton icon={<Maximize className="w-4 h-4" />} label="Extent" testId="btn-extent" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Options" testId="btn-map-options" />
-            <ToolbarButton icon={<Search className="w-4 h-4" />} label="Query" testId="btn-query" />
-            <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" testId="btn-map-export" />
+            <ToolbarButton icon={<Search className="w-4 h-4" />} label="Query" onClick={() => setShowQueryPanel(!showQueryPanel)} testId="btn-query" />
+            <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" onClick={() => setOpenDialog('export')} testId="btn-map-export" />
           </div>
         )}
         {activeMenu === 'Project' && (
           <div className="flex items-center gap-0.5">
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Setup" testId="btn-setup" />
-            <ToolbarButton icon={<Search className="w-4 h-4" />} label="Locate" testId="btn-locate" />
+            <ToolbarButton icon={<Search className="w-4 h-4" />} label="Locate" onClick={() => setShowLocator(!showLocator)} testId="btn-locate" />
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" testId="btn-summary" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" testId="btn-details" />
             <div className="w-px h-8 bg-[#3a3a52] mx-1" />
@@ -330,20 +584,41 @@ export default function SwmmUI() {
       )}
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-[170px] shrink-0 overflow-hidden" style={{ backgroundColor: '#2a2a3e', borderRight: '1px solid #3a3a52' }}>
-          <LegendPanel
-            subcatchTheme={subcatchTheme}
-            nodeTheme={nodeTheme}
-            linkTheme={linkTheme}
-            showSubcatch={showSubcatch}
-            setShowSubcatch={setShowSubcatch}
-            layerVisibility={layerVisibility}
-            setLayerVisibility={setLayerVisibility}
-          />
+        <div className="w-[170px] shrink-0 overflow-hidden flex flex-col" style={{ backgroundColor: '#2a2a3e', borderRight: '1px solid #3a3a52' }}>
+          {showLocator && (
+            <ObjectLocatorPanel
+              project={project}
+              onLocate={handleLocateObject}
+              onClose={() => setShowLocator(false)}
+            />
+          )}
+          {showQueryPanel && (
+            <MapQueryPanel
+              query={mapQuery}
+              onQueryChange={setMapQuery}
+              onClose={() => {
+                setShowQueryPanel(false);
+                setMapQuery(prev => ({ ...prev, active: false }));
+              }}
+              matchCount={mapQuery.active ? evaluateQuery(mapQuery, project).size : 0}
+            />
+          )}
+          <div className="flex-1 overflow-hidden">
+            <LegendPanel
+              subcatchTheme={subcatchTheme}
+              nodeTheme={nodeTheme}
+              linkTheme={linkTheme}
+              showSubcatch={showSubcatch}
+              setShowSubcatch={setShowSubcatch}
+              layerVisibility={layerVisibility}
+              setLayerVisibility={setLayerVisibility}
+            />
+          </div>
         </div>
 
         <div className="flex-1 relative overflow-hidden">
           <NetworkMap
+            ref={networkMapRef}
             project={project}
             selectedObj={selectedObj}
             onSelectObj={setSelectedObj}
@@ -354,6 +629,19 @@ export default function SwmmUI() {
             timeStep={timeStep}
             results={results}
             layerVisibility={layerVisibility}
+            interactionMode={interactionMode}
+            preferences={preferences}
+            queryMatchIds={queryMatchIds}
+            queryObjectType={queryObjectType}
+          />
+
+          <SpeedBar
+            interactionMode={interactionMode}
+            onSetMode={setInteractionMode}
+            onDelete={handleDelete}
+            onRunSimulation={handleRunSimulation}
+            onFullExtent={handleFullExtent}
+            simRunning={simStatus === 'running'}
           />
 
           {!results && Object.keys(project.coordinates).length > 0 && (
@@ -454,6 +742,164 @@ export default function SwmmUI() {
               >
                 {loading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
                 Load
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'preferences'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] max-w-md" data-testid="preferences-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#e0e0e8]">
+              <Settings className="w-5 h-5" /> Preferences
+            </DialogTitle>
+            <DialogDescription className="text-[#8888a0]">
+              Configure application behavior and display settings
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="pref-flyover" className="text-[#e0e0e8] text-xs">Flyover Map Hints</Label>
+              <Switch
+                id="pref-flyover"
+                checked={preferences.flyoverHints}
+                onCheckedChange={v => updatePreference('flyoverHints', v)}
+                data-testid="switch-flyover-hints"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="pref-confirm" className="text-[#e0e0e8] text-xs">Confirm Deletions</Label>
+              <Switch
+                id="pref-confirm"
+                checked={preferences.confirmDeletions}
+                onCheckedChange={v => updatePreference('confirmDeletions', v)}
+                data-testid="switch-confirm-deletions"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="pref-precision" className="text-[#e0e0e8] text-xs">Numerical Precision</Label>
+              <select
+                id="pref-precision"
+                value={preferences.numericalPrecision}
+                onChange={e => updatePreference('numericalPrecision', +e.target.value)}
+                className="text-xs rounded px-2 py-1"
+                style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+                data-testid="select-numerical-precision"
+              >
+                {[0, 1, 2, 3, 4, 5, 6].map(n => (
+                  <option key={n} value={n}>{n} decimal places</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="pref-blink" className="text-[#e0e0e8] text-xs">Blinking Map Marker</Label>
+              <Switch
+                id="pref-blink"
+                checked={preferences.blinkingMapMarker}
+                onCheckedChange={v => updatePreference('blinkingMapMarker', v)}
+                data-testid="switch-blinking-marker"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="pref-nodeids" className="text-[#e0e0e8] text-xs">Show Node IDs</Label>
+              <Switch
+                id="pref-nodeids"
+                checked={preferences.showNodeIds}
+                onCheckedChange={v => updatePreference('showNodeIds', v)}
+                data-testid="switch-show-node-ids"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="pref-linkids" className="text-[#e0e0e8] text-xs">Show Link IDs</Label>
+              <Switch
+                id="pref-linkids"
+                checked={preferences.showLinkIds}
+                onCheckedChange={v => updatePreference('showLinkIds', v)}
+                data-testid="switch-show-link-ids"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="pref-bgcolor" className="text-[#e0e0e8] text-xs">Background Color</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="pref-bgcolor"
+                  type="color"
+                  value={preferences.mapBackgroundColor}
+                  onChange={e => updatePreference('mapBackgroundColor', e.target.value)}
+                  className="w-8 h-8 rounded border border-[#3a3a52] cursor-pointer"
+                  style={{ backgroundColor: 'transparent', padding: 0 }}
+                  data-testid="input-background-color"
+                />
+                <span className="text-[10px] font-mono text-[#8888a0]" data-testid="text-background-color">{preferences.mapBackgroundColor}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const def = { ...DEFAULT_PREFERENCES };
+                  setPreferences(def);
+                  savePreferences(def);
+                }}
+                className="bg-[#323248] border-[#3a3a52] text-[#e0e0e8]"
+                data-testid="btn-reset-preferences"
+              >
+                Reset Defaults
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setOpenDialog(null)}
+                className="bg-[#4ea8de] text-white"
+                data-testid="btn-close-preferences"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'export'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] max-w-sm" data-testid="export-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#e0e0e8]">
+              <Download className="w-5 h-5" /> Export Map
+            </DialogTitle>
+            <DialogDescription className="text-[#8888a0]">
+              Export the current map view as a PNG image
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="export-legend" className="text-[#e0e0e8] text-xs">Include Legend</Label>
+              <Switch
+                id="export-legend"
+                checked={exportIncludeLegend}
+                onCheckedChange={setExportIncludeLegend}
+                data-testid="switch-export-legend"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button
+                size="sm"
+                onClick={handleExportToFile}
+                className="bg-[#4ea8de] text-white w-full"
+                data-testid="btn-export-file"
+              >
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                Save as PNG File
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExportToClipboard}
+                className="bg-[#323248] border-[#3a3a52] text-[#e0e0e8] w-full"
+                data-testid="btn-export-clipboard"
+              >
+                <Clipboard className="w-3.5 h-3.5 mr-1.5" />
+                Copy to Clipboard
               </Button>
             </div>
           </div>

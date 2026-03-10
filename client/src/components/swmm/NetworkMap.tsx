@@ -1,5 +1,6 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-types';
+import type { SwmmPreferences } from '@/pages/swmm-ui';
 
 const COLORS = {
   mapBg: '#141a26',
@@ -31,9 +32,19 @@ interface Props {
   timeStep: number;
   results: SimulationResults | null;
   layerVisibility: Record<string, boolean>;
+  interactionMode?: string;
+  preferences?: SwmmPreferences;
+  queryMatchIds?: Set<string> | null;
+  queryObjectType?: 'node' | 'link' | 'subcatchment' | null;
 }
 
-export default function NetworkMap({
+export interface NetworkMapHandle {
+  getCanvas: () => HTMLCanvasElement | null;
+  fitExtent: () => void;
+  centerOnWorld: (wx: number, wy: number) => void;
+}
+
+const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   project,
   selectedObj,
   onSelectObj,
@@ -44,11 +55,16 @@ export default function NetworkMap({
   timeStep,
   results,
   layerVisibility,
-}: Props) {
+  interactionMode,
+  preferences,
+  queryMatchIds,
+  queryObjectType,
+}: Props, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mapState, setMapState] = useState<MapState>({ panX: 0, panY: 0, zoom: 1 });
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 500 });
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; id: string; info: string } | null>(null);
   const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
   const hasDragged = useRef(false);
   const mouseButton = useRef(0);
@@ -96,6 +112,37 @@ export default function NetworkMap({
     return { minX: minX - padX, minY: minY - padY, maxX: maxX + padX, maxY: maxY + padY };
   }, [project]);
 
+  const fitExtent = useCallback(() => {
+    hasInitialized.current = false;
+    const ext = getExtent();
+    const dataW = ext.maxX - ext.minX;
+    const dataH = ext.maxY - ext.minY;
+    const scaleX = canvasSize.w / dataW;
+    const scaleY = canvasSize.h / dataH;
+    const zoom = Math.min(scaleX, scaleY) * 0.85;
+    const cx = (ext.minX + ext.maxX) / 2;
+    const cy = (ext.minY + ext.maxY) / 2;
+    setMapState({
+      zoom,
+      panX: canvasSize.w / 2 - cx * zoom,
+      panY: canvasSize.h / 2 + cy * zoom,
+    });
+  }, [getExtent, canvasSize]);
+
+  const centerOnWorld = useCallback((wx: number, wy: number) => {
+    setMapState(prev => ({
+      ...prev,
+      panX: canvasSize.w / 2 - wx * prev.zoom,
+      panY: canvasSize.h / 2 + wy * prev.zoom,
+    }));
+  }, [canvasSize]);
+
+  useImperativeHandle(ref, () => ({
+    getCanvas: () => canvasRef.current,
+    fitExtent,
+    centerOnWorld,
+  }), [fitExtent, centerOnWorld]);
+
   useEffect(() => {
     if (hasInitialized.current) return;
     if (Object.keys(project.coordinates).length === 0 && Object.keys(project.polygons).length === 0) return;
@@ -130,6 +177,10 @@ export default function NetworkMap({
   }, [mapState]);
 
   const getNodeColor = useCallback((nodeId: string, nodeType: string) => {
+    if (queryMatchIds && queryObjectType === 'node') {
+      if (queryMatchIds.has(nodeId)) return '#ff4444';
+      return '#555566';
+    }
     if (results && results.timeSteps[timeStep]) {
       const nr = results.timeSteps[timeStep].nodes[nodeId];
       if (nr) {
@@ -144,9 +195,13 @@ export default function NetworkMap({
     if (nodeType === 'outfall') return '#82e0a8';
     if (nodeType === 'storage') return '#f0c060';
     return COLORS.nodeDefault;
-  }, [results, timeStep, nodeTheme]);
+  }, [results, timeStep, nodeTheme, queryMatchIds, queryObjectType]);
 
   const getLinkColor = useCallback((linkId: string) => {
+    if (queryMatchIds && queryObjectType === 'link') {
+      if (queryMatchIds.has(linkId)) return '#ff4444';
+      return '#555566';
+    }
     if (results && results.timeSteps[timeStep]) {
       const lr = results.timeSteps[timeStep].links[linkId];
       if (lr) {
@@ -158,7 +213,7 @@ export default function NetworkMap({
       }
     }
     return COLORS.linkDefault;
-  }, [results, timeStep, linkTheme]);
+  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType]);
 
   const getLinkWidth = useCallback((linkId: string) => {
     if (results && results.timeSteps[timeStep]) {
@@ -171,6 +226,10 @@ export default function NetworkMap({
   }, [results, timeStep]);
 
   const getSubcatchColor = useCallback((scId: string) => {
+    if (queryMatchIds && queryObjectType === 'subcatchment') {
+      if (queryMatchIds.has(scId)) return 'rgba(255,68,68,0.35)';
+      return 'rgba(85,85,102,0.15)';
+    }
     if (results && results.timeSteps[timeStep]) {
       const sr = results.timeSteps[timeStep].subcatchments[scId];
       if (sr) {
@@ -191,7 +250,7 @@ export default function NetworkMap({
       }
     }
     return COLORS.subcatchFill;
-  }, [results, timeStep, subcatchTheme, project.subcatchments]);
+  }, [results, timeStep, subcatchTheme, project.subcatchments, queryMatchIds, queryObjectType]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -204,7 +263,7 @@ export default function NetworkMap({
     canvas.height = canvasSize.h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.fillStyle = COLORS.mapBg;
+    ctx.fillStyle = preferences?.mapBackgroundColor || COLORS.mapBg;
     ctx.fillRect(0, 0, canvasSize.w, canvasSize.h);
 
     const gridSpacing = 50;
@@ -362,10 +421,12 @@ export default function NetworkMap({
         ctx.fill();
       }
 
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      ctx.font = `${Math.max(8, Math.min(10, mapState.zoom * 350))}px "JetBrains Mono", monospace`;
-      ctx.textAlign = 'center';
-      ctx.fillText(link.id, mx, my - 8);
+      if (preferences?.showLinkIds !== false) {
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.font = `${Math.max(8, Math.min(10, mapState.zoom * 350))}px "JetBrains Mono", monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(link.id, mx, my - 8);
+      }
     }
 
     for (const [nodeId, [nx, ny]] of Object.entries(project.coordinates)) {
@@ -410,10 +471,12 @@ export default function NetworkMap({
         ctx.stroke();
       }
 
-      ctx.fillStyle = isSelected ? COLORS.textSelected : COLORS.text;
-      ctx.font = `${Math.max(9, Math.min(11, mapState.zoom * 400))}px "JetBrains Mono", monospace`;
-      ctx.textAlign = 'left';
-      ctx.fillText(nodeId, sx + r + 4, sy - 2);
+      if (preferences?.showNodeIds !== false) {
+        ctx.fillStyle = isSelected ? COLORS.textSelected : COLORS.text;
+        ctx.font = `${Math.max(9, Math.min(11, mapState.zoom * 400))}px "JetBrains Mono", monospace`;
+        ctx.textAlign = 'left';
+        ctx.fillText(nodeId, sx + r + 4, sy - 2);
+      }
     }
 
     if (isLayerVisible('labels')) {
@@ -426,7 +489,7 @@ export default function NetworkMap({
       }
     }
 
-  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible]);
+  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -452,20 +515,131 @@ export default function NetworkMap({
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!mouseDownPos.current) return;
-    const dx = e.clientX - mouseDownPos.current.x;
-    const dy = e.clientY - mouseDownPos.current.y;
-    if (!hasDragged.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
-      hasDragged.current = true;
+    if (mouseDownPos.current) {
+      const dx = e.clientX - mouseDownPos.current.x;
+      const dy = e.clientY - mouseDownPos.current.y;
+      if (!hasDragged.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        hasDragged.current = true;
+      }
+      if (hasDragged.current) {
+        setTooltip(null);
+        setMapState(prev => ({
+          ...prev,
+          panX: prev.panX + (e.movementX || 0),
+          panY: prev.panY + (e.movementY || 0),
+        }));
+      }
+      return;
     }
-    if (hasDragged.current) {
-      setMapState(prev => ({
-        ...prev,
-        panX: prev.panX + (e.movementX || 0),
-        panY: prev.panY + (e.movementY || 0),
-      }));
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const hitRadius = 12;
+
+    for (const [nodeId, [nx, ny]] of Object.entries(project.coordinates)) {
+      const nType = project.outfalls.find(o => o.id === nodeId) ? 'outfall'
+        : project.storageUnits.find(s => s.id === nodeId) ? 'storage'
+        : project.dividers.find(dd => dd.id === nodeId) ? 'divider'
+        : 'junction';
+
+      if (nType === 'junction' && !isLayerVisible('junctions')) continue;
+      if (nType === 'outfall' && !isLayerVisible('outfalls')) continue;
+      if (nType === 'storage' && !isLayerVisible('storage')) continue;
+
+      const [nsx, nsy] = worldToScreen(nx, ny);
+      const d = Math.sqrt((sx - nsx) ** 2 + (sy - nsy) ** 2);
+      if (d < hitRadius) {
+        let info = '';
+        if (results && results.timeSteps[timeStep]) {
+          const nr = results.timeSteps[timeStep].nodes[nodeId];
+          if (nr) {
+            info = nodeTheme === 'depth' ? `Depth: ${nr.depth.toFixed(2)}` : `Head: ${nr.head.toFixed(2)}`;
+          }
+        }
+        if (!info) {
+          const junc = project.junctions.find(j => j.id === nodeId);
+          const outf = project.outfalls.find(o => o.id === nodeId);
+          const stor = project.storageUnits.find(s => s.id === nodeId);
+          if (junc) info = `Elev: ${junc.elevation}`;
+          else if (outf) info = `Elev: ${outf.elevation}`;
+          else if (stor) info = `Elev: ${stor.elevation}`;
+        }
+        setTooltip({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top - 8, id: nodeId, info });
+        return;
+      }
     }
-  }, []);
+
+    const allLinksHover: { id: string; from: string; to: string; type: string; layer: string }[] = [
+      ...project.conduits.map(c => ({ id: c.id, from: c.fromNode, to: c.toNode, type: 'conduit', layer: 'conduits' })),
+      ...project.pumps.map(p => ({ id: p.id, from: p.fromNode, to: p.toNode, type: 'pump', layer: 'pumps' })),
+      ...project.orifices.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'orifice', layer: 'orifices' })),
+      ...project.weirs.map(w => ({ id: w.id, from: w.fromNode, to: w.toNode, type: 'weir', layer: 'weirs' })),
+      ...project.outlets.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'outlet', layer: 'outlets' })),
+    ];
+
+    for (const link of allLinksHover) {
+      if (!isLayerVisible(link.layer)) continue;
+      const fromCoord = project.coordinates[link.from];
+      const toCoord = project.coordinates[link.to];
+      if (!fromCoord || !toCoord) continue;
+
+      const verts = project.vertices[link.id] || [];
+      const pts: [number, number][] = [
+        worldToScreen(fromCoord[0], fromCoord[1]),
+        ...verts.map(v => worldToScreen(v[0], v[1])),
+        worldToScreen(toCoord[0], toCoord[1]),
+      ];
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (distToSegment(sx, sy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 8) {
+          let info = '';
+          if (results && results.timeSteps[timeStep]) {
+            const lr = results.timeSteps[timeStep].links[link.id];
+            if (lr) {
+              info = linkTheme === 'flow' ? `Flow: ${lr.flow.toFixed(2)}`
+                : linkTheme === 'velocity' ? `Vel: ${lr.velocity.toFixed(2)}`
+                : `Depth: ${lr.depth.toFixed(2)}`;
+            }
+          }
+          if (!info) {
+            const conduit = project.conduits.find(c => c.id === link.id);
+            if (conduit) info = `Length: ${conduit.length}`;
+            else info = link.type;
+          }
+          setTooltip({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top - 8, id: link.id, info });
+          return;
+        }
+      }
+    }
+
+    if (showSubcatchments) {
+      for (const [scId, pts] of Object.entries(project.polygons)) {
+        const screenPts = pts.map(p => worldToScreen(p[0], p[1]));
+        if (pointInPolygon(sx, sy, screenPts)) {
+          let info = '';
+          if (results && results.timeSteps[timeStep]) {
+            const sr = results.timeSteps[timeStep].subcatchments[scId];
+            if (sr) {
+              info = subcatchTheme === 'runoff' ? `Runoff: ${sr.runoff.toFixed(2)}`
+                : subcatchTheme === 'rainfall' ? `Rain: ${sr.rainfall.toFixed(2)}`
+                : subcatchTheme === 'infiltration' ? `Infil: ${sr.infiltration.toFixed(2)}`
+                : `Imperv: ${(project.subcatchments.find(s => s.id === scId)?.pctImperv || 0).toFixed(1)}%`;
+            }
+          }
+          if (!info) {
+            const sc = project.subcatchments.find(s => s.id === scId);
+            if (sc) info = `Area: ${sc.area}`;
+          }
+          setTooltip({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top - 8, id: scId, info });
+          return;
+        }
+      }
+    }
+
+    setTooltip(null);
+  }, [project, worldToScreen, isLayerVisible, showSubcatchments, results, timeStep, nodeTheme, linkTheme, subcatchTheme]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
     const wasClick = mouseDownPos.current && !hasDragged.current && mouseButton.current === 0;
@@ -542,24 +716,12 @@ export default function NetworkMap({
 
   const handleMouseLeave = useCallback(() => {
     mouseDownPos.current = null;
+    setTooltip(null);
   }, []);
 
   const handleDoubleClick = useCallback(() => {
-    hasInitialized.current = false;
-    const ext = getExtent();
-    const dataW = ext.maxX - ext.minX;
-    const dataH = ext.maxY - ext.minY;
-    const scaleX = canvasSize.w / dataW;
-    const scaleY = canvasSize.h / dataH;
-    const zoom = Math.min(scaleX, scaleY) * 0.85;
-    const cx = (ext.minX + ext.maxX) / 2;
-    const cy = (ext.minY + ext.maxY) / 2;
-    setMapState({
-      zoom,
-      panX: canvasSize.w / 2 - cx * zoom,
-      panY: canvasSize.h / 2 + cy * zoom,
-    });
-  }, [getExtent, canvasSize]);
+    fitExtent();
+  }, [fitExtent]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative overflow-hidden" data-testid="network-map-container">
@@ -576,9 +738,37 @@ export default function NetworkMap({
         style={{ width: '100%', height: '100%', cursor: 'crosshair', display: 'block' }}
         data-testid="network-map-canvas"
       />
+      {tooltip && (
+        <div
+          data-testid="map-tooltip"
+          style={{
+            position: 'absolute',
+            left: tooltip.x,
+            top: tooltip.y,
+            pointerEvents: 'none',
+            backgroundColor: 'rgba(22, 22, 34, 0.92)',
+            border: '1px solid #4ea8de',
+            borderRadius: '4px',
+            padding: '4px 8px',
+            fontSize: '11px',
+            fontFamily: '"JetBrains Mono", monospace',
+            color: '#e0e0e8',
+            whiteSpace: 'nowrap',
+            zIndex: 50,
+            transform: 'translateY(-100%)',
+          }}
+        >
+          <span style={{ color: '#4ea8de', fontWeight: 600 }} data-testid="tooltip-id">{tooltip.id}</span>
+          {tooltip.info && (
+            <span style={{ color: '#a0a0b8', marginLeft: '6px' }} data-testid="tooltip-info">{tooltip.info}</span>
+          )}
+        </div>
+      )}
     </div>
   );
-}
+});
+
+export default NetworkMap;
 
 function pointInPolygon(x: number, y: number, polygon: [number, number][]): boolean {
   let inside = false;
