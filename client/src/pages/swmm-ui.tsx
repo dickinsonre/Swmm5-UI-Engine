@@ -97,6 +97,7 @@ export default function SwmmUI() {
     });
   }, []);
   const [loading, setLoading] = useState(false);
+  const [showSamplesMenu, setShowSamplesMenu] = useState(false);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('select');
   const [showLocator, setShowLocator] = useState(false);
   const [showQueryPanel, setShowQueryPanel] = useState(false);
@@ -836,26 +837,31 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" testId="btn-import" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
             <div className="w-px h-8 mx-1" style={{ backgroundColor: '#3a3a52' }} />
-            <div className="relative group">
-              <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Samples" testId="btn-samples" />
-              <div className="absolute left-0 top-full mt-0.5 hidden group-hover:block z-50 min-w-[260px] rounded shadow-lg border" style={{ backgroundColor: '#2a2a3e', borderColor: '#3a3a52' }}>
-                <button
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-[#3a3a52] text-[#c8c8d8]"
-                  onClick={() => handleLoadSample('Greenville_US.inp')}
-                  data-testid="btn-sample-greenville-us"
-                >
-                  Greenville (US Customary Units)
-                  <span className="block text-[10px] text-[#8888a0]">All SWMM5 features - CFS, Green-Ampt, DynWave</span>
-                </button>
-                <button
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-[#3a3a52] text-[#c8c8d8]"
-                  onClick={() => handleLoadSample('Greenville_SI.inp')}
-                  data-testid="btn-sample-greenville-si"
-                >
-                  Greenville (SI / Metric Units)
-                  <span className="block text-[10px] text-[#8888a0]">All SWMM5 features - CMS, Green-Ampt, DynWave</span>
-                </button>
-              </div>
+            <div className="relative">
+              <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Samples" onClick={() => setShowSamplesMenu(v => !v)} testId="btn-samples" />
+              {showSamplesMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowSamplesMenu(false)} />
+                  <div className="absolute left-0 top-full mt-0.5 z-50 min-w-[260px] rounded shadow-lg border" style={{ backgroundColor: '#2a2a3e', borderColor: '#3a3a52' }}>
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-[#3a3a52] text-[#c8c8d8]"
+                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_US.inp'); }}
+                      data-testid="btn-sample-greenville-us"
+                    >
+                      Greenville (US Customary Units)
+                      <span className="block text-[10px] text-[#8888a0]">All SWMM5 features - CFS, Green-Ampt, DynWave</span>
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-[#3a3a52] text-[#c8c8d8]"
+                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_SI.inp'); }}
+                      data-testid="btn-sample-greenville-si"
+                    >
+                      Greenville (SI / Metric Units)
+                      <span className="block text-[10px] text-[#8888a0]">All SWMM5 features - CMS, Green-Ampt, DynWave</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
