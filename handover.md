@@ -321,18 +321,192 @@ When deleting a node, the app also:
 
 ---
 
-## What's Not Implemented Yet
+## What's Not Implemented Yet — Critical Gaps
 
-1. **Real SWMM5 WASM engine** — the `createWasmEngine()` stub exists but the `.wasm` binary isn't included
-2. **Subcatchment creation** — no tool to draw new subcatchment polygons
-3. **Label placement** — addLabel mode exists in SpeedBar but click handler not connected
-4. **Weir/Orifice/Outlet drawing** — only Conduit and Pump link creation modes work
-5. **Confirm deletion prompt** — preference exists but not enforced in delete handlers
-6. **Blinking map marker** — preference exists but visual effect not implemented
-7. **Undo/Redo** — no history stack
-8. **Property editing** — Project Explorer shows properties read-only; inline editing not implemented
-9. **Report generation** — Report button exists but no actual report dialog
-10. **Cross-section editor** — no visual editor for pipe shapes
+### 1. No Real Simulation Engine (Mock Only)
+
+This is the biggest gap. The mock engine generates plausible-looking numbers (Gaussian storm peak, depth proportional to invert elevation, velocity from Manning's equation approximation) but they have **no physical basis**. An engineer can't use this tool to make any actual design decision.
+
+The `createWasmEngine()` stub exists in `swmm-engine.ts` and the architecture is WASM-ready, but the actual compilation hasn't been done.
+
+**Two realistic paths forward:**
+
+- **Path A — Client-side WASM:** Compile the EPA SWMM 5.2 engine (C code from the [EPA GitHub repository](https://github.com/USEPA/Stormwater-Management-Model)) to WebAssembly using Emscripten. The SWMM engine reads an `.inp` file, writes `.rpt` and `.out` files. With Emscripten's virtual filesystem, you can write the INP string to a virtual file, call the SWMM main function, and read results back. More impressive, eliminates server dependency.
+
+- **Path B — Server-side execution:** Run the compiled SWMM binary on the server, upload the INP, execute, and stream results back. Simpler to implement but requires server resources and adds latency. Gets byte-for-byte identical results to desktop SWMM.
+
+### 2. No Property Editing
+
+The Project Explorer shows properties **read-only**. An engineer can see that Junction J1 has an invert elevation of 100.0 ft, but can't change it. This makes the tool unusable for model construction or modification.
+
+**Suggestion:** Add inline editing to the property table in `ProjectExplorer`. When a user clicks a value cell, render a text input (numeric/string) or dropdown (enumerated values like outfall type, cross-section shape). On blur or Enter, validate and update the `SwmmProject` state immutably. Mark the project as "modified" (dirty flag for save prompts).
+
+### 3. No Subcatchment Drawing
+
+Subcatchments are the largest spatial features in a SWMM model. The app can *display* subcatchments loaded from INP files but can't *create* new ones.
+
+**Suggestion:** Add an `addSubcatchment` interaction mode that works like `groupSelect` — click to add polygon vertices, double-click or right-click to close. On completion, generate an auto-ID (S1, S2...), calculate area via the Shoelace formula, assign default properties, and prompt for outlet node assignment (or default to nearest junction).
+
+### 4. No Undo/Redo
+
+Any model editor without undo is dangerous. One accidental deletion can't be recovered.
+
+**Suggestion:** Implement a command pattern with an undo stack (50-100 operations). Each mutation to `SwmmProject` gets recorded as a reversible operation:
+- `AddNode { node, coordinates }` — undo removes it
+- `DeleteNode { node, coordinates, connectedLinks }` — undo restores everything
+- `MoveNode { nodeId, fromXY, toXY }` — undo moves back
+- `EditProperty { objectType, objectId, property, oldValue, newValue }` — undo restores old value
+- `GroupEdit { changes[] }` — undo reverses all changes
+
+Ctrl+Z for undo, Ctrl+Shift+Z for redo.
+
+### 5. No Report Generation
+
+The SWMM status report is the primary output engineers review. It contains continuity errors, node flooding summary, link capacity summary, and other critical results.
+
+**Suggestion:** Generate an HTML report from `SimulationResults`:
+- Analysis options summary
+- Flow routing continuity
+- Node depth summary (max depth, hours flooded, max HGL)
+- Node flooding summary
+- Link flow summary (max flow, max velocity, max d/D)
+- Subcatchment runoff summary (total precip, total runoff, peak runoff, runoff coefficient)
+
+### 6. Other Missing Features
+
+- **Label placement** — `addLabel` mode exists in SpeedBar but click handler not connected
+- **Weir/Orifice/Outlet drawing** — only Conduit and Pump link creation modes work
+- **Confirm deletion prompt** — preference exists but not enforced in delete handlers
+- **Blinking map marker** — preference exists but visual effect not implemented
+- **Cross-section editor** — no visual editor for pipe shapes
+
+---
+
+## Architecture Improvement Ideas
+
+### Split Monolithic Files
+
+Three files carry the entire application:
+- `swmm-ui.tsx` — 1,500+ lines
+- `NetworkMap.tsx` — 1,000+ lines
+- `inp-parser.ts` — 976 lines
+
+Suggested decomposition:
+
+**`swmm-ui.tsx` should become:**
+- `SwmmApp.tsx` — layout and routing only
+- `useSwmmProject.ts` — custom hook for project state, mutations, and dirty tracking
+- `useSimulation.ts` — custom hook for simulation execution and results
+- `useFileIO.ts` — custom hook for open/save/export operations
+- `MenuBar.tsx` — menu tabs and context toolbars
+- `StatusBar.tsx` — bottom status bar
+- `dialogs/` — individual dialog components (GitHubLoad, Preferences, Export, GroupEdit)
+
+**`NetworkMap.tsx` should become:**
+- `NetworkMap.tsx` — component shell, event handlers, state
+- `renderer.ts` — pure functions for drawing (drawNodes, drawLinks, drawSubcatchments, drawGrid)
+- `hit-testing.ts` — pure functions for hitTestNode, hitTestLink, pointInPolygon
+- `coordinates.ts` — worldToScreen, screenToWorld, fitExtent calculations
+
+**`inp-parser.ts` should become:**
+- `parser/sections/` — one file per INP section parser
+- `parser/index.ts` — orchestrator that dispatches to section parsers
+- `serializer/` — one file per INP section serializer
+- `sample-data.ts` — the SAMPLE_INP constant (inflates the parser's line count)
+
+### Extract State to a Store
+
+The `SwmmProject` state currently lives as `useState` in `swmm-ui.tsx` and is passed as props through multiple layers (prop drilling). This makes it difficult to access project data from deeply nested components.
+
+**Suggestion:** Use Zustand (lightweight) or React Context + useReducer (no new dependency) to create a project store:
+
+```typescript
+interface SwmmStore {
+  project: SwmmProject;
+  selectedObj: SelectedObject | null;
+  results: SimulationResults | null;
+  isDirty: boolean;
+  addNode: (type: string, x: number, y: number) => void;
+  deleteObject: (obj: SelectedObject) => void;
+  updateProperty: (objType: string, id: string, prop: string, value: any) => void;
+  loadProject: (inp: string) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+}
+```
+
+This would simplify the component hierarchy significantly — `NetworkMap`, `ProjectExplorer`, and `Panels` could all access the store directly instead of receiving 20+ props.
+
+---
+
+## Future Engineering Ideas (Web Platform Advantages)
+
+These are features that a web-based SWMM UI could offer that the desktop app can't:
+
+### Collaborative Modeling
+Real-time collaboration (like Google Docs for drainage models). Multiple engineers working on different parts of the same network simultaneously. Impossible with the desktop app's single-file lock model.
+
+### Version-Controlled Model History
+Integrate with Git to track every change to the INP file. Engineers could see who changed what, when, and why — and roll back to any previous version. The INP format is text-based, which makes it naturally Git-friendly. The web UI could show diffs visually on the network map (changed nodes highlighted, added conduits in green, deleted ones in red).
+
+### API-Driven Model Construction
+Expose the `SwmmProject` data model via a REST or WebSocket API so that external tools can build models programmatically:
+- GIS-to-SWMM automation (delineate subcatchments in a GIS, push to the web UI)
+- Parametric model generation (create 100 variants with different LID configurations)
+- Real-time sensor integration (update model with live rainfall data, run simulation, push control actions)
+
+### Integrated CFL/Discretization Analysis
+Build in conduit discretization analysis directly. When a user loads a model, automatically flag conduits that violate CFL stability criteria for the configured routing timestep. Offer one-click discretization — split flagged conduits with interpolated intermediate junctions — visually on the map.
+
+### Side-by-Side Scenario Comparison
+Load two INP files (or two versions of the same model) and render them on split-screen or overlay canvases. Highlight differences in network topology, pipe sizes, subcatchment properties, and simulation results. This is a common workflow (pre/post development, existing/proposed conditions) that the desktop app handles poorly.
+
+### Mobile-Friendly Field Inspection Mode
+A simplified read-only view optimized for tablets that engineers could use during field inspections. Tap a manhole on the map to see its design parameters and compare against observed conditions. Take a photo and attach it to the node.
+
+### LID/GI Design Wizard
+A guided workflow for adding Low Impact Development controls to subcatchments. Select a subcatchment, choose LID type (bioretention, permeable pavement, rain garden, green roof), enter dimensions and soil parameters, run simulation, see runoff reduction. This wraps SWMM's complex LID parameter input (12+ parameters) in a user-friendly interface.
+
+### Real-Time Control Simulation
+Define control rules visually (if node depth > X, then open orifice Y) and see the effects animated on the map. Real-time animation with interactive control parameter adjustment is far more intuitive than SWMM's text-based control rules.
+
+---
+
+## Priority Roadmap
+
+If taking over this project, here's the recommended order:
+
+| Priority | Task | Impact | Effort |
+|----------|------|--------|--------|
+| 1 | **Property editing in Project Explorer** | Transforms viewer into editor | Medium |
+| 2 | **WASM engine integration** | Transforms demo into tool | High |
+| 3 | **Undo/redo stack** | Enables fearless editing | Medium |
+| 4 | **Subcatchment drawing mode** | Completes network construction | Medium |
+| 5 | **Split monolithic files** | Enables maintainability and contribution | Medium |
+| 6 | **Report generation** | Completes simulation workflow | Low-Medium |
+| 7 | **CFL/discretization analysis** | Unique value-add over desktop | Medium |
+| 8 | **Weir/orifice/outlet creation modes** | Completes link types | Low |
+| 9 | **State management refactor** | Enables collaborative features | Medium |
+| 10 | **LID design wizard** | High-value UX improvement | High |
+
+**Items 1-4** get you to a minimum viable SWMM editor. **Items 5-6** make it production-quality. **Items 7-10** make it better than the desktop app.
+
+---
+
+## Current Grade: B+ (86/100)
+
+| Category | Score | Max | Notes |
+|----------|-------|-----|-------|
+| Technical Implementation | 24 | 25 | Excellent Canvas rendering, solid parser, clean data model |
+| Feature Completeness | 16 | 25 | Good viewing/navigation, but no editing, no real simulation |
+| Practical Utility for Engineers | 15 | 25 | Can visualize INP files; can't do engineering work yet |
+| Architecture & Maintainability | 18 | 25 | Good type system, but monolithic files need decomposition |
+
+**The path from B+ to A:** property editing + WASM engine + undo/redo. Those three features turn this from "interesting tech demo" into "tool I'd actually use."
+
+**The path from A to A+:** the stuff the desktop app *can't* do — collaboration, version control, API-driven model construction, and integrated CFL analysis. That's where the web platform's advantages become decisive.
 
 ---
 
@@ -348,4 +522,17 @@ In production, Vite builds static assets to `dist/public` and Express serves the
 
 ## Sample Data
 
-A built-in sample network (`SAMPLE_INP` in `inp-parser.ts`) is loaded by default when the app starts. This provides a working network to interact with immediately without uploading a file. It contains junctions, conduits, outfalls, subcatchments, rain gages, and all necessary coordinates/polygons.
+### Built-in Example
+A small sample network (`SAMPLE_INP` in `inp-parser.ts`) is loaded by default when the app starts. Contains a handful of junctions, conduits, outfalls, subcatchments, and rain gages.
+
+### Greenville Sample Projects
+Two comprehensive Greenville, NC stormwater models are available via **File > Samples** in the toolbar (or from the empty state screen):
+
+| File | Units | Description |
+|------|-------|-------------|
+| `Greenville_US.inp` | US Customary (CFS) | Full-featured model with all SWMM5 capabilities — LID controls, aquifers, groundwater, transects, RDII, snowpacks, pollutants, etc. (~14,000 lines, 172 nodes) |
+| `Greenville_SI.inp` | SI / Metric (CMS) | Same network in metric units |
+
+Both use Green-Ampt infiltration, dynamic wave routing, and demonstrate virtually every SWMM5 feature. These files are served from `client/public/samples/` and loaded on demand (not bundled into the JS).
+
+Note: The INP parser handles these files gracefully — sections it doesn't recognize (like `[LID_CONTROLS]`, `[AQUIFERS]`, `[TRANSECTS]`, etc.) are silently skipped during parsing. The network geometry, nodes, links, and subcatchments all load and display correctly.

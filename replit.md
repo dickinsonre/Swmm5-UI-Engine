@@ -75,5 +75,13 @@ Status Bar
 - `MapQuery` type and `evaluateQuery` function exported from `Panels.tsx`
 - `NetworkMapHandle` interface (getCanvas, fitExtent, centerOnWorld) from `NetworkMap.tsx`
 
+## Sample Projects
+- Two Greenville, NC models available via File > Samples dropdown or empty state screen
+- `client/public/samples/Greenville_US.inp` — US Customary units (CFS), ~14,000 lines, 172 nodes
+- `client/public/samples/Greenville_SI.inp` — SI/Metric units (CMS), same network
+- Both demonstrate all SWMM5 features (LID, aquifers, groundwater, transects, etc.)
+- Loaded on-demand via fetch (not bundled into JS)
+- Parser silently skips unrecognized sections
+
 ## WASM Engine
 Currently uses a mock engine that generates plausible time-varying results. The `swmm-engine.ts` file has the integration point for a real SWMM5 WASM binary (`createWasmEngine()`).

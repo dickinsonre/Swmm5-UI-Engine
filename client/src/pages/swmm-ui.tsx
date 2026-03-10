@@ -13,7 +13,7 @@ import {
   FolderOpen, Save, FilePlus, Play, Pause, Download, Upload, Settings,
   ZoomIn, ZoomOut, Maximize, Info, HelpCircle, FileText, Clipboard,
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
-  Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X,
+  Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -202,6 +202,26 @@ export default function SwmmUI() {
     setTimeStep(0);
     setSelectedObj(null);
   }, []);
+
+  const handleLoadSample = useCallback(async (sampleName: string) => {
+    setLoading(true);
+    try {
+      const resp = await fetch(`/samples/${sampleName}`);
+      if (!resp.ok) throw new Error(`Failed to load sample: ${resp.statusText}`);
+      const text = await resp.text();
+      const parsed = parseInpFile(text);
+      setProject(parsed);
+      setFileName(sampleName);
+      setResults(null);
+      setSimStatus('none');
+      setTimeStep(0);
+      setSelectedObj(null);
+      toast({ title: 'Sample Loaded', description: `${sampleName} loaded successfully` });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+    setLoading(false);
+  }, [toast]);
 
   const handleSave = useCallback(async () => {
     const { projectToInp } = await import('@/lib/inp-parser');
@@ -815,6 +835,28 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" testId="btn-export" />
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" testId="btn-import" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
+            <div className="w-px h-8 mx-1" style={{ backgroundColor: '#3a3a52' }} />
+            <div className="relative group">
+              <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Samples" testId="btn-samples" />
+              <div className="absolute left-0 top-full mt-0.5 hidden group-hover:block z-50 min-w-[260px] rounded shadow-lg border" style={{ backgroundColor: '#2a2a3e', borderColor: '#3a3a52' }}>
+                <button
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-[#3a3a52] text-[#c8c8d8]"
+                  onClick={() => handleLoadSample('Greenville_US.inp')}
+                  data-testid="btn-sample-greenville-us"
+                >
+                  Greenville (US Customary Units)
+                  <span className="block text-[10px] text-[#8888a0]">All SWMM5 features - CFS, Green-Ampt, DynWave</span>
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-[#3a3a52] text-[#c8c8d8]"
+                  onClick={() => handleLoadSample('Greenville_SI.inp')}
+                  data-testid="btn-sample-greenville-si"
+                >
+                  Greenville (SI / Metric Units)
+                  <span className="block text-[10px] text-[#8888a0]">All SWMM5 features - CMS, Green-Ampt, DynWave</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {activeMenu === 'Edit' && (
@@ -1039,6 +1081,29 @@ export default function SwmmUI() {
                 >
                   <Github className="w-3.5 h-3.5 mr-1.5" /> From GitHub
                 </Button>
+              </div>
+              <div className="text-center mt-2">
+                <p className="text-[10px] text-[#6a6a80] mb-2">Or load a sample project:</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleLoadSample('Greenville_US.inp')}
+                    className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] hover:bg-[#3a3a52] text-[11px]"
+                    data-testid="btn-sample-us-empty"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Greenville (US)
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleLoadSample('Greenville_SI.inp')}
+                    className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] hover:bg-[#3a3a52] text-[11px]"
+                    data-testid="btn-sample-si-empty"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Greenville (SI)
+                  </Button>
+                </div>
               </div>
             </div>
           )}
