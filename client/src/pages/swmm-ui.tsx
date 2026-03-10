@@ -1404,6 +1404,12 @@ export default function SwmmUI() {
                   <div className="text-[9px] text-[#6b6b7b] mt-0.5">No discretization needed for stability</div>
                 </div>
               )}
+
+              <div className="px-3 py-2 border-t border-[#d0d0d8] mt-1">
+                <div className="text-[8px] text-[#9090a0] leading-relaxed" data-testid="text-cfl-citation">
+                  ReSWMM — R. Dickinson &amp; S. Mudd
+                </div>
+              </div>
             </div>
           )}
 
