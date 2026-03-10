@@ -8,8 +8,9 @@ import type { CflAnalysisResult, DiscretizationSettings, DiscretizationResult } 
 import { importCsvNodes, importCsvLinks, parseDxfFile, importDxfEntities, importGeoJsonNodes, importGeoJsonLinks, parseGeoJsonToNetwork, exportNodesCsv, exportLinksCsv, exportDxf } from '@/lib/import-export';
 import type { SwmmEngine } from '@/lib/swmm-engine';
 import NetworkMap, { type NetworkMapHandle } from '@/components/swmm/NetworkMap';
-import { LegendPanel, ProjectExplorer, ObjectLocatorPanel, MapQueryPanel, evaluateQuery } from '@/components/swmm/Panels';
+import { LegendPanel, ObjectLocatorPanel, MapQueryPanel, evaluateQuery } from '@/components/swmm/Panels';
 import type { MapQuery } from '@/components/swmm/Panels';
+import ProjectExplorer from '@/components/swmm/ProjectExplorer';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';

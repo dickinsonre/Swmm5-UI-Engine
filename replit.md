@@ -12,7 +12,8 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 ### Frontend
 - `client/src/pages/swmm-ui.tsx` - Main page layout (menus, toolbar, status bar, file handling, preferences, context menus, group editing, object creation/manipulation callbacks)
 - `client/src/components/swmm/NetworkMap.tsx` - Canvas-based network visualization with pan/zoom, hit-testing, rubber-band drawing, group polygon rendering, tooltip overlay
-- `client/src/components/swmm/Panels.tsx` - Legend panel, Project Explorer, Object Locator, Map Query panel
+- `client/src/components/swmm/Panels.tsx` - Legend panel, Object Locator, Map Query panel
+- `client/src/components/swmm/ProjectExplorer.tsx` - Full HTML Project Explorer with tree navigation, search, context menus, data grid overlay, property editor
 - `client/src/components/swmm/SpeedBar.tsx` - Speed bar with interaction mode buttons (vertical on desktop, horizontal scrollable bottom bar on mobile)
 - `client/src/lib/swmm-types.ts` - TypeScript interfaces for all SWMM5 model objects
 - `client/src/lib/inp-parser.ts` - Complete SWMM5 INP file parser and INP file rebuild with safe column padding (`padField`)

@@ -1,0 +1,376 @@
+# Project Explorer Design — SWMM5-UI
+
+## Grade for Existing Streamlit App: **B+ (85/100)**
+
+| Category | Score | Notes |
+|---|---|---|
+| **Parsing** | 9/10 | Solid multi-section parser, good encoding detection |
+| **Visualization** | 8/10 | Rich chart variety, but no network/map rendering |
+| **UX/Polish** | 7/10 | Themed well, but Streamlit limits interactivity |
+| **Architecture** | 7/10 | Monolithic — parser not separated from UI |
+| **SWMM Domain** | 8/10 | Covers major sections, missing LID, Controls, RDII |
+| **Performance** | 8/10 | Good for medium files; 200MB limit is generous |
+| **Extensibility** | 7/10 | Streamlit makes it hard to add features like a Project Explorer |
+
+**Summary**: Strong analytical tool for viewing INP data. The gap is that it's a *viewer*, not a *modeler*. A Project Explorer is exactly the feature that bridges that gap.
+
+---
+
+## Project Explorer — Full Design Specification
+
+### 1. Structure (Complete Tree)
+
+Based on the screenshot and the full SWMM5 INP specification, here is the canonical tree. Item counts are parsed live from the loaded INP file. Empty sections show`(0)` and are visually dimmed.
+
+```
+Project Explorer
+│
+├── 📄 Title / Notes
+│
+├── ⚙️ Analysis Options          ← collapsible group
+│   ├── General
+│   ├── Hydrology
+│   ├── Hydraulics
+│   ├── Routing
+│   ├── Quality
+│   ├── Dates
+│   ├── Time Steps
+│   └── Reporting
+│
+├── 🌧️ Climatology               ← collapsible group
+│   ├── Rain Gages (1)
+│   ├── Evaporation
+│   ├── Temperature
+│   ├── Adjustments
+│   └── Snow Packs (0)
+│
+├── 🏞️ Subcatchments (5)         ← collapsible group
+│   ├── Subareas
+│   ├── Infiltration
+│   ├── LID Controls (0)
+│   ├── LID Usage (0)
+│   ├── Aquifers (0)
+│   ├── Groundwater (0)
+│   ├── GWF (0)
+│   ├── Coverages (0)
+│   └── Initial Loadings (0)
+│
+├── ○ Network Nodes              ← collapsible group
+│   ├── Junctions (5)
+│   ├── Outfalls (1)
+│   ├── Dividers (0)
+│   └── Storage Units (1)
+│
+├── ─ Network Links              ← collapsible group
+│   ├── Conduits (6)
+│   ├── Pumps (0)
+│   ├── Orifices (0)
+│   ├── Weirs (0)
+│   ├── Outlets (0)
+│   ├── Cross-Sections
+│   ├── Transects (0)
+│   ├── Streets (0)
+│   ├── Inlets (0)
+│   ├── Inlet Usage (0)
+│   └── Losses (0)
+│
+├── 💧 Dry Weather               ← collapsible group
+│   ├── Dry Weather Flow (0)
+│   ├── RDII (0)
+│   ├── Hydrographs (0)
+│   └── Patterns (0)
+│
+├── 📥 External Inflows          ← collapsible group
+│   ├── Direct Inflows (0)
+│   ├── Time Series (2)
+│   └── Curves (1)
+│
+├── 🧪 Water Quality             ← collapsible group
+│   ├── Pollutants (0)
+│   ├── Land Uses (0)
+│   ├── Buildup (0)
+│   ├── Washoff (0)
+│   └── Treatment (0)
+│
+├── 🔧 Controls                  ← collapsible group
+│   └── Control Rules (0)
+│
+├── 🗺️ Map / GIS                 ← collapsible group
+│   ├── Coordinates
+│   ├── Vertices
+│   ├── Polygons
+│   ├── Symbols
+│   ├── Labels
+│   └── Backdrop
+│
+└── 🏷️ Tags / Profiles
+    ├── Tags (0)
+    └── Profiles (0)
+```
+
+### 2. Interaction Model
+
+#### Click Behavior
+
+| Action | Target | Result |
+|---|---|---|
+| **Single click** on group header |`Network Nodes`| Expand/collapse the group |
+| **Single click** on leaf item |`Junctions (5)`| Open data grid in center panel showing all junctions |
+| **Double click** on leaf item |`Junctions (5)`| Open data grid + auto-fit columns |
+| **Single click** on options sub-item |`Hydraulics`| Open the options editor for that category |
+| **Click** on`Title / Notes`| — | Open a text editor for the TITLE section |
+
+#### Right-Click Context Menus
+
+**On a data leaf item** (e.g.,`Junctions (5)`):
+
+```
+┌──────────────────────────────┐
+│ 📋 View Table                │
+│ 📊 Summary Statistics        │
+│ ─────────────────────────    │
+│ ➕ Add Junction...           │
+│ 📥 Import from CSV...       │
+│ 📤 Export to CSV...          │
+│ ─────────────────────────    │
+│ 🗺️ Zoom to All on Map       │
+│ 📈 Quick Chart...        ▸  │
+│   ├── Histogram              │
+│   ├── Box Plot               │
+│   └── Scatter Matrix         │
+│ ─────────────────────────    │
+│ 🔍 Find in Map...           │
+│ 🏷️ Filter by Tag...         │
+└──────────────────────────────┘
+```
+
+**On a group header** (e.g.,`Network Nodes`):
+
+```
+┌──────────────────────────────┐
+│ 📋 Expand All Children       │
+│ 📋 Collapse All Children     │
+│ ─────────────────────────    │
+│ 📊 Group Summary             │
+│ 📤 Export All to CSV...      │
+└──────────────────────────────┘
+```
+
+#### Drag and Drop
+
+- Drag an INP file onto the Project Explorer → loads the file
+- Drag a CSV file onto a leaf item (e.g.,`Junctions`) → prompts import dialog with column mapping
+
+### 3. Visual States
+
+```
+State Indicators:
+─────────────────
+● Junctions (5)        ← Blue dot: has data, no issues
+⚠ Conduits (6)         ← Warning: validation issues found
+✓ Outfalls (1)         ← Green check: validated, all good
+○ Dividers (0)         ← Empty circle: section exists, no data
+  Snow Packs (0)       ← Dimmed text: section not present in INP
+
+After Simulation:
+─────────────────
+● Junctions (5) 📊     ← Chart icon appears: results available
+```
+
+#### Badge Counts
+
+Counts update reactively. When a user adds a junction via the map or grid,`Junctions (5)` immediately becomes`Junctions (6)`.
+
+### 4. Search / Filter Bar
+
+At the top of the Project Explorer panel:
+
+```
+┌─────────────────────────────────┐
+│ 🔍 Search sections or items... │
+└─────────────────────────────────┘
+```
+
+**Behavior:**
+- Typing`junc` filters tree to show only`Junctions`
+- Typing`J1` searches across all sections for any element named`J1`, highlighting the matching section and scrolling to it
+- Typing`elev > 100` performs a quick filter across numeric fields (power-user feature)
+-`Esc` clears the search
+
+### 5. Toolbar Icons (Right Edge Strip)
+
+Based on your screenshot, the right-edge icon strip maps to:
+
+```
+Icon    Action                  Shortcut
+────    ──────                  ────────
+🔷      Select mode             S
+○       Add Node (Junction)     N
+△       Add Outfall             —
+□       Add Storage Unit        —
+─       Add Conduit             L
+⚡      Add Pump                —
+🏷️      Add Label               —
+📋      Properties panel        P
+🗑️      Delete selected         Del
+▶️      Run simulation          F5
+⛶       Fit to window           F
+```
+
+### 6. State Synchronization — The Key Design Principle
+
+The Project Explorer must stay in perfect sync with three other panels:
+
+```
+┌─────────────┐    ┌──────────────┐    ┌──────────────────┐
+│   Project    │◄──►│  Map Canvas  │◄──►│  Property Editor  │
+│   Explorer   │    │   (center)   │    │   (bottom/side)   │
+└──────┬───────┘    └──────┬───────┘    └──────────────────┘
+       │                   │
+       └───────┬───────────┘
+               ▼
+       ┌───────────────┐
+       │   Data Grid    │
+       │ (center panel) │
+       └───────────────┘
+```
+
+| User Action | Project Explorer Response |
+|---|---|
+| Click`J1` on the map | Explorer highlights`Junctions`, property editor shows`J1` |
+| Delete`J1` in the grid | Explorer updates count to`Junctions (4)` |
+| Add junction on map | Explorer updates count, flashes briefly |
+| Run simulation | Result icons (📊) appear on sections with output |
+| Click`Conduits` in Explorer | Map highlights all conduits, grid shows conduit table |
+
+### 7. Post-Simulation Additions
+
+After a run completes, the tree extends:
+
+```
+Project Explorer
+│
+├── ... (all input sections as before) ...
+│
+└── 📊 Simulation Results        ← NEW: appears after run
+    ├── Run Summary
+    ├── Node Results
+    │   ├── Depth
+    │   ├── Head
+    │   ├── Inflow
+    │   └── Flooding
+    ├── Link Results
+    │   ├── Flow
+    │   ├── Velocity
+    │   ├── Depth
+    │   └── Capacity
+    ├── Subcatchment Results
+    │   ├── Runoff
+    │   ├── Infiltration
+    │   └── Evaporation
+    ├── System Continuity
+    │   ├── Flow Routing
+    │   └── Runoff Quantity
+    └── ⚠️ Warnings & Errors (3)
+```
+
+Clicking any result leaf opens a time-series viewer or summary table in the center panel.
+
+### 8. Keyboard Navigation
+
+| Key | Action |
+|---|---|
+|`↑` /`↓`| Move selection up/down in tree |
+|`→`| Expand group |
+|`←`| Collapse group |
+|`Enter`| Open selected item in grid |
+|`F2`| Rename (for Title/Notes only) |
+|`Ctrl+F`| Focus search bar |
+|`Del`| Delete selected element (with confirmation) |
+|`Ctrl+E`| Export selected section |
+
+### 9. Implementation Architecture
+
+```
+src/
+├── components/
+│   └── ProjectExplorer/
+│       ├── ProjectExplorer.tsx        # Main container
+│       ├── TreeNode.tsx               # Recursive tree node
+│       ├── TreeGroup.tsx              # Collapsible group
+│       ├── TreeLeaf.tsx               # Clickable leaf item
+│       ├── SearchBar.tsx              # Filter/search input
+│       ├── ContextMenu.tsx            # Right-click menus
+│       ├── BadgeCount.tsx             # Reactive count badge
+│       ├── StatusIndicator.tsx        # ● ⚠ ✓ ○ icons
+│       └── ProjectExplorer.css
+│
+├── hooks/
+│   ├── useProjectTree.ts             # Builds tree from parsed INP
+│   ├── useTreeSelection.ts           # Manages selected node state
+│   └── useTreeSync.ts                # Syncs with map/grid/props
+│
+├── stores/
+│   └── projectExplorerStore.ts       # Zustand store for tree state
+│
+└── config/
+    └── swmmTreeStructure.ts          # Static tree shape definition
+```
+
+**Tree structure definition** (`swmmTreeStructure.ts`):
+
+```typescript
+export const SWMM_TREE = [
+  {
+    id: 'title',
+    label: 'Title / Notes',
+    icon: 'file-text',
+    type: 'editor',
+    inpSection: 'TITLE',
+  },
+  {
+    id: 'options',
+    label: 'Analysis Options',
+    icon: 'settings',
+    type: 'group',
+    children: [
+      { id: 'opt-general',    label: 'General',    editorType: 'options-form' },
+      { id: 'opt-hydrology',  label: 'Hydrology',  editorType: 'options-form' },
+      { id: 'opt-hydraulics', label: 'Hydraulics',  editorType: 'options-form' },
+      { id: 'opt-routing',    label: 'Routing',     editorType: 'options-form' },
+      { id: 'opt-quality',    label: 'Quality',     editorType: 'options-form' },
+      { id: 'opt-dates',      label: 'Dates',       editorType: 'options-form' },
+      { id: 'opt-timesteps',  label: 'Time Steps',  editorType: 'options-form' },
+      { id: 'opt-reporting',  label: 'Reporting',   editorType: 'options-form' },
+    ],
+  },
+  {
+    id: 'nodes',
+    label: 'Network Nodes',
+    icon: 'circle',
+    type: 'group',
+    children: [
+      { id: 'junctions', label: 'Junctions', inpSection: 'JUNCTIONS', showCount: true },
+      { id: 'outfalls',  label: 'Outfalls',  inpSection: 'OUTFALLS',  showCount: true },
+      { id: 'dividers',  label: 'Dividers',  inpSection: 'DIVIDERS',  showCount: true },
+      { id: 'storage',   label: 'Storage Units', inpSection: 'STORAGE', showCount: true },
+    ],
+  },
+  // ... etc
+];
+```
+
+### 10. Suggestions for Your Existing Streamlit App
+
+| Priority | Suggestion | Effort |
+|---|---|---|
+| 🔴 High | **Extract parser into a pip-installable package** — this is your most valuable asset | 2-3 days |
+| 🔴 High | **Add LID_CONTROLS, LID_USAGE, CONTROLS parsing** — these are heavily used sections | 1 day |
+| 🟡 Medium | **Add network graph visualization** — you already import NetworkX but the screenshot shows no map | 2 days |
+| 🟡 Medium | **Add a simple tree/sidebar navigation** — even in Streamlit, you can approximate a Project Explorer with`st.sidebar` expanders | 1 day |
+| 🟡 Medium | **Add INP file export** — let users edit a grid and write back to .inp | 2 days |
+| 🟢 Nice | **Add cross-section profile viewer** for conduits | 1 day |
+| 🟢 Nice | **Add longitudinal profile plot** (node-to-outfall path) | 2 days |
+| 🟢 Nice | **Validate the model** — check for disconnected nodes, missing cross-sections, impossible slopes | 2 days |
+
+The single most impactful upgrade path: **move from Streamlit to a React + FastAPI app** where this Project Explorer becomes the primary navigation paradigm, and the current Streamlit charts become the content panels. Your parser stays in Python on the backend; the Project Explorer, map, and grids move to the browser where they belong.
