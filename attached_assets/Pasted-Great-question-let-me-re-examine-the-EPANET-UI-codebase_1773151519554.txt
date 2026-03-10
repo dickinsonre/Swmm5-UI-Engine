@@ -1,0 +1,43 @@
+Great question — let me re-examine the EPANET-UI codebase more carefully to understand its exact UX architecture, then lay out how to replicate that for SWMM5.Now let me look at the screenshot to understand the visual design:Now let me check the map themes to understand the View panel with the node/link theme combos:Now let me look at the map options to understand display settings:Now I have a complete understanding of the UX architecture. Let me read the frontend-design skill and then build the comprehensive guide:Now I have the full picture. Let me create a comprehensive UX specification document and an interactive React prototype showing the SWMM5-UI layout:Here's your interactive SWMM5-UI prototype that mirrors the exact EPANET-UI UX architecture. Click around — you can select subcatchments and nodes on the map, switch themes from the View menu, and see property editing in the Project Explorer. Here's how the UX maps from what I found in the codebase:
+
+---
+
+## How the EPANET-UI UX Works (from the source code)
+
+The layout I found in `main.pas` lines 13-43 is a **panel-based frame architecture**:
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    MenuPanel                         │  ← MainMenuFrame (tabbed menu bar)
+├─────────────────────────────────────────────────────┤
+│                  MenuNotebook                        │  ← Context-sensitive toolbar per menu
+├──────────┬──────────────────────────┬───────────────┤
+│ HintPanel│                          │               │
+│──────────│       MapPanel           │ ProjectPanel  │
+│ Legend   │     (MapFrame)           │ (ProjectFrame)│
+│ TreeView │     TPaintBox canvas     │ TreeView +    │
+│          │                          │ PropEditor    │
+├──────────┴──────────────────────────┴───────────────┤
+│                   StatusPanel                        │  ← StatusBarFrame
+└─────────────────────────────────────────────────────┘
+```
+
+The key UX pattern: **each top-level menu ("File", "Edit", "View", "Map", "Project", "Help") activates a different page in a TNotebook**, showing that menu's toolbar. This is NOT a traditional dropdown menu — it's a **ribbon-like tab system** where clicking "Project" shows Setup/Add/Delete/Locate/Summary/Details/Analyze/Report buttons, clicking "View" shows the theme combos and time slider, etc.
+
+## What Changes for SWMM5
+
+Based on my analysis of every module in the codebase, here's what the SWMM5-UI needs differently:
+
+**Project Explorer tree** (right panel) — expands from EPANET's 8 categories to SWMM's ~19. The prototype shows the full tree: Rain Gages, Subcatchments (with Infiltration/Groundwater/LID/Snowpack sub-items), Network Nodes (Junction/Outfall/Divider/Storage), Network Links (Conduit/Pump/Orifice/Weir/Outlet), Dry Weather, RDII, Transects, etc.
+
+**Map renderer** — the biggest visual change. EPANET's `maprenderer.pas` (571 lines) only draws circles and lines. SWMM5-UI needs **filled polygons for subcatchments** (color-coded by rainfall, runoff, imperviousness, etc.), **rain gage symbols** (triangles), and distinct symbols for storage nodes (squares) and outfalls (inverted triangles). The prototype demonstrates all of these.
+
+**View toolbar** — EPANET has two theme combos (Node theme + Link theme). SWMM5-UI adds a **third combo for Subcatchment themes** (% Imperv, Runoff, Rainfall, Snow Depth, GW Elevation, Infiltration). The time slider and animation button work the same way.
+
+**Legend panel** (left) — adds a subcatchment section with polygon fill swatches, plus layer checkboxes for the expanded object types (Junctions, Storage, Outfalls, Conduits, Pumps, Weirs, Labels, Basemap).
+
+**Status bar** — replaces EPANET's "Pressure: psi / Head Loss: H-W / Demands: DDA" with SWMM's "Routing: DynWave / Infiltration: Green-Ampt". The "Results are Current" indicator works identically.
+
+**Property editor** — the `TValueListEditor` grid pattern stays the same but shows SWMM properties. A subcatchment has ~25 properties (Rain Gage, Outlet, Area, Width, Slope, % Imperv, Infiltration method, LID usage, etc.) vs EPANET junction's ~8.
+
+The actual Lazarus/Free Pascal implementation would follow the same `TFrame`-based architecture — the prototype shows exactly what each frame needs to contain and how they interact.
