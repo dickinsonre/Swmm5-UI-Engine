@@ -5,6 +5,7 @@ import { parseInpFile, SAMPLE_INP } from '@/lib/inp-parser';
 import { createMockEngine, createRemoteEngine, createLocalEngine, checkRemoteEngine, checkLocalEngine } from '@/lib/swmm-engine';
 import { computeCflAnalysis, discretizeProject, getDefaultSettings } from '@/lib/cfl-analysis';
 import type { CflAnalysisResult, DiscretizationSettings, DiscretizationResult } from '@/lib/cfl-analysis';
+import { importCsvNodes, importCsvLinks, parseDxfFile, importDxfEntities, importGeoJsonNodes, importGeoJsonLinks, parseGeoJsonToNetwork, exportNodesCsv, exportLinksCsv, exportDxf } from '@/lib/import-export';
 import type { SwmmEngine } from '@/lib/swmm-engine';
 import NetworkMap, { type NetworkMapHandle } from '@/components/swmm/NetworkMap';
 import { LegendPanel, ProjectExplorer, ObjectLocatorPanel, MapQueryPanel, evaluateQuery } from '@/components/swmm/Panels';
@@ -93,7 +94,20 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | null>(null);
+  const [importTab, setImportTab] = useState<'csv-nodes' | 'csv-links' | 'dxf' | 'geojson'>('csv-nodes');
+  const [importMode, setImportMode] = useState<'add' | 'modify'>('add');
+  const [importPreviewText, setImportPreviewText] = useState('');
+  const [importFileName, setImportFileName] = useState('');
+  const [dxfLayers, setDxfLayers] = useState<string[]>([]);
+  const [dxfSelectedLayers, setDxfSelectedLayers] = useState<Set<string>>(new Set());
+  const [dxfEntities, setDxfEntities] = useState<Array<{ layer: string; type: string; points: [number, number][] }>>([]);
+  const [geojsonFeatures, setGeojsonFeatures] = useState<any[]>([]);
+  const [geojsonFields, setGeojsonFields] = useState<string[]>([]);
+  const [geojsonIdField, setGeojsonIdField] = useState('');
+  const [geojsonElevField, setGeojsonElevField] = useState('');
+  const [geojsonType, setGeojsonType] = useState<'nodes' | 'links'>('nodes');
+  const importFileRef = useRef<HTMLInputElement>(null);
   const [githubUrl, setGithubUrl] = useState('https://github.com/SWMMEnablement/1729-SWMM5-Models');
   const [ghBrowseOwner] = useState('SWMMEnablement');
   const [ghBrowseRepo] = useState('1729-SWMM5-Models');
@@ -165,6 +179,7 @@ export default function SwmmUI() {
       setProject(parsed);
       setFileName(file.name);
       setResults(null);
+      setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
@@ -261,6 +276,7 @@ export default function SwmmUI() {
       setProject(parsed);
       setFileName(item.name);
       setResults(null);
+      setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
@@ -292,6 +308,7 @@ export default function SwmmUI() {
       setProject(parsed);
       setFileName(sampleName);
       setResults(null);
+      setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
@@ -527,6 +544,97 @@ export default function SwmmUI() {
     }
     setOpenDialog(null);
   }, [buildExportCanvas, exportIncludeLegend, toast]);
+
+  const handleImportFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const ext = file.name.toLowerCase().split('.').pop();
+      if (ext === 'dxf') {
+        setImportTab('dxf');
+        const parsed = parseDxfFile(text);
+        setDxfLayers(parsed.layers);
+        setDxfSelectedLayers(new Set(parsed.layers));
+        setDxfEntities(parsed.entities);
+        setImportPreviewText(`${parsed.entities.length} entities found across ${parsed.layers.length} layers`);
+      } else if (ext === 'geojson' || ext === 'json') {
+        setImportTab('geojson');
+        try {
+          const parsed = parseGeoJsonToNetwork(text, 'nodes');
+          setGeojsonFeatures(parsed.features);
+          setGeojsonFields(parsed.fields);
+          if (parsed.fields.length > 0) setGeojsonIdField(parsed.fields[0]);
+          setImportPreviewText(`${parsed.features.length} features, ${parsed.fields.length} fields`);
+        } catch (err: any) {
+          setImportPreviewText(`Parse error: ${err.message}`);
+        }
+      } else {
+        setImportPreviewText(text);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }, []);
+
+  const handleImportExecute = useCallback(() => {
+    const newProject = JSON.parse(JSON.stringify(project)) as SwmmProject;
+    let msg = '';
+    if (importTab === 'csv-nodes') {
+      const res = importCsvNodes(newProject, importPreviewText, importMode);
+      msg = `Added ${res.nodesAdded} nodes, modified ${res.nodesModified}`;
+      if (res.errors.length > 0) msg += `. Errors: ${res.errors.slice(0, 3).join('; ')}`;
+    } else if (importTab === 'csv-links') {
+      const res = importCsvLinks(newProject, importPreviewText, importMode);
+      msg = `Added ${res.linksAdded} links, modified ${res.linksModified}`;
+      if (res.errors.length > 0) msg += `. Errors: ${res.errors.slice(0, 3).join('; ')}`;
+    } else if (importTab === 'dxf') {
+      const res = importDxfEntities(newProject, dxfEntities, dxfSelectedLayers);
+      msg = `Added ${res.nodesAdded} nodes, ${res.linksAdded} links from DXF`;
+    } else if (importTab === 'geojson') {
+      if (geojsonType === 'nodes') {
+        const res = importGeoJsonNodes(newProject, geojsonFeatures, geojsonIdField, geojsonElevField);
+        msg = `Added ${res.nodesAdded} nodes from GeoJSON`;
+        if (res.errors.length > 0) msg += `. Errors: ${res.errors.slice(0, 3).join('; ')}`;
+      } else {
+        const res = importGeoJsonLinks(newProject, geojsonFeatures, geojsonIdField);
+        msg = `Added ${res.linksAdded} links, ${res.nodesAdded} nodes from GeoJSON`;
+        if (res.errors.length > 0) msg += `. Errors: ${res.errors.slice(0, 3).join('; ')}`;
+      }
+    }
+    setProject(newProject);
+    setOpenDialog(null);
+    toast({ title: 'Import Complete', description: msg });
+  }, [project, importTab, importPreviewText, importMode, dxfEntities, dxfSelectedLayers, geojsonFeatures, geojsonIdField, geojsonElevField, geojsonType, toast]);
+
+  const handleExportData = useCallback((format: 'csv-nodes' | 'csv-links' | 'dxf') => {
+    let content = '';
+    let filename = '';
+    let mimeType = 'text/plain';
+    if (format === 'csv-nodes') {
+      content = exportNodesCsv(project);
+      filename = fileName.replace(/\.inp$/i, '') + '_nodes.csv';
+      mimeType = 'text/csv';
+    } else if (format === 'csv-links') {
+      content = exportLinksCsv(project);
+      filename = fileName.replace(/\.inp$/i, '') + '_links.csv';
+      mimeType = 'text/csv';
+    } else if (format === 'dxf') {
+      content = exportDxf(project);
+      filename = fileName.replace(/\.inp$/i, '') + '.dxf';
+    }
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Exported', description: `Saved ${filename}` });
+    setOpenDialog(null);
+  }, [project, fileName, toast]);
 
   useEffect(() => {
     checkLocalEngine().then(available => {
@@ -970,6 +1078,7 @@ export default function SwmmUI() {
       data-testid="swmm-ui-root"
     >
       <input ref={fileInputRef} type="file" accept=".inp,.INP" onChange={handleFileInput} className="hidden" data-testid="file-input" />
+      <input ref={importFileRef} type="file" accept=".csv,.dxf,.geojson,.json" onChange={handleImportFileSelect} className="hidden" data-testid="import-file-input" />
 
       <div className="h-7 flex items-center px-3 text-xs gap-2 shrink-0" style={{ backgroundColor: '#2c3e6b' }}>
         <span className="font-bold" style={{ color: '#ffffff' }}>&#9670;</span>
@@ -1021,8 +1130,8 @@ export default function SwmmUI() {
             <ToolbarButton icon={<FolderOpen className="w-4 h-4" />} label="Open" onClick={() => fileInputRef.current?.click()} testId="btn-open-file" />
             <ToolbarButton icon={<Github className="w-4 h-4" />} label="GitHub" onClick={() => { setOpenDialog('github'); if (ghBrowseItems.length === 0) ghBrowse(''); }} testId="btn-github" />
             <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save" onClick={handleSave} testId="btn-save-file" />
-            <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" testId="btn-export" />
-            <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" testId="btn-import" />
+            <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" onClick={() => setOpenDialog('exportData')} testId="btn-export" />
+            <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" onClick={() => { setImportPreviewText(''); setImportFileName(''); setDxfLayers([]); setDxfSelectedLayers(new Set()); setDxfEntities([]); setGeojsonFeatures([]); setGeojsonFields([]); setGeojsonIdField(''); setGeojsonElevField(''); setOpenDialog('importData'); }} testId="btn-import" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
             <div className="w-px h-8 mx-1" style={{ backgroundColor: '#d0d0d8' }} />
             <div className="relative">
@@ -2025,6 +2134,244 @@ export default function SwmmUI() {
                   Apply
                 </Button>
               </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'importData'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-lg" data-testid="import-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
+              <Upload className="w-5 h-5" /> Import Data
+            </DialogTitle>
+            <DialogDescription className="text-[#6b6b7b]">
+              Import nodes and links from CSV, DXF, or GeoJSON files
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex gap-1">
+              {(['csv-nodes', 'csv-links', 'dxf', 'geojson'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setImportTab(tab)}
+                  className="px-2.5 py-1 text-[10px] rounded"
+                  style={{
+                    backgroundColor: importTab === tab ? '#2c6eb5' : '#f0f0f4',
+                    color: importTab === tab ? '#ffffff' : '#2a2a3e',
+                    border: `1px solid ${importTab === tab ? '#2c6eb5' : '#d0d0d8'}`,
+                  }}
+                  data-testid={`tab-import-${tab}`}
+                >
+                  {tab === 'csv-nodes' ? 'CSV Nodes' : tab === 'csv-links' ? 'CSV Links' : tab.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => importFileRef.current?.click()}
+              className="w-full bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e]"
+              data-testid="btn-import-browse"
+            >
+              <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+              {importFileName || 'Choose File...'}
+            </Button>
+
+            {(importTab === 'csv-nodes' || importTab === 'csv-links') && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-[#2a2a3e] w-16">Mode</Label>
+                  <select
+                    value={importMode}
+                    onChange={e => setImportMode(e.target.value as 'add' | 'modify')}
+                    className="flex-1 text-xs rounded px-2 py-1"
+                    style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
+                    data-testid="select-import-mode"
+                  >
+                    <option value="add">Add New</option>
+                    <option value="modify">Modify Existing</option>
+                  </select>
+                </div>
+                <div className="text-[10px] text-[#6b6b7b] bg-[#f8f8fa] rounded p-2 border border-[#d0d0d8]">
+                  {importTab === 'csv-nodes' ? (
+                    <>Expected columns: <strong>ID, X, Y, Elevation, MaxDepth, Type</strong> (Type: junction/outfall/storage)</>
+                  ) : (
+                    <>Expected columns: <strong>ID, From, To, Length, Roughness, Diameter</strong></>
+                  )}
+                </div>
+                <textarea
+                  value={importPreviewText}
+                  onChange={e => setImportPreviewText(e.target.value)}
+                  className="w-full h-28 text-[10px] font-mono rounded p-2"
+                  style={{ backgroundColor: '#f8f8fa', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
+                  placeholder="Paste CSV data here or browse for a file..."
+                  data-testid="textarea-import-csv"
+                />
+              </div>
+            )}
+
+            {importTab === 'dxf' && (
+              <div className="space-y-2">
+                <div className="text-[10px] text-[#6b6b7b]">{importPreviewText}</div>
+                {dxfLayers.length > 0 && (
+                  <div className="bg-[#f8f8fa] rounded p-2 border border-[#d0d0d8] max-h-32 overflow-y-auto">
+                    <div className="text-[10px] text-[#6b6b7b] mb-1 font-semibold">Select Layers:</div>
+                    {dxfLayers.map(layer => (
+                      <label key={layer} className="flex items-center gap-1.5 text-[10px] text-[#2a2a3e] cursor-pointer py-0.5">
+                        <input
+                          type="checkbox"
+                          checked={dxfSelectedLayers.has(layer)}
+                          onChange={e => {
+                            const next = new Set(dxfSelectedLayers);
+                            e.target.checked ? next.add(layer) : next.delete(layer);
+                            setDxfSelectedLayers(next);
+                          }}
+                          data-testid={`checkbox-dxf-layer-${layer}`}
+                        />
+                        {layer}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {importTab === 'geojson' && (
+              <div className="space-y-2">
+                <div className="text-[10px] text-[#6b6b7b]">{importPreviewText}</div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-[#2a2a3e] w-16">Type</Label>
+                  <select
+                    value={geojsonType}
+                    onChange={e => setGeojsonType(e.target.value as 'nodes' | 'links')}
+                    className="flex-1 text-xs rounded px-2 py-1"
+                    style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
+                    data-testid="select-geojson-type"
+                  >
+                    <option value="nodes">Nodes (Points)</option>
+                    <option value="links">Links (Lines)</option>
+                  </select>
+                </div>
+                {geojsonFields.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-[#2a2a3e] w-16">ID Field</Label>
+                      <select
+                        value={geojsonIdField}
+                        onChange={e => setGeojsonIdField(e.target.value)}
+                        className="flex-1 text-xs rounded px-2 py-1"
+                        style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
+                        data-testid="select-geojson-id"
+                      >
+                        <option value="">(auto-generate)</option>
+                        {geojsonFields.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    </div>
+                    {geojsonType === 'nodes' && (
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-[#2a2a3e] w-16">Elev</Label>
+                        <select
+                          value={geojsonElevField}
+                          onChange={e => setGeojsonElevField(e.target.value)}
+                          className="flex-1 text-xs rounded px-2 py-1"
+                          style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
+                          data-testid="select-geojson-elev"
+                        >
+                          <option value="">(none)</option>
+                          {geojsonFields.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOpenDialog(null)}
+                className="bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e]"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleImportExecute}
+                className="bg-[#2c6eb5] text-white"
+                disabled={
+                  (importTab === 'csv-nodes' || importTab === 'csv-links') ? !importPreviewText :
+                  importTab === 'dxf' ? dxfEntities.length === 0 :
+                  geojsonFeatures.length === 0
+                }
+                data-testid="btn-import-execute"
+              >
+                <Upload className="w-3.5 h-3.5 mr-1" />
+                Import
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'exportData'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm" data-testid="export-data-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
+              <Download className="w-5 h-5" /> Export Data
+            </DialogTitle>
+            <DialogDescription className="text-[#6b6b7b]">
+              Export project data to CSV or DXF format
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleExportData('csv-nodes')}
+              className="w-full bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e] justify-start"
+              data-testid="btn-export-csv-nodes"
+            >
+              <FileText className="w-3.5 h-3.5 mr-2" />
+              Export Nodes as CSV
+              <span className="ml-auto text-[10px] text-[#6b6b7b]">{project.junctions.length + project.outfalls.length + project.storageUnits.length} nodes</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleExportData('csv-links')}
+              className="w-full bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e] justify-start"
+              data-testid="btn-export-csv-links"
+            >
+              <FileText className="w-3.5 h-3.5 mr-2" />
+              Export Links as CSV
+              <span className="ml-auto text-[10px] text-[#6b6b7b]">{project.conduits.length} links</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleExportData('dxf')}
+              className="w-full bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e] justify-start"
+              data-testid="btn-export-dxf"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 mr-2" />
+              Export Network as DXF
+              <span className="ml-auto text-[10px] text-[#6b6b7b]">CAD format</span>
+            </Button>
+            <div className="border-t pt-2 mt-2" style={{ borderColor: '#d0d0d8' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setOpenDialog('export'); }}
+                className="w-full bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e] justify-start"
+                data-testid="btn-export-map-png"
+              >
+                <Download className="w-3.5 h-3.5 mr-2" />
+                Export Map as PNG Image
+              </Button>
             </div>
           </div>
         </DialogContent>

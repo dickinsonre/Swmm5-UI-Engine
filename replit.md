@@ -18,6 +18,7 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 - `client/src/lib/inp-parser.ts` - Complete SWMM5 INP file parser and INP file rebuild with safe column padding (`padField`)
 - `client/src/lib/swmm-engine.ts` - Remote/mock engine wrapper with WebSocket progress
 - `client/src/lib/cfl-analysis.ts` - ReSWMM CFL analysis and conduit discretization engine
+- `client/src/lib/import-export.ts` - CSV, DXF, and GeoJSON import/export utilities for nodes and links
 
 ### Backend
 - `server/routes.ts` - GitHub file proxy (`/api/fetch-github`, SSRF-secured), GitHub repo browser (`/api/github-browse`), SWMM engine proxy (`/api/swmm-proxy/*`), WebSocket proxy for BatchSWMM progress
@@ -48,6 +49,8 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 - **Group Selection**: Draw polygon on map, select all enclosed objects, batch edit properties or delete
 - **Preferences**: Flyover hints, confirm deletions, numerical precision, show/hide IDs, background color (localStorage-persisted)
 - **Report Viewer**: View full .rpt report file in a dialog after simulation (auto-opens on failure); Copy to clipboard or Download as .rpt file; accessible via Project > Report toolbar button
+- **Import Data**: Import nodes/links from CSV (with Add New/Modify modes), CAD DXF files (with layer selection), and GeoJSON files (with field mapping); File > Import toolbar button
+- **Export Data**: Export nodes CSV, links CSV, DXF network, and PNG map image; File > Export toolbar button
 
 ### Mobile Optimization
 - Responsive layout: side panels (170px left, 220px right) hidden on screens ≤768px, accessible via toggle buttons in the title bar

@@ -60,7 +60,7 @@ export function importCsvNodes(
   const maxDepthIdx = headers.findIndex(h => h === 'maxdepth' || h === 'max_depth' || h === 'depth');
   const typeIdx = headers.findIndex(h => h === 'type' || h === 'node_type');
 
-  if (mode === 'add' && xIdx < 0 && yIdx < 0) {
+  if (mode === 'add' && (xIdx < 0 || yIdx < 0)) {
     result.errors.push('CSV must contain X and Y coordinate columns when adding new nodes');
     return result;
   }
@@ -69,8 +69,12 @@ export function importCsvNodes(
     return result;
   }
 
-  const existingNodes = new Map<string, number>();
-  project.junctions.forEach((j, i) => existingNodes.set(j.id, i));
+  const junctionMap = new Map<string, number>();
+  project.junctions.forEach((j, i) => junctionMap.set(j.id, i));
+  const outfallMap = new Map<string, number>();
+  project.outfalls.forEach((o, i) => outfallMap.set(o.id, i));
+  const storageMap = new Map<string, number>();
+  project.storageUnits.forEach((s, i) => storageMap.set(s.id, i));
 
   for (let r = 1; r < lines.length; r++) {
     const cols = lines[r].split(',').map(c => c.trim());
@@ -82,12 +86,29 @@ export function importCsvNodes(
 
     if (mode === 'modify') {
       if (!id) { result.errors.push(`Row ${r + 1}: Missing ID`); continue; }
-      const idx = existingNodes.get(id);
-      if (idx === undefined) { result.errors.push(`Row ${r + 1}: Node '${id}' not found`); continue; }
       if (!isNaN(x) && !isNaN(y)) project.coordinates[id] = [x, y];
-      if (elevIdx >= 0 && !isNaN(elev)) project.junctions[idx].elevation = elev;
-      if (maxDepthIdx >= 0 && !isNaN(maxDepth)) project.junctions[idx].maxDepth = maxDepth;
-      result.nodesModified++;
+      const jIdx = junctionMap.get(id);
+      if (jIdx !== undefined) {
+        if (elevIdx >= 0 && !isNaN(elev)) project.junctions[jIdx].elevation = elev;
+        if (maxDepthIdx >= 0 && !isNaN(maxDepth)) project.junctions[jIdx].maxDepth = maxDepth;
+        result.nodesModified++;
+        continue;
+      }
+      const oIdx = outfallMap.get(id);
+      if (oIdx !== undefined) {
+        if (elevIdx >= 0 && !isNaN(elev)) project.outfalls[oIdx].elevation = elev;
+        result.nodesModified++;
+        continue;
+      }
+      const sIdx = storageMap.get(id);
+      if (sIdx !== undefined) {
+        if (elevIdx >= 0 && !isNaN(elev)) project.storageUnits[sIdx].elevation = elev;
+        if (maxDepthIdx >= 0 && !isNaN(maxDepth)) project.storageUnits[sIdx].maxDepth = maxDepth;
+        result.nodesModified++;
+        continue;
+      }
+      result.errors.push(`Row ${r + 1}: Node '${id}' not found`);
+      continue;
     } else {
       if (isNaN(x) || isNaN(y)) { result.errors.push(`Row ${r + 1}: Invalid coordinates`); continue; }
       const nodeId = id || generateNodeId(project);
@@ -156,10 +177,20 @@ export function importCsvLinks(
       if (!id) { result.errors.push(`Row ${r + 1}: Missing ID`); continue; }
       const idx = existingLinks.get(id);
       if (idx === undefined) { result.errors.push(`Row ${r + 1}: Link '${id}' not found`); continue; }
-      if (fromNode) project.conduits[idx].fromNode = fromNode;
-      if (toNode) project.conduits[idx].toNode = toNode;
+      if (fromNode) {
+        if (!allNodeIds.has(fromNode)) { result.errors.push(`Row ${r + 1}: From node '${fromNode}' not found`); continue; }
+        project.conduits[idx].fromNode = fromNode;
+      }
+      if (toNode) {
+        if (!allNodeIds.has(toNode)) { result.errors.push(`Row ${r + 1}: To node '${toNode}' not found`); continue; }
+        project.conduits[idx].toNode = toNode;
+      }
       if (lengthIdx >= 0 && !isNaN(length)) project.conduits[idx].length = length;
       if (roughIdx >= 0 && !isNaN(roughness)) project.conduits[idx].roughness = roughness;
+      if (diamIdx >= 0 && !isNaN(diameter)) {
+        if (!project.xsections[id]) project.xsections[id] = { shape: 'CIRCULAR', geom1: diameter, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+        else project.xsections[id].geom1 = diameter;
+      }
       result.linksModified++;
     } else {
       if (!fromNode || !toNode) { result.errors.push(`Row ${r + 1}: Missing from/to nodes`); continue; }
