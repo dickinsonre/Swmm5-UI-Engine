@@ -47,6 +47,50 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/github-browse", async (req: Request, res: Response) => {
+    const owner = (req.query.owner as string) || '';
+    const repo = (req.query.repo as string) || '';
+    const path = (req.query.path as string) || '';
+    if (!owner || !repo) {
+      return res.status(400).json({ error: "owner and repo parameters required" });
+    }
+    try {
+      const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`;
+      const response = await fetch(apiUrl, {
+        headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'SWMM5-UI' },
+      });
+      if (!response.ok) {
+        return res.status(response.status).json({ error: `GitHub API returned ${response.status}` });
+      }
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        const items = data.map((item: any) => ({
+          name: item.name,
+          type: item.type,
+          path: item.path,
+          size: item.size,
+          download_url: item.download_url,
+        }));
+        items.sort((a: any, b: any) => {
+          if (a.type === 'dir' && b.type !== 'dir') return -1;
+          if (a.type !== 'dir' && b.type === 'dir') return 1;
+          return a.name.localeCompare(b.name);
+        });
+        res.json(items);
+      } else {
+        res.json([{
+          name: data.name,
+          type: data.type,
+          path: data.path,
+          size: data.size,
+          download_url: data.download_url,
+        }]);
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/swmm-proxy/status", async (_req: Request, res: Response) => {
     try {
       const response = await fetch(`${BATCH_SWMM_URL}/api/swmm-status`);

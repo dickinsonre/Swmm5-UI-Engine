@@ -17,7 +17,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Info, HelpCircle, FileText, Clipboard,
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
-  Scissors,
+  Scissors, ChevronLeft, Folder, File,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -94,6 +94,12 @@ export default function SwmmUI() {
   const [isAnimating, setIsAnimating] = useState(false);
   const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | null>(null);
   const [githubUrl, setGithubUrl] = useState('https://github.com/SWMMEnablement/1729-SWMM5-Models');
+  const [ghBrowseOwner] = useState('SWMMEnablement');
+  const [ghBrowseRepo] = useState('1729-SWMM5-Models');
+  const [ghBrowsePath, setGhBrowsePath] = useState('');
+  const [ghBrowseItems, setGhBrowseItems] = useState<{name:string;type:string;path:string;size?:number;download_url?:string}[]>([]);
+  const [ghBrowseLoading, setGhBrowseLoading] = useState(false);
+  const [ghBrowseError, setGhBrowseError] = useState('');
   const [preferences, setPreferences] = useState<SwmmPreferences>(loadPreferences);
 
   const updatePreference = useCallback(<K extends keyof SwmmPreferences>(key: K, value: SwmmPreferences[K]) => {
@@ -206,6 +212,43 @@ export default function SwmmUI() {
     setOpenDialog(null);
     setGithubUrl('https://github.com/SWMMEnablement/1729-SWMM5-Models');
   }, [githubUrl, toast]);
+
+  const ghBrowse = useCallback(async (path: string) => {
+    setGhBrowseLoading(true);
+    setGhBrowseError('');
+    try {
+      const resp = await fetch(`/api/github-browse?owner=${ghBrowseOwner}&repo=${ghBrowseRepo}&path=${encodeURIComponent(path)}`);
+      if (!resp.ok) throw new Error(`GitHub API error: ${resp.status}`);
+      const items = await resp.json();
+      setGhBrowseItems(items);
+      setGhBrowsePath(path);
+    } catch (e: any) {
+      setGhBrowseError(e.message);
+    }
+    setGhBrowseLoading(false);
+  }, [ghBrowseOwner, ghBrowseRepo]);
+
+  const handleGhFileSelect = useCallback(async (item: {name:string;path:string;download_url?:string}) => {
+    if (!item.download_url) return;
+    setLoading(true);
+    try {
+      const resp = await fetch(`/api/fetch-github?url=${encodeURIComponent(item.download_url)}`);
+      if (!resp.ok) throw new Error(`Failed to fetch: ${resp.statusText}`);
+      const text = await resp.text();
+      const parsed = parseInpFile(text);
+      setProject(parsed);
+      setFileName(item.name);
+      setResults(null);
+      setSimStatus('none');
+      setTimeStep(0);
+      setSelectedObj(null);
+      toast({ title: 'File Loaded', description: `${item.name} loaded from GitHub` });
+      setOpenDialog(null);
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+    setLoading(false);
+  }, [toast]);
 
   const handleNewProject = useCallback(() => {
     setProject(createEmptyProject());
@@ -906,7 +949,7 @@ export default function SwmmUI() {
           <div className="flex items-center gap-0.5">
             <ToolbarButton icon={<FilePlus className="w-4 h-4" />} label="New" onClick={handleNewProject} testId="btn-new" />
             <ToolbarButton icon={<FolderOpen className="w-4 h-4" />} label="Open" onClick={() => fileInputRef.current?.click()} testId="btn-open-file" />
-            <ToolbarButton icon={<Github className="w-4 h-4" />} label="GitHub" onClick={() => setOpenDialog('github')} testId="btn-github" />
+            <ToolbarButton icon={<Github className="w-4 h-4" />} label="GitHub" onClick={() => { setOpenDialog('github'); if (ghBrowseItems.length === 0) ghBrowse(''); }} testId="btn-github" />
             <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save" onClick={handleSave} testId="btn-save-file" />
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" testId="btn-export" />
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" testId="btn-import" />
@@ -1382,7 +1425,7 @@ export default function SwmmUI() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setOpenDialog('github')}
+                  onClick={() => { setOpenDialog('github'); if (ghBrowseItems.length === 0) ghBrowse(''); }}
                   className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4]"
                   data-testid="btn-github-empty"
                 >
@@ -1463,36 +1506,94 @@ export default function SwmmUI() {
       </div>
 
       <Dialog open={openDialog === 'github'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e]" data-testid="github-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-lg" data-testid="github-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
-              <Github className="w-5 h-5" /> Load from GitHub
+              <Github className="w-5 h-5" /> SWMM5 Model Repository
             </DialogTitle>
             <DialogDescription className="text-[#6b6b7b]">
-              Enter a GitHub URL to a SWMM5 INP file
+              Browse {ghBrowseOwner}/{ghBrowseRepo} — select an INP file to load
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="https://github.com/user/repo/blob/main/model.inp"
-              value={githubUrl}
-              onChange={e => setGithubUrl(e.target.value)}
-              className="bg-white border-[#d0d0d8] text-[#2a2a3e] placeholder:text-[#9090a0]"
-              data-testid="input-github-url"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setOpenDialog(null)}
-                className="bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e]">
-                Cancel
-              </Button>
-              <Button size="sm" onClick={handleGithubLoad} disabled={loading || !githubUrl.trim()}
-                className="bg-[#2c6eb5] text-white hover:bg-[#3a7ec5]"
-                data-testid="btn-github-load"
-              >
-                {loading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
-                Load
-              </Button>
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-xs text-[#6b6b7b] bg-[#f0f0f4] rounded px-2 py-1.5 border border-[#d0d0d8]">
+              <Folder className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate font-mono" data-testid="text-gh-path">/{ghBrowsePath || ''}</span>
             </div>
+            {ghBrowsePath && (
+              <button
+                onClick={() => {
+                  const parent = ghBrowsePath.includes('/') ? ghBrowsePath.substring(0, ghBrowsePath.lastIndexOf('/')) : '';
+                  ghBrowse(parent);
+                }}
+                className="flex items-center gap-1 text-xs text-[#2c6eb5] hover:underline"
+                data-testid="btn-gh-back"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Back
+              </button>
+            )}
+            <div className="border border-[#d0d0d8] rounded max-h-[320px] overflow-y-auto" data-testid="gh-file-list">
+              {ghBrowseLoading && (
+                <div className="flex items-center justify-center py-8 text-[#6b6b7b]">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading...
+                </div>
+              )}
+              {ghBrowseError && (
+                <div className="py-4 px-3 text-xs text-[#d04040]" data-testid="text-gh-error">{ghBrowseError}</div>
+              )}
+              {!ghBrowseLoading && !ghBrowseError && ghBrowseItems.length === 0 && (
+                <div className="py-4 px-3 text-xs text-[#9090a0] text-center">No items found</div>
+              )}
+              {!ghBrowseLoading && ghBrowseItems.map((item) => {
+                const isInp = item.name.toLowerCase().endsWith('.inp');
+                const isDir = item.type === 'dir';
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => {
+                      if (isDir) {
+                        ghBrowse(item.path);
+                      } else if (isInp) {
+                        handleGhFileSelect(item);
+                      }
+                    }}
+                    disabled={!isDir && !isInp}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left border-b border-[#f0f0f4] last:border-b-0 transition-colors
+                      ${isDir ? 'hover:bg-[#f0f0f4] cursor-pointer text-[#2a2a3e] font-medium' : ''}
+                      ${isInp ? 'hover:bg-blue-50 cursor-pointer text-[#2c6eb5]' : ''}
+                      ${!isDir && !isInp ? 'opacity-40 cursor-default text-[#9090a0]' : ''}`}
+                    data-testid={`gh-item-${item.name}`}
+                  >
+                    {isDir ? <Folder className="w-3.5 h-3.5 text-[#c08820] shrink-0" /> : <File className="w-3.5 h-3.5 shrink-0" />}
+                    <span className="truncate">{item.name}</span>
+                    {item.size && !isDir ? <span className="ml-auto text-[10px] text-[#9090a0] shrink-0">{(item.size / 1024).toFixed(0)} KB</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            {loading && (
+              <div className="flex items-center justify-center py-2 text-xs text-[#2c6eb5]">
+                <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> Loading model...
+              </div>
+            )}
+            <details className="text-[10px] text-[#9090a0]">
+              <summary className="cursor-pointer hover:text-[#6b6b7b]">Or paste a direct GitHub URL</summary>
+              <div className="mt-2 flex gap-2">
+                <Input
+                  placeholder="https://github.com/user/repo/blob/main/model.inp"
+                  value={githubUrl}
+                  onChange={e => setGithubUrl(e.target.value)}
+                  className="bg-white border-[#d0d0d8] text-[#2a2a3e] placeholder:text-[#9090a0] text-xs h-7"
+                  data-testid="input-github-url"
+                />
+                <Button size="sm" onClick={handleGithubLoad} disabled={loading || !githubUrl.trim()}
+                  className="bg-[#2c6eb5] text-white hover:bg-[#3a7ec5] h-7 text-xs"
+                  data-testid="btn-github-load"
+                >
+                  Load
+                </Button>
+              </div>
+            </details>
           </div>
         </DialogContent>
       </Dialog>
