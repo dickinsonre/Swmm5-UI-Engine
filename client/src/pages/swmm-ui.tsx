@@ -1630,6 +1630,16 @@ export default function SwmmUI() {
           {' | '}
           {project.subcatchments.length} subcatch
         </span>
+        <span className="text-[9px] text-[#9090a0] mx-2">|</span>
+        <a
+          href="https://github.com/SWMMEnablement"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[9px] text-[#6b6b7b] hover:text-[#2c6eb5] transition-colors"
+          data-testid="link-credit"
+        >
+          Created by SWMMEnablement
+        </a>
       </div>
 
       <Dialog open={openDialog === 'github'} onOpenChange={v => !v && setOpenDialog(null)}>
