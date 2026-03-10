@@ -47,6 +47,7 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 - **Map Export**: Save canvas as PNG file or copy to clipboard, with optional legend
 - **Group Selection**: Draw polygon on map, select all enclosed objects, batch edit properties or delete
 - **Preferences**: Flyover hints, confirm deletions, numerical precision, show/hide IDs, background color (localStorage-persisted)
+- **Report Viewer**: View full .rpt report file in a dialog after simulation (auto-opens on failure); Copy to clipboard or Download as .rpt file; accessible via Project > Report toolbar button
 
 ### Mobile Optimization
 - Responsive layout: side panels (170px left, 220px right) hidden on screens ≤768px, accessible via toggle buttons in the title bar

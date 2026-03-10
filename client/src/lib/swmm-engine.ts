@@ -102,9 +102,13 @@ export function createRemoteEngine(): SwmmEngine {
                   reject(new Error(`Failed to parse results: ${e.message}`));
                 }
               } else if (result && result.status === 'failed') {
-                reject(new Error(`SWMM simulation failed: ${result.error || 'Unknown error'}`));
+                const err = new Error(`SWMM simulation failed: ${result.error || 'Unknown error'}`) as any;
+                err.reportContent = result.reportContent || null;
+                reject(err);
               } else {
-                reject(new Error('Simulation completed but no results received'));
+                const err = new Error('Simulation completed but no results received') as any;
+                err.reportContent = result?.reportContent || null;
+                reject(err);
               }
             } else if (msg.type === 'error') {
               clearTimeout(timeout);

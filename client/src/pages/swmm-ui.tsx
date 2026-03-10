@@ -137,6 +137,8 @@ export default function SwmmUI() {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [mobilePanel, setMobilePanel] = useState<'none' | 'left' | 'right'>('none');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [reportContent, setReportContent] = useState<string | null>(null);
+  const [showReportDialog, setShowReportDialog] = useState(false);
   const animRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const networkMapRef = useRef<NetworkMapHandle>(null);
@@ -273,6 +275,7 @@ export default function SwmmUI() {
     setProject(createEmptyProject());
     setFileName('Untitled.inp');
     setResults(null);
+    setReportContent(null);
     setSimStatus('none');
     setTimeStep(0);
     setSelectedObj(null);
@@ -387,6 +390,7 @@ export default function SwmmUI() {
       setSimProgress(100);
       setSimProgressMsg('Complete');
       setResults(res);
+      setReportContent(res.reportContent || null);
       setSimStatus('current');
       setTimeStep(0);
       const engineLabel = engine.mode === 'remote' ? 'EPA SWMM 5.2.4' : 'Mock Engine';
@@ -401,6 +405,10 @@ export default function SwmmUI() {
       }
       setSimStatus('none');
       setSimProgressMsg('');
+      if (e.reportContent != null && e.reportContent !== '') {
+        setReportContent(e.reportContent);
+        setShowReportDialog(true);
+      }
       toast({ title: 'Simulation Error', description: e.message, variant: 'destructive' });
     } finally {
       simAbortRef.current = null;
@@ -563,6 +571,7 @@ export default function SwmmUI() {
     setProject(result.project);
     setDiscretizationResult(result);
     setResults(null);
+    setReportContent(null);
     setSimStatus('none');
     setTimeStep(0);
     toast({
@@ -1150,7 +1159,7 @@ export default function SwmmUI() {
               disabled={simStatus === 'running'}
               testId="btn-run"
             />
-            <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" testId="btn-report" />
+            <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" onClick={() => { if (reportContent) setShowReportDialog(true); else toast({ title: 'No Report', description: 'Run a simulation first to generate a report' }); }} testId="btn-report" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <ToolbarButton
               icon={<Scissors className="w-4 h-4" />}
@@ -2004,6 +2013,63 @@ export default function SwmmUI() {
                 </Button>
               </div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-3xl max-h-[85vh] flex flex-col" data-testid="report-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
+              <BarChart3 className="w-4 h-4" /> SWMM Report
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#6b6b7b]">
+              Full simulation report output (.rpt file contents)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto min-h-0">
+            <pre
+              className="text-[11px] leading-[1.4] p-3 rounded border border-[#d0d0d8] bg-[#f8f8fa] whitespace-pre overflow-x-auto font-mono"
+              style={{ maxHeight: 'calc(85vh - 120px)' }}
+              data-testid="report-content"
+            >
+              {reportContent || 'No report available.'}
+            </pre>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (reportContent) {
+                  navigator.clipboard.writeText(reportContent);
+                  toast({ title: 'Copied', description: 'Report copied to clipboard' });
+                }
+              }}
+              className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4]"
+              data-testid="btn-copy-report"
+            >
+              <Copy className="w-3.5 h-3.5 mr-1.5" /> Copy
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (reportContent) {
+                  const blob = new Blob([reportContent], { type: 'text/plain' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = (fileName || 'model').replace(/\.inp$/i, '') + '.rpt';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }
+              }}
+              className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4]"
+              data-testid="btn-download-report"
+            >
+              <Download className="w-3.5 h-3.5 mr-1.5" /> Download .rpt
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

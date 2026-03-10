@@ -1,0 +1,37 @@
+he SWMM5 Engine in BatchSWMM
+Source
+The engine comes from the official EPA SWMM 5.2.4 source code, published by the US EPA at github.com/USEPA/Stormwater-Management-Model. EPA SWMM is public domain software — no license restrictions on copying, modifying, or distributing it.
+
+Two Binaries
+1. runswmm — Standalone executable (511 KB)
+
+ELF64 executable for x86-64 Linux
+Compiled with GCC 14.3.0 on the Replit NixOS environment
+Linked against glibc 2.40
+This is a statically-linked command-line tool that takes three arguments: runswmm <input.inp> <report.rpt> <output.out>
+It runs the full SWMM simulation in one shot and writes the results to disk
+2. libswmm5.so — Shared library (604 KB)
+
+ELF64 shared object for x86-64 Linux
+Same GCC 14.3.0 / glibc 2.40 toolchain
+Exposes the SWMM5 C API functions: swmm_open, swmm_start, swmm_step, swmm_end, swmm_close, swmm_getVersion, swmm_getNodeResult, swmm_getLinkResult
+Loaded at runtime via Node.js FFI (ffi-napi / node-ffi) for step-by-step simulation control
+How They Were Compiled
+Both were compiled directly on the Replit machine using the NixOS-provided GCC toolchain:
+
+Downloaded the EPA SWMM 5.2.4 source (C code) from the official GitHub repository
+Compiled runswmm by building all SWMM source files (*.c) and linking them into a standalone executable:
+gcc -O2 -o runswmm swmm5.c climate.c controls.c ... main.c -lm
+Compiled libswmm5.so as a shared library (no main.c, exports the API functions):
+gcc -O2 -shared -fPIC -o libswmm5.so swmm5.c climate.c controls.c ... -lm
+Both binaries target the same x86-64 Linux platform that Replit runs on
+How They're Used
+Executable mode (default): The Express backend spawns runswmm as a child process using Node.js spawn(). It captures stdout for progress percentage updates, then reads the .rpt and .out files from disk when the process exits.
+
+API mode: The backend loads libswmm5.so via FFI bindings. It calls the C functions directly from Node.js — swmm_open() to load the model, swmm_start() to initialize, then loops on swmm_step() for each time step. During the stepping loop, it calls swmm_getNodeResult() and swmm_getLinkResult() to read real-time node depths, link flows, and velocities, streaming them to the frontend over WebSocket. This enables the Live API Dashboard.
+
+Version Identification
+The binary self-identifies as:
+
+EPA STORM WATER MANAGEMENT MODEL - VERSION 5.2 (Build 5.2.4)
+Version code: 52004 (returned by swmm_getVersion())
