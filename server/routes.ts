@@ -165,5 +165,35 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/swmm-proxy/batch/:jobId/status", async (req: Request, res: Response) => {
+    try {
+      const { jobId } = req.params;
+      const response = await fetch(`${BATCH_SWMM_URL}/api/batch/${jobId}/status`);
+      if (!response.ok) {
+        const text = await response.text();
+        return res.status(response.status).json({ error: text });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/swmm-proxy/batch/:jobId/results", async (req: Request, res: Response) => {
+    try {
+      const { jobId } = req.params;
+      const response = await fetch(`${BATCH_SWMM_URL}/api/batch/${jobId}/results`);
+      if (!response.ok) {
+        const text = await response.text();
+        return res.status(response.status).json({ error: text });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

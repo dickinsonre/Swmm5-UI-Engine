@@ -995,7 +995,7 @@ export default function SwmmUI() {
               {showSamplesMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowSamplesMenu(false)} />
-                  <div className="absolute left-0 top-full mt-0.5 z-50 min-w-[260px] rounded shadow-lg border" style={{ backgroundColor: '#ffffff', borderColor: '#d0d0d8' }}>
+                  <div className="absolute left-0 top-full mt-0.5 z-50 min-w-[260px] max-h-[400px] overflow-y-auto rounded shadow-lg border" style={{ backgroundColor: '#ffffff', borderColor: '#d0d0d8' }}>
                     <button
                       className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
                       onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_US.inp'); }}
@@ -1011,6 +1011,47 @@ export default function SwmmUI() {
                     >
                       Greenville (SI / Metric Units)
                       <span className="block text-[10px] text-[#6b6b7b]">All SWMM5 features - CMS, Green-Ampt, DynWave</span>
+                    </button>
+                    <div className="border-t" style={{ borderColor: '#d0d0d8' }} />
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
+                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User1.inp'); }}
+                      data-testid="btn-sample-user1"
+                    >
+                      User1 — Mountain Drainage
+                      <span className="block text-[10px] text-[#6b6b7b]">58 subcatchments, CMS, Horton, DynWave</span>
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
+                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User2.inp'); }}
+                      data-testid="btn-sample-user2"
+                    >
+                      User2 — Urban Collection
+                      <span className="block text-[10px] text-[#6b6b7b]">17 subcatchments, CFS, storage nodes, DynWave</span>
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
+                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User3.inp'); }}
+                      data-testid="btn-sample-user3"
+                    >
+                      User3 — Large Metro Network
+                      <span className="block text-[10px] text-[#6b6b7b]">100+ subcatchments, CMS, dual drainage, DynWave</span>
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
+                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User4.inp'); }}
+                      data-testid="btn-sample-user4"
+                    >
+                      User4 — Regional Stormwater
+                      <span className="block text-[10px] text-[#6b6b7b]">98 subcatchments, CFS, large network, DynWave</span>
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
+                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User5.inp'); }}
+                      data-testid="btn-sample-user5"
+                    >
+                      User5 — Complex Watershed
+                      <span className="block text-[10px] text-[#6b6b7b]">96 subcatchments, CFS, Froude-limited, DynWave</span>
                     </button>
                   </div>
                 </>
@@ -1517,24 +1558,27 @@ export default function SwmmUI() {
               </div>
               <div className="text-center mt-2">
                 <p className="text-[10px] text-[#9090a0] mb-2">Or load a sample project:</p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleLoadSample('Greenville_US.inp')}
-                    className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]"
-                    data-testid="btn-sample-us-empty"
-                  >
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('Greenville_US.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-us-empty">
                     <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Greenville (US)
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleLoadSample('Greenville_SI.inp')}
-                    className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]"
-                    data-testid="btn-sample-si-empty"
-                  >
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('Greenville_SI.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-si-empty">
                     <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Greenville (SI)
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User1.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user1-empty">
+                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User1
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User2.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user2-empty">
+                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User2
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User3.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user3-empty">
+                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User3
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User4.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user4-empty">
+                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User4
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User5.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user5-empty">
+                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User5
                   </Button>
                 </div>
               </div>

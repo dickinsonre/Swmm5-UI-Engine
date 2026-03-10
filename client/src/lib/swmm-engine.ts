@@ -58,65 +58,62 @@ export function createRemoteEngine(): SwmmEngine {
       });
       if (!startResp.ok) throw new Error(`Failed to start simulation: ${startResp.statusText}`);
 
-      return new Promise<SimulationResults>((resolve, reject) => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${BATCH_SWMM_URL.replace(/^https?:\/\//, '')}/api/ws?jobId=${jobId}`;
-        const ws = new WebSocket(wsUrl);
-        let result: any = null;
-        let timeout: ReturnType<typeof setTimeout>;
+      if (onProgress) onProgress(10, 'Running SWMM 5.2.4 simulation...');
 
-        timeout = setTimeout(() => {
-          ws.close();
-          reject(new Error('Simulation timed out after 120 seconds'));
-        }, 120000);
+      const startTime = Date.now();
+      const TIMEOUT_MS = 180000;
+      const POLL_INTERVAL = 1500;
 
-        ws.onopen = () => {
-          if (onProgress) onProgress(10, 'Connected to SWMM engine, running simulation...');
-        };
+      while (true) {
+        if (Date.now() - startTime > TIMEOUT_MS) {
+          throw new Error('Simulation timed out after 180 seconds');
+        }
 
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'file_progress') {
-              const pct = Math.min(90, 10 + (msg.percentage || 0) * 0.8);
-              if (onProgress) onProgress(pct, msg.message || `Simulating... ${msg.percentage}%`);
-            } else if (msg.type === 'result') {
-              result = msg.result;
-              if (onProgress) onProgress(95, 'Parsing results...');
-            } else if (msg.type === 'completed') {
-              clearTimeout(timeout);
-              ws.close();
-              if (result && result.status === 'success' && result.reportContent) {
-                try {
-                  const parsed = parseRptToResults(result.reportContent, project);
-                  if (onProgress) onProgress(100, 'Simulation complete');
-                  resolve(parsed);
-                } catch (e: any) {
-                  reject(new Error(`Failed to parse results: ${e.message}`));
-                }
-              } else if (result && result.status === 'failed') {
-                reject(new Error(`SWMM simulation failed: ${result.error || 'Unknown error'}`));
-              } else {
-                reject(new Error('Simulation completed but no results received'));
-              }
-            }
-          } catch (e) {
-            // ignore parse errors for non-JSON messages
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+        const statusResp = await fetch(`/api/swmm-proxy/batch/${jobId}/status`);
+        if (!statusResp.ok) {
+          throw new Error(`Failed to check simulation status: ${statusResp.statusText}`);
+        }
+        const statusData = await statusResp.json();
+
+        const batchStatus = statusData.status;
+        const currentFile = statusData.results?.[0];
+        const fileProgress = currentFile?.progress || 0;
+
+        if (batchStatus === 'processing' || batchStatus === 'running') {
+          const pct = Math.min(90, 10 + fileProgress * 0.8);
+          if (onProgress) onProgress(pct, `Simulating... ${Math.round(fileProgress)}%`);
+          continue;
+        }
+
+        if (batchStatus === 'completed' || batchStatus === 'done') {
+          if (onProgress) onProgress(92, 'Fetching results...');
+
+          const resultsResp = await fetch(`/api/swmm-proxy/batch/${jobId}/results`);
+          if (!resultsResp.ok) {
+            throw new Error(`Failed to fetch results: ${resultsResp.statusText}`);
           }
-        };
+          const resultsData = await resultsResp.json();
 
-        ws.onerror = () => {
-          clearTimeout(timeout);
-          reject(new Error('WebSocket connection to SWMM engine failed'));
-        };
-
-        ws.onclose = () => {
-          clearTimeout(timeout);
-          if (!result) {
-            // Might close before we get results — try polling fallback
+          const fileResult = resultsData.results?.[0] || resultsData;
+          if (fileResult.status === 'success' && fileResult.reportContent) {
+            if (onProgress) onProgress(95, 'Parsing results...');
+            const parsed = parseRptToResults(fileResult.reportContent, project);
+            if (onProgress) onProgress(100, 'Simulation complete');
+            return parsed;
+          } else if (fileResult.status === 'failed') {
+            throw new Error(`SWMM simulation failed: ${fileResult.error || 'Unknown error'}`);
+          } else {
+            throw new Error('Simulation completed but no results received');
           }
-        };
-      });
+        }
+
+        if (batchStatus === 'failed' || batchStatus === 'error') {
+          const errMsg = statusData.error || currentFile?.error || 'Unknown simulation error';
+          throw new Error(`SWMM simulation failed: ${errMsg}`);
+        }
+      }
     },
     getStatus() {
       return 'EPA SWMM 5.2.4 (Remote Engine)';
