@@ -1407,7 +1407,7 @@ export default function SwmmUI() {
 
               <div className="px-3 py-2 border-t border-[#d0d0d8] mt-1">
                 <div className="text-[8px] text-[#9090a0] leading-relaxed" data-testid="text-cfl-citation">
-                  ReSWMM — R. Dickinson &amp; S. Mudd
+                  ReSWMM — J. Vasconcelos, R.L. Pachaly, R. Dickinson (Auburn University)
                 </div>
               </div>
             </div>
