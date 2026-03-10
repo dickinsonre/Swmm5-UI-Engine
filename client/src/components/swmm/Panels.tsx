@@ -55,7 +55,7 @@ export function LegendPanel({
   return (
     <ScrollArea className="h-full" data-testid="legend-panel">
       <div className="p-2.5 space-y-3">
-        <div className="text-[11px] font-bold text-center pb-1.5 border-b border-[#3a3a52] text-[#e0e0e8]">
+        <div className="text-[11px] font-bold text-center pb-1.5 border-b border-[#d0d0d8] text-[#2a2a3e]">
           Map Legend
         </div>
 
@@ -79,17 +79,17 @@ export function LegendPanel({
           swatchType="line"
         />
 
-        <div className="border-t border-[#3a3a52] pt-2">
-          <div className="text-[11px] font-semibold text-[#e0e0e8] mb-1.5">Layers</div>
+        <div className="border-t border-[#d0d0d8] pt-2">
+          <div className="text-[11px] font-semibold text-[#2a2a3e] mb-1.5">Layers</div>
           {layers.map(l => (
             <label key={l.key} className="flex items-center gap-1.5 pl-1 py-0.5 cursor-pointer" data-testid={`layer-toggle-${l.key}`}>
               <input
                 type="checkbox"
                 checked={layerVisibility[l.key] !== false}
                 onChange={() => setLayerVisibility({ ...layerVisibility, [l.key]: !layerVisibility[l.key] })}
-                className="w-3 h-3 accent-[#4ea8de]"
+                className="w-3 h-3 accent-[#2c6eb5]"
               />
-              <span className="text-[10px] text-[#8888a0]">{l.icon} {l.label}</span>
+              <span className="text-[10px] text-[#6b6b7b]">{l.icon} {l.label}</span>
             </label>
           ))}
         </div>
@@ -113,12 +113,12 @@ function LegendSection({ title, labels, swatchType, checked, onCheckedChange }: 
             type="checkbox"
             checked={checked}
             onChange={() => onCheckedChange?.(!checked)}
-            className="w-3 h-3 accent-[#4ea8de]"
+            className="w-3 h-3 accent-[#2c6eb5]"
           />
         ) : (
           <div className="w-3" />
         )}
-        <span className="text-[10px] font-semibold text-[#c0c0d0]">{title}</span>
+        <span className="text-[10px] font-semibold text-[#4a4a5a]">{title}</span>
       </div>
       {labels.map((label, i) => (
         <div key={i} className="flex items-center gap-1.5 pl-5 py-px">
@@ -132,7 +132,7 @@ function LegendSection({ title, labels, swatchType, checked, onCheckedChange }: 
               border: '1px solid rgba(0,0,0,0.3)',
             }}
           />
-          <span className="text-[9px] text-[#8888a0]">{label}</span>
+          <span className="text-[9px] text-[#6b6b7b]">{label}</span>
         </div>
       ))}
     </div>
@@ -220,7 +220,7 @@ export function ProjectExplorer({ project, selectedObj, onSelectObj, results, ti
 
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="project-explorer">
-      <div className="text-[11px] font-bold text-center py-1.5 border-b border-[#3a3a52] text-[#e0e0e8] shrink-0">
+      <div className="text-[11px] font-bold text-center py-1.5 border-b border-[#d0d0d8] text-[#2a2a3e] shrink-0">
         Project Explorer
       </div>
 
@@ -243,31 +243,31 @@ export function ProjectExplorer({ project, selectedObj, onSelectObj, results, ti
       </ScrollArea>
 
       {selectedObj && (
-        <div className="border-t border-[#3a3a52] shrink-0" data-testid="property-editor">
-          <div className="flex items-center justify-between px-2 py-1 bg-[#323248]">
-            <span className="text-[11px] font-semibold text-[#e0e0e8]">
+        <div className="border-t border-[#d0d0d8] shrink-0" data-testid="property-editor">
+          <div className="flex items-center justify-between px-2 py-1 bg-[#e8e8ee]">
+            <span className="text-[11px] font-semibold text-[#2a2a3e]">
               {selectedObj.objType.charAt(0).toUpperCase() + selectedObj.objType.slice(1)} {selectedObj.id}
             </span>
           </div>
           <ScrollArea className="max-h-[220px]">
             <table className="w-full border-collapse text-[10px]" data-testid="property-table">
               <thead>
-                <tr className="bg-[#323248]">
-                  <th className="text-left px-1.5 py-0.5 border-b border-[#3a3a52] text-[#8888a0] font-medium">Property</th>
-                  <th className="text-left px-1.5 py-0.5 border-b border-[#3a3a52] text-[#8888a0] font-medium">Value</th>
+                <tr className="bg-[#e8e8ee]">
+                  <th className="text-left px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#6b6b7b] font-medium">Property</th>
+                  <th className="text-left px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#6b6b7b] font-medium">Value</th>
                 </tr>
               </thead>
               <tbody>
                 {properties.map(([k, v], i) => (
-                  <tr key={i} className={i % 2 === 0 ? '' : 'bg-white/[0.02]'}>
-                    <td className="px-1.5 py-0.5 border-b border-[#3a3a52] text-[#e0e0e8]">{k}</td>
-                    <td className="px-1.5 py-0.5 border-b border-[#3a3a52] text-[#4ea8de] font-mono">{v}</td>
+                  <tr key={i} className={i % 2 === 0 ? '' : 'bg-black/[0.03]'}>
+                    <td className="px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#2a2a3e]">{k}</td>
+                    <td className="px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#2c6eb5] font-mono">{v}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </ScrollArea>
-          <div className="px-1.5 py-1 text-[9px] text-[#6666a0] bg-[rgba(78,168,222,0.06)] border-t border-[#3a3a52]">
+          <div className="px-1.5 py-1 text-[9px] text-[#9090a0] bg-[rgba(44,110,181,0.06)] border-t border-[#d0d0d8]">
             Press Enter to edit, F1 for Help
           </div>
         </div>
@@ -294,7 +294,7 @@ function TreeItem({ label, indent = 0, expandable, isExpanded, onToggle, selecte
     <div
       onClick={onToggle}
       className={`flex items-center gap-1 rounded cursor-pointer text-[11px] py-0.5 px-1 transition-colors
-        ${selected ? 'bg-[#3a5a8a] text-white' : 'text-[#e0e0e8] hover:bg-white/[0.05]'}`}
+        ${selected ? 'bg-[#3a5a8a] text-white' : 'text-[#2a2a3e] hover:bg-black/[0.04]'}`}
       style={{ paddingLeft: 8 + indent * 14 }}
     >
       {expandable ? (
@@ -370,12 +370,12 @@ export function ObjectLocatorPanel({ project, onLocate, onClose }: ObjectLocator
   };
 
   return (
-    <div className="border-b border-[#3a3a52]" data-testid="object-locator-panel">
-      <div className="flex items-center justify-between px-2 py-1.5 bg-[#323248]">
-        <span className="text-[11px] font-bold text-[#e0e0e8]">Object Locator</span>
+    <div className="border-b border-[#d0d0d8]" data-testid="object-locator-panel">
+      <div className="flex items-center justify-between px-2 py-1.5 bg-[#e8e8ee]">
+        <span className="text-[11px] font-bold text-[#2a2a3e]">Object Locator</span>
         <button
           onClick={onClose}
-          className="text-[#8888a0] hover:text-[#e0e0e8] transition-colors"
+          className="text-[#6b6b7b] hover:text-[#2a2a3e] transition-colors"
           data-testid="btn-locator-close"
         >
           <X className="w-3.5 h-3.5" />
@@ -383,12 +383,12 @@ export function ObjectLocatorPanel({ project, onLocate, onClose }: ObjectLocator
       </div>
       <div className="p-2 space-y-2">
         <div>
-          <label className="text-[9px] text-[#8888a0] mb-0.5 block">Object Type</label>
+          <label className="text-[9px] text-[#6b6b7b] mb-0.5 block">Object Type</label>
           <select
             value={objType}
             onChange={e => { setObjType(e.target.value); setShowList(false); setErrorMsg(''); }}
             className="w-full text-[10px] rounded px-1.5 py-1"
-            style={{ backgroundColor: '#1e1e2e', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
             data-testid="select-locator-type"
           >
             {OBJECT_TYPES.map(t => (
@@ -397,7 +397,7 @@ export function ObjectLocatorPanel({ project, onLocate, onClose }: ObjectLocator
           </select>
         </div>
         <div>
-          <label className="text-[9px] text-[#8888a0] mb-0.5 block">Object ID</label>
+          <label className="text-[9px] text-[#6b6b7b] mb-0.5 block">Object ID</label>
           <input
             type="text"
             value={searchId}
@@ -405,24 +405,24 @@ export function ObjectLocatorPanel({ project, onLocate, onClose }: ObjectLocator
             onKeyDown={handleKeyDown}
             placeholder="Enter ID..."
             className="w-full text-[10px] rounded px-1.5 py-1"
-            style={{ backgroundColor: '#1e1e2e', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
             data-testid="input-locator-id"
           />
         </div>
         {errorMsg && (
-          <div className="text-[9px] text-[#f07070]" data-testid="text-locator-error">{errorMsg}</div>
+          <div className="text-[9px] text-[#d04040]" data-testid="text-locator-error">{errorMsg}</div>
         )}
         <div className="flex gap-1.5">
           <button
             onClick={handleLocate}
-            className="flex-1 flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded bg-[rgba(78,168,222,0.15)] text-[#4ea8de] border border-[#4ea8de]/30 hover:bg-[rgba(78,168,222,0.25)] transition-colors"
+            className="flex-1 flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded bg-[rgba(44,110,181,0.12)] text-[#2c6eb5] border border-[#2c6eb5]/30 hover:bg-[rgba(44,110,181,0.2)] transition-colors"
             data-testid="btn-locator-find"
           >
             <Search className="w-3 h-3" /> Find
           </button>
           <button
             onClick={() => setShowList(!showList)}
-            className="flex-1 flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded border border-[#3a3a52] text-[#c0c0d0] hover:bg-white/[0.05] transition-colors"
+            className="flex-1 flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded border border-[#d0d0d8] text-[#4a4a5a] hover:bg-black/[0.04] transition-colors"
             data-testid="btn-locator-list"
           >
             <List className="w-3 h-3" /> List
@@ -432,7 +432,7 @@ export function ObjectLocatorPanel({ project, onLocate, onClose }: ObjectLocator
           <ScrollArea className="max-h-[120px]">
             <div className="space-y-px" data-testid="locator-list">
               {objectIds.length === 0 ? (
-                <div className="text-[9px] text-[#6666a0] py-1 text-center">No objects</div>
+                <div className="text-[9px] text-[#9090a0] py-1 text-center">No objects</div>
               ) : (
                 objectIds.map((id: string) => (
                   <button
@@ -442,7 +442,7 @@ export function ObjectLocatorPanel({ project, onLocate, onClose }: ObjectLocator
                       onLocate(objType, id);
                       setShowList(false);
                     }}
-                    className="w-full text-left text-[10px] px-1.5 py-0.5 rounded text-[#e0e0e8] hover:bg-white/[0.05] transition-colors cursor-pointer"
+                    className="w-full text-left text-[10px] px-1.5 py-0.5 rounded text-[#2a2a3e] hover:bg-black/[0.04] transition-colors cursor-pointer"
                     data-testid={`locator-item-${id}`}
                   >
                     {id}
@@ -764,12 +764,12 @@ export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: Map
   const propertyOptions = getQueryPropertyOptions(query.objectType);
 
   return (
-    <div className="p-2.5 space-y-2 border-b border-[#3a3a52]" data-testid="map-query-panel">
+    <div className="p-2.5 space-y-2 border-b border-[#d0d0d8]" data-testid="map-query-panel">
       <div className="flex items-center justify-between gap-1">
-        <span className="text-[11px] font-bold text-[#e0e0e8]">Map Query</span>
+        <span className="text-[11px] font-bold text-[#2a2a3e]">Map Query</span>
         <button
           onClick={onClose}
-          className="p-0.5 text-[#8888a0] hover:text-[#e0e0e8] transition-colors"
+          className="p-0.5 text-[#6b6b7b] hover:text-[#2a2a3e] transition-colors"
           data-testid="btn-query-close"
         >
           <X className="w-3.5 h-3.5" />
@@ -778,12 +778,12 @@ export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: Map
 
       <div className="space-y-1.5">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#8888a0] w-12 shrink-0">Type:</span>
+          <span className="text-[10px] text-[#6b6b7b] w-12 shrink-0">Type:</span>
           <select
             value={query.objectType}
             onChange={e => onQueryChange({ ...query, objectType: e.target.value as MapQuery['objectType'], property: getQueryPropertyOptions(e.target.value)[0][0], active: false })}
             className="flex-1 text-[10px] rounded px-1 py-0.5"
-            style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
             data-testid="select-query-type"
           >
             <option value="node">Node</option>
@@ -793,12 +793,12 @@ export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: Map
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#8888a0] w-12 shrink-0">Prop:</span>
+          <span className="text-[10px] text-[#6b6b7b] w-12 shrink-0">Prop:</span>
           <select
             value={query.property}
             onChange={e => onQueryChange({ ...query, property: e.target.value, active: false })}
             className="flex-1 text-[10px] rounded px-1 py-0.5"
-            style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
             data-testid="select-query-property"
           >
             {propertyOptions.map(([val, lbl]) => (
@@ -808,12 +808,12 @@ export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: Map
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#8888a0] w-12 shrink-0">Op:</span>
+          <span className="text-[10px] text-[#6b6b7b] w-12 shrink-0">Op:</span>
           <select
             value={query.operator}
             onChange={e => onQueryChange({ ...query, operator: e.target.value as MapQuery['operator'] })}
             className="text-[10px] rounded px-1 py-0.5 w-12"
-            style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
             data-testid="select-query-operator"
           >
             <option value=">">&gt;</option>
@@ -827,7 +827,7 @@ export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: Map
             value={query.value}
             onChange={e => onQueryChange({ ...query, value: parseFloat(e.target.value) || 0 })}
             className="flex-1 text-[10px] rounded px-1 py-0.5"
-            style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+            style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
             data-testid="input-query-value"
           />
         </div>
@@ -835,14 +835,14 @@ export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: Map
         <button
           onClick={() => onQueryChange({ ...query, active: true })}
           className="w-full text-[10px] py-1 rounded border transition-colors"
-          style={{ backgroundColor: 'rgba(78,168,222,0.15)', borderColor: '#4ea8de', color: '#4ea8de' }}
+          style={{ backgroundColor: 'rgba(44,110,181,0.12)', borderColor: '#2c6eb5', color: '#2c6eb5' }}
           data-testid="btn-query-submit"
         >
           Run Query
         </button>
 
         {query.active && (
-          <div className="text-[10px] text-[#82e0a8] text-center" data-testid="text-query-match-count">
+          <div className="text-[10px] text-[#2a8a4a] text-center" data-testid="text-query-match-count">
             {matchCount} object{matchCount !== 1 ? 's' : ''} matched
           </div>
         )}

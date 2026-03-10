@@ -4,7 +4,7 @@
 Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 INP files from desktop or GitHub, visualizes stormwater networks on a canvas map, and runs the SWMM5 engine (mock/WASM). Full desktop-like engineering UI with object creation, manipulation, and group editing.
 
 ## Architecture
-- **Frontend**: React + TypeScript + Tailwind CSS with dark engineering theme
+- **Frontend**: React + TypeScript + Tailwind CSS with light EPANET-style theme (dark navy menu bar, white map canvas, light gray panels)
 - **Backend**: Express.js (minimal - just GitHub proxy endpoint)
 - **No database required** - all data is client-side INP file parsing
 
@@ -82,6 +82,19 @@ Status Bar
 - Both demonstrate all SWMM5 features (LID, aquifers, groundwater, transects, etc.)
 - Loaded on-demand via fetch (not bundled into JS)
 - Parser silently skips unrecognized sections
+
+## CFL Analysis & Discretization (ReSWMM)
+- Automatic CFL stability analysis runs on every model load
+- Flags conduits violating Courant-Friedrichs-Lewy criterion (Courant number > 1)
+- Formula: celerity = sqrt(g × D), Courant = (celerity × routingStep) / length
+- Gravity: 32.174 ft/s² (US), 9.81 m/s² (SI) based on FLOW_UNITS
+- Flagged conduits highlighted red on map (toggleable)
+- CFL panel accessible via Project > CFL button
+- One-click discretization splits flagged conduits with interpolated intermediate junctions
+- Two methods: Fixed Interval (min/max lengths) and Δx/D Ratio
+- Optional conduit lengthening (short pipe stabilization)
+- New junctions rendered as small green diamonds on map
+- `client/src/lib/cfl-analysis.ts` — CFL engine and discretization logic
 
 ## Simulation Engine
 - Two modes: **Remote** (EPA SWMM 5.2.4) and **Mock** (simulated results)

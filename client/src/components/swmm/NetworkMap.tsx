@@ -3,15 +3,15 @@ import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-
 import type { SwmmPreferences } from '@/pages/swmm-ui';
 
 const COLORS = {
-  mapBg: '#141a26',
-  grid: 'rgba(255,255,255,0.03)',
-  subcatchFill: 'rgba(78,168,222,0.12)',
-  subcatchStroke: 'rgba(78,168,222,0.35)',
-  subcatchSelected: '#4ea8de',
+  mapBg: '#ffffff',
+  grid: 'rgba(0,0,0,0.06)',
+  subcatchFill: 'rgba(44,110,181,0.15)',
+  subcatchStroke: 'rgba(44,110,181,0.4)',
+  subcatchSelected: '#2c6eb5',
   nodeDefault: '#7092BE',
   linkDefault: '#5a7a9a',
-  text: 'rgba(255,255,255,0.6)',
-  textSelected: '#ffffff',
+  text: 'rgba(0,0,0,0.65)',
+  textSelected: '#000000',
   legend: ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'],
 };
 
@@ -36,6 +36,8 @@ interface Props {
   preferences?: SwmmPreferences;
   queryMatchIds?: Set<string> | null;
   queryObjectType?: 'node' | 'link' | 'subcatchment' | null;
+  cflFlaggedIds?: Set<string> | null;
+  discretizedJunctionIds?: Set<string> | null;
   onCreateNode?: (wx: number, wy: number, mode: string) => void;
   onStartLink?: (nodeId: string) => void;
   onCompleteLink?: (nodeId: string, vertices: [number, number][]) => void;
@@ -71,6 +73,8 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   preferences,
   queryMatchIds,
   queryObjectType,
+  cflFlaggedIds,
+  discretizedJunctionIds,
   onCreateNode,
   onStartLink,
   onCompleteLink,
@@ -275,8 +279,8 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         return COLORS.legend[idx];
       }
     }
-    if (nodeType === 'outfall') return '#82e0a8';
-    if (nodeType === 'storage') return '#f0c060';
+    if (nodeType === 'outfall') return '#2a8a4a';
+    if (nodeType === 'storage') return '#c08820';
     return COLORS.nodeDefault;
   }, [results, timeStep, nodeTheme, queryMatchIds, queryObjectType, groupSelectedIds]);
 
@@ -286,6 +290,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       if (queryMatchIds.has(linkId)) return '#ff4444';
       return '#555566';
     }
+    if (cflFlaggedIds && cflFlaggedIds.has(linkId)) return '#ff5555';
     if (results && results.timeSteps[timeStep]) {
       const lr = results.timeSteps[timeStep].links[linkId];
       if (lr) {
@@ -297,7 +302,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
     return COLORS.linkDefault;
-  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds]);
+  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds, cflFlaggedIds]);
 
   const getLinkWidth = useCallback((linkId: string) => {
     if (results && results.timeSteps[timeStep]) {
@@ -464,7 +469,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         ctx.beginPath();
         ctx.arc(mx, my, r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = COLORS.mapBg;
+        ctx.fillStyle = '#000000';
         ctx.font = `bold ${r}px "JetBrains Mono", monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -473,7 +478,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         const r = Math.max(6, Math.min(10, mapState.zoom * 300));
         ctx.fillStyle = getLinkColor(link.id);
         ctx.fillRect(mx - r, my - r / 3, r * 2, r * 0.66);
-        ctx.fillStyle = COLORS.mapBg;
+        ctx.fillStyle = '#000000';
         ctx.font = `bold ${r * 0.7}px "JetBrains Mono", monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -496,7 +501,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         const arrowLen = Math.max(4, Math.min(8, mapState.zoom * 200));
         const ax = mx + ux * arrowLen * 1.5;
         const ay = my + uy * arrowLen * 1.5;
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(ax - ux * arrowLen - uy * arrowLen * 0.4, ay - uy * arrowLen + ux * arrowLen * 0.4);
@@ -506,7 +511,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
 
       if (preferences?.showLinkIds !== false) {
-        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.font = `${Math.max(8, Math.min(10, mapState.zoom * 350))}px "JetBrains Mono", monospace`;
         ctx.textAlign = 'center';
         ctx.fillText(link.id, mx, my - 8);
@@ -523,7 +528,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       const r = Math.max(4, Math.min(8, mapState.zoom * 250));
 
       ctx.fillStyle = getNodeColor(nodeId, nType);
-      ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(0,0,0,0.5)';
+      ctx.strokeStyle = isSelected ? '#000000' : 'rgba(0,0,0,0.4)';
       ctx.lineWidth = isSelected ? 2.5 : 1;
 
       if (nType === 'storage') {
@@ -548,6 +553,18 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+      } else if (discretizedJunctionIds && discretizedJunctionIds.has(nodeId)) {
+        const dr = r * 0.7;
+        ctx.fillStyle = '#2a8a4a';
+        ctx.strokeStyle = isSelected ? '#000000' : 'rgba(0,0,0,0.4)';
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - dr);
+        ctx.lineTo(sx + dr, sy);
+        ctx.lineTo(sx, sy + dr);
+        ctx.lineTo(sx - dr, sy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       } else {
         ctx.beginPath();
         ctx.arc(sx, sy, r, 0, Math.PI * 2);
@@ -566,7 +583,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     if (isLayerVisible('labels')) {
       for (const label of project.labels) {
         const [sx, sy] = worldToScreen(label.x, label.y);
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.font = `${label.bold ? 'bold ' : ''}${label.size || 10}px "JetBrains Mono", monospace`;
         ctx.textAlign = 'left';
         ctx.fillText(label.text, sx, sy);
@@ -583,7 +600,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         if (rubberBandPos) {
           pts.push(rubberBandPos);
         }
-        ctx.strokeStyle = '#4ea8de';
+        ctx.strokeStyle = '#2c6eb5';
         ctx.lineWidth = 2;
         ctx.setLineDash([6, 4]);
         ctx.beginPath();
@@ -595,7 +612,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         ctx.setLineDash([]);
 
         for (const pt of pts) {
-          ctx.fillStyle = '#4ea8de';
+          ctx.fillStyle = '#2c6eb5';
           ctx.beginPath();
           ctx.arc(pt[0], pt[1], 3, 0, Math.PI * 2);
           ctx.fill();
@@ -632,7 +649,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
 
-  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences, linkDrawState, rubberBandPos, groupSelectPoints, groupSelectedIds, interactionMode]);
+  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences, linkDrawState, rubberBandPos, groupSelectPoints, groupSelectedIds, interactionMode, cflFlaggedIds, discretizedJunctionIds]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -964,21 +981,21 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
             left: tooltip.x,
             top: tooltip.y,
             pointerEvents: 'none',
-            backgroundColor: 'rgba(22, 22, 34, 0.92)',
-            border: '1px solid #4ea8de',
+            backgroundColor: 'rgba(255, 255, 255, 0.96)',
+            border: '1px solid #2c6eb5',
             borderRadius: '4px',
             padding: '4px 8px',
             fontSize: '11px',
             fontFamily: '"JetBrains Mono", monospace',
-            color: '#e0e0e8',
+            color: '#2a2a3e',
             whiteSpace: 'nowrap',
             zIndex: 50,
             transform: 'translateY(-100%)',
           }}
         >
-          <span style={{ color: '#4ea8de', fontWeight: 600 }} data-testid="tooltip-id">{tooltip.id}</span>
+          <span style={{ color: '#2c6eb5', fontWeight: 600 }} data-testid="tooltip-id">{tooltip.id}</span>
           {tooltip.info && (
-            <span style={{ color: '#a0a0b8', marginLeft: '6px' }} data-testid="tooltip-info">{tooltip.info}</span>
+            <span style={{ color: '#6b6b7b', marginLeft: '6px' }} data-testid="tooltip-info">{tooltip.info}</span>
           )}
         </div>
       )}

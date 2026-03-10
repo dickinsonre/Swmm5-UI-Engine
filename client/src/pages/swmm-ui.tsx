@@ -3,6 +3,8 @@ import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-
 import { createEmptyProject } from '@/lib/swmm-types';
 import { parseInpFile, SAMPLE_INP } from '@/lib/inp-parser';
 import { createMockEngine, createRemoteEngine, checkRemoteEngine } from '@/lib/swmm-engine';
+import { computeCflAnalysis, discretizeProject, getDefaultSettings } from '@/lib/cfl-analysis';
+import type { CflAnalysisResult, DiscretizationSettings, DiscretizationResult } from '@/lib/cfl-analysis';
 import type { SwmmEngine } from '@/lib/swmm-engine';
 import NetworkMap, { type NetworkMapHandle } from '@/components/swmm/NetworkMap';
 import { LegendPanel, ProjectExplorer, ObjectLocatorPanel, MapQueryPanel, evaluateQuery } from '@/components/swmm/Panels';
@@ -15,6 +17,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Info, HelpCircle, FileText, Clipboard,
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
+  Scissors,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -40,7 +43,7 @@ const DEFAULT_PREFERENCES: SwmmPreferences = {
   blinkingMapMarker: true,
   showNodeIds: true,
   showLinkIds: true,
-  mapBackgroundColor: '#141a26',
+  mapBackgroundColor: '#ffffff',
 };
 
 function loadPreferences(): SwmmPreferences {
@@ -113,6 +116,11 @@ export default function SwmmUI() {
     active: false,
   });
   const [exportIncludeLegend, setExportIncludeLegend] = useState(true);
+  const [showCflPanel, setShowCflPanel] = useState(false);
+  const [cflAnalysis, setCflAnalysis] = useState<CflAnalysisResult | null>(null);
+  const [cflShowFlagged, setCflShowFlagged] = useState(true);
+  const [discretizationResult, setDiscretizationResult] = useState<DiscretizationResult | null>(null);
+  const [discretizationSettings, setDiscretizationSettings] = useState<DiscretizationSettings>(getDefaultSettings);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [linkDrawState, setLinkDrawState] = useState<LinkDrawState | null>(null);
   const [copiedObj, setCopiedObj] = useState<{ objType: string; props: any } | null>(null);
@@ -336,10 +344,10 @@ export default function SwmmUI() {
 
     ctx.drawImage(mapCanvas, 0, 0);
 
-    ctx.fillStyle = '#2a2a3e';
+    ctx.fillStyle = '#f8f8fa';
     ctx.fillRect(mapCanvas.width, 0, legendWidth, mapCanvas.height);
 
-    ctx.strokeStyle = '#3a3a52';
+    ctx.strokeStyle = '#d0d0d8';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(mapCanvas.width, 0);
@@ -349,7 +357,7 @@ export default function SwmmUI() {
     const x = mapCanvas.width + 12;
     let y = 20;
 
-    ctx.fillStyle = '#e0e0e8';
+    ctx.fillStyle = '#2a2a3e';
     ctx.font = 'bold 12px "JetBrains Mono", monospace';
     ctx.fillText('Legend', x, y);
     y += 24;
@@ -358,28 +366,28 @@ export default function SwmmUI() {
     const nodeLabel = nodeTheme === 'depth' ? 'Node Depth' : 'Node Head';
     const linkLabel = linkTheme === 'flow' ? 'Link Flow' : linkTheme === 'velocity' ? 'Link Velocity' : 'Link Depth';
 
-    ctx.fillStyle = '#8888a0';
+    ctx.fillStyle = '#6b6b7b';
     ctx.font = '10px "JetBrains Mono", monospace';
     ctx.fillText(nodeLabel, x, y);
     y += 14;
     legendColors.forEach((c, i) => {
       ctx.fillStyle = c;
       ctx.fillRect(x, y, 10, 10);
-      ctx.fillStyle = '#e0e0e8';
+      ctx.fillStyle = '#2a2a3e';
       ctx.font = '9px "JetBrains Mono", monospace';
       ctx.fillText(`Level ${i + 1}`, x + 16, y + 9);
       y += 14;
     });
     y += 8;
 
-    ctx.fillStyle = '#8888a0';
+    ctx.fillStyle = '#6b6b7b';
     ctx.font = '10px "JetBrains Mono", monospace';
     ctx.fillText(linkLabel, x, y);
     y += 14;
     legendColors.forEach((c, i) => {
       ctx.fillStyle = c;
       ctx.fillRect(x, y, 10, 10);
-      ctx.fillStyle = '#e0e0e8';
+      ctx.fillStyle = '#2a2a3e';
       ctx.font = '9px "JetBrains Mono", monospace';
       ctx.fillText(`Level ${i + 1}`, x + 16, y + 9);
       y += 14;
@@ -430,6 +438,51 @@ export default function SwmmUI() {
       if (available) setEngineMode('remote');
     });
   }, []);
+
+  const justDiscretizedRef = useRef(false);
+
+  useEffect(() => {
+    if (project.conduits.length > 0) {
+      const analysis = computeCflAnalysis(project);
+      setCflAnalysis(analysis);
+    } else {
+      setCflAnalysis(null);
+    }
+    if (justDiscretizedRef.current) {
+      justDiscretizedRef.current = false;
+    } else {
+      setDiscretizationResult(null);
+    }
+  }, [project]);
+
+  const cflFlaggedIds = useMemo(() => {
+    if (!cflAnalysis || !cflShowFlagged || cflAnalysis.flaggedCount === 0) return null;
+    const ids = new Set<string>();
+    for (const c of cflAnalysis.conduits) {
+      if (c.violatesCfl) ids.add(c.conduitId);
+    }
+    return ids;
+  }, [cflAnalysis, cflShowFlagged]);
+
+  const handleDiscretize = useCallback(() => {
+    const flagged = new Set<string>();
+    if (cflAnalysis) {
+      for (const c of cflAnalysis.conduits) {
+        if (c.violatesCfl) flagged.add(c.conduitId);
+      }
+    }
+    const result = discretizeProject(project, discretizationSettings, flagged.size > 0 ? flagged : undefined);
+    justDiscretizedRef.current = true;
+    setProject(result.project);
+    setDiscretizationResult(result);
+    setResults(null);
+    setSimStatus('none');
+    setTimeStep(0);
+    toast({
+      title: 'Discretization Complete',
+      description: `${result.stats.splitCount} conduits split, ${result.stats.newJunctionCount} junctions added`,
+    });
+  }, [project, discretizationSettings, toast, cflAnalysis]);
 
   useEffect(() => {
     if (!isAnimating || !results) {
@@ -808,32 +861,32 @@ export default function SwmmUI() {
   return (
     <div
       className="w-full h-screen flex flex-col overflow-hidden select-none"
-      style={{ fontFamily: "'Inter', 'Segoe UI', -apple-system, sans-serif", backgroundColor: '#1e1e2e', color: '#e0e0e8' }}
+      style={{ fontFamily: "'Inter', 'Segoe UI', -apple-system, sans-serif", backgroundColor: '#f5f5f5', color: '#2a2a3e' }}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       data-testid="swmm-ui-root"
     >
       <input ref={fileInputRef} type="file" accept=".inp,.INP" onChange={handleFileInput} className="hidden" data-testid="file-input" />
 
-      <div className="h-7 flex items-center px-3 text-xs gap-2 shrink-0" style={{ backgroundColor: '#161622' }}>
-        <span className="font-bold" style={{ color: '#4ea8de' }}>&#9670;</span>
-        <span className="font-semibold text-[#e0e0e8]">SWMM5-UI</span>
-        <span className="text-[#8888a0]">{fileName}</span>
+      <div className="h-7 flex items-center px-3 text-xs gap-2 shrink-0" style={{ backgroundColor: '#2c3e6b' }}>
+        <span className="font-bold" style={{ color: '#ffffff' }}>&#9670;</span>
+        <span className="font-semibold text-white">SWMM5-UI</span>
+        <span className="text-white/70">{fileName}</span>
         <div className="flex-1" />
-        <span className="text-[10px] opacity-50">Stormwater Management Model</span>
+        <span className="text-[10px] text-white/50">Stormwater Management Model</span>
       </div>
 
-      <div className="h-8 flex items-stretch shrink-0" style={{ backgroundColor: '#2a2a3e', borderBottom: '1px solid #3a3a52' }}>
+      <div className="h-8 flex items-stretch shrink-0" style={{ backgroundColor: '#3a5070', borderBottom: '1px solid #d0d0d8' }}>
         {menus.map(m => (
           <button
             key={m}
             onClick={() => setActiveMenu(m)}
             className="px-4 flex items-center text-xs transition-all duration-150"
             style={{
-              backgroundColor: activeMenu === m ? '#3a5a8a' : 'transparent',
-              color: activeMenu === m ? '#fff' : '#e0e0e8',
+              backgroundColor: activeMenu === m ? '#4a6a9a' : 'transparent',
+              color: activeMenu === m ? '#fff' : 'rgba(255,255,255,0.85)',
               fontWeight: activeMenu === m ? 700 : 400,
-              borderBottom: activeMenu === m ? '2px solid #4ea8de' : '2px solid transparent',
+              borderBottom: activeMenu === m ? '2px solid #ffffff' : '2px solid transparent',
             }}
             data-testid={`menu-${m.toLowerCase()}`}
           >
@@ -848,7 +901,7 @@ export default function SwmmUI() {
         </div>
       </div>
 
-      <div className="h-[52px] flex items-center px-2 gap-0.5 shrink-0 overflow-x-auto" style={{ backgroundColor: '#2a2a3e', borderBottom: '1px solid #3a3a52' }}>
+      <div className="h-[52px] flex items-center px-2 gap-0.5 shrink-0 overflow-x-auto" style={{ backgroundColor: '#f0f0f4', borderBottom: '1px solid #d0d0d8' }}>
         {activeMenu === 'File' && (
           <div className="flex items-center gap-0.5">
             <ToolbarButton icon={<FilePlus className="w-4 h-4" />} label="New" onClick={handleNewProject} testId="btn-new" />
@@ -858,28 +911,28 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" testId="btn-export" />
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" testId="btn-import" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
-            <div className="w-px h-8 mx-1" style={{ backgroundColor: '#3a3a52' }} />
+            <div className="w-px h-8 mx-1" style={{ backgroundColor: '#d0d0d8' }} />
             <div className="relative">
               <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Samples" onClick={() => setShowSamplesMenu(v => !v)} testId="btn-samples" />
               {showSamplesMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowSamplesMenu(false)} />
-                  <div className="absolute left-0 top-full mt-0.5 z-50 min-w-[260px] rounded shadow-lg border" style={{ backgroundColor: '#2a2a3e', borderColor: '#3a3a52' }}>
+                  <div className="absolute left-0 top-full mt-0.5 z-50 min-w-[260px] rounded shadow-lg border" style={{ backgroundColor: '#ffffff', borderColor: '#d0d0d8' }}>
                     <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-[#3a3a52] text-[#c8c8d8]"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
                       onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_US.inp'); }}
                       data-testid="btn-sample-greenville-us"
                     >
                       Greenville (US Customary Units)
-                      <span className="block text-[10px] text-[#8888a0]">All SWMM5 features - CFS, Green-Ampt, DynWave</span>
+                      <span className="block text-[10px] text-[#6b6b7b]">All SWMM5 features - CFS, Green-Ampt, DynWave</span>
                     </button>
                     <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-[#3a3a52] text-[#c8c8d8]"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
                       onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_SI.inp'); }}
                       data-testid="btn-sample-greenville-si"
                     >
                       Greenville (SI / Metric Units)
-                      <span className="block text-[10px] text-[#8888a0]">All SWMM5 features - CMS, Green-Ampt, DynWave</span>
+                      <span className="block text-[10px] text-[#6b6b7b]">All SWMM5 features - CMS, Green-Ampt, DynWave</span>
                     </button>
                   </div>
                 </>
@@ -907,7 +960,7 @@ export default function SwmmUI() {
             <div className="flex-1" />
             {results && (
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[#8888a0]">Time:</span>
+                <span className="text-[10px] text-[#6b6b7b]">Time:</span>
                 <input
                   type="range"
                   min={0}
@@ -915,16 +968,16 @@ export default function SwmmUI() {
                   value={timeStep}
                   onChange={e => setTimeStep(+e.target.value)}
                   className="w-28"
-                  style={{ accentColor: '#4ea8de' }}
+                  style={{ accentColor: '#2c6eb5' }}
                   data-testid="time-slider"
                 />
-                <span className="text-[10px] font-mono text-[#4ea8de] min-w-[70px]" data-testid="time-display">
+                <span className="text-[10px] font-mono text-[#2c6eb5] min-w-[70px]" data-testid="time-display">
                   {currentTime.split(' ')[1] || `Step ${timeStep}`}
                 </span>
                 <button
                   onClick={() => setIsAnimating(!isAnimating)}
                   className="flex items-center gap-1 px-2 py-1 text-[10px] rounded border"
-                  style={{ borderColor: '#3a3a52', color: isAnimating ? '#f07070' : '#4ea8de' }}
+                  style={{ borderColor: '#d0d0d8', color: isAnimating ? '#d04040' : '#2c6eb5' }}
                   data-testid="btn-animate"
                 >
                   {isAnimating ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
@@ -950,7 +1003,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Locate" onClick={() => setShowLocator(!showLocator)} testId="btn-locate" />
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" testId="btn-summary" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" testId="btn-details" />
-            <div className="w-px h-8 bg-[#3a3a52] mx-1" />
+            <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <ToolbarButton
               icon={simStatus === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               label="Run"
@@ -960,19 +1013,31 @@ export default function SwmmUI() {
               testId="btn-run"
             />
             <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" testId="btn-report" />
-            <div className="w-px h-8 bg-[#3a3a52] mx-1" />
+            <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
+            <ToolbarButton
+              icon={<Scissors className="w-4 h-4" />}
+              label="CFL"
+              onClick={() => setShowCflPanel(!showCflPanel)}
+              testId="btn-cfl"
+            />
+            {cflAnalysis && cflAnalysis.flaggedCount > 0 && (
+              <span className="text-[9px] text-[#d04040] font-medium -ml-1 mt-0.5" data-testid="cfl-badge">
+                {cflAnalysis.flaggedCount}
+              </span>
+            )}
+            <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <button
               onClick={() => setEngineMode(engineMode === 'remote' ? 'mock' : 'remote')}
               disabled={!remoteAvailable && engineMode !== 'remote'}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors border ${
                 engineMode === 'remote'
-                  ? 'bg-[rgba(78,168,222,0.15)] border-[#4ea8de] text-[#4ea8de]'
-                  : 'bg-transparent border-[#3a3a52] text-[#8888a0] hover:text-[#c8c8d8]'
+                  ? 'bg-[rgba(44,110,181,0.12)] border-[#2c6eb5] text-[#2c6eb5]'
+                  : 'bg-transparent border-[#d0d0d8] text-[#6b6b7b] hover:text-[#2a2a3e]'
               } ${!remoteAvailable && engineMode !== 'remote' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
               title={remoteAvailable ? 'Toggle between real SWMM 5.2.4 engine and mock simulation' : 'Remote SWMM engine not available'}
               data-testid="btn-engine-toggle"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'remote' ? 'bg-[#4ea8de]' : 'bg-[#6a6a80]'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
               {engineMode === 'remote' ? 'SWMM 5.2.4' : 'Mock Engine'}
             </button>
           </div>
@@ -988,13 +1053,13 @@ export default function SwmmUI() {
       </div>
 
       {simStatus === 'running' && (
-        <div className="h-2 shrink-0 bg-[#1a1a2a]">
+        <div className="h-2 shrink-0 bg-[#e0e0e8]">
           <Progress value={simProgress} className="h-2 rounded-none" />
         </div>
       )}
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-[170px] shrink-0 overflow-hidden flex flex-col" style={{ backgroundColor: '#2a2a3e', borderRight: '1px solid #3a3a52' }}>
+        <div className="w-[170px] shrink-0 overflow-hidden flex flex-col" style={{ backgroundColor: '#f8f8fa', borderRight: '1px solid #d0d0d8' }}>
           {showLocator && (
             <ObjectLocatorPanel
               project={project}
@@ -1043,6 +1108,8 @@ export default function SwmmUI() {
             preferences={preferences}
             queryMatchIds={queryMatchIds}
             queryObjectType={queryObjectType}
+            cflFlaggedIds={cflFlaggedIds}
+            discretizedJunctionIds={discretizationResult?.newJunctionIds || null}
             onCreateNode={handleCreateNode}
             onStartLink={handleStartLink}
             onCompleteLink={handleCompleteLink}
@@ -1076,7 +1143,7 @@ export default function SwmmUI() {
           {interactionMode !== 'select' && (
             <div
               className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded text-[11px] z-10"
-              style={{ backgroundColor: 'rgba(30,30,46,0.92)', border: '1px solid #4ea8de', color: '#4ea8de' }}
+              style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #2c6eb5', color: '#2c6eb5' }}
               data-testid="mode-indicator"
             >
               {interactionMode === 'addJunction' && 'Click to place Junction (Esc to cancel)'}
@@ -1090,19 +1157,216 @@ export default function SwmmUI() {
             </div>
           )}
 
+          {showCflPanel && cflAnalysis && (
+            <div
+              className="absolute top-2 right-2 w-[320px] max-h-[calc(100%-16px)] overflow-y-auto z-20 rounded-lg shadow-xl"
+              style={{ backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid #d0d0d8' }}
+              data-testid="cfl-panel"
+            >
+              <div className="flex items-center justify-between px-3 py-2 border-b border-[#d0d0d8]">
+                <div className="flex items-center gap-2">
+                  <Scissors className="w-3.5 h-3.5 text-[#2c6eb5]" />
+                  <span className="text-[11px] font-semibold text-[#2a2a3e]">CFL Stability Analysis</span>
+                </div>
+                <button onClick={() => setShowCflPanel(false)} className="text-[#6b6b7b] hover:text-[#2a2a3e]" data-testid="btn-cfl-close">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="px-3 py-2 space-y-2 text-[10px]">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  <span className="text-[#6b6b7b]">Routing Step:</span>
+                  <span className="text-[#2a2a3e]">{cflAnalysis.routingStep}s</span>
+                  <span className="text-[#6b6b7b]">Flow Units:</span>
+                  <span className="text-[#2a2a3e]">{cflAnalysis.units}</span>
+                  <span className="text-[#6b6b7b]">Gravity:</span>
+                  <span className="text-[#2a2a3e]">{cflAnalysis.gravity.toFixed(3)} {cflAnalysis.units === 'CFS' || cflAnalysis.units === 'GPM' || cflAnalysis.units === 'MGD' ? 'ft/s²' : 'm/s²'}</span>
+                  <span className="text-[#6b6b7b]">Total Conduits:</span>
+                  <span className="text-[#2a2a3e]">{cflAnalysis.totalCount}</span>
+                  <span className="text-[#6b6b7b]">CFL Violations:</span>
+                  <span className={cflAnalysis.flaggedCount > 0 ? 'text-[#d04040] font-semibold' : 'text-[#2a8a4a]'}>
+                    {cflAnalysis.flaggedCount > 0 ? `${cflAnalysis.flaggedCount} conduits` : 'None'}
+                  </span>
+                  {cflAnalysis.flaggedCount > 0 && (
+                    <>
+                      <span className="text-[#6b6b7b]">Worst Courant:</span>
+                      <span className="text-[#d04040]">{cflAnalysis.worstCourant.toFixed(2)} ({cflAnalysis.worstConduitId})</span>
+                    </>
+                  )}
+                </div>
+
+                {cflAnalysis.flaggedCount > 0 && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <Switch
+                      checked={cflShowFlagged}
+                      onCheckedChange={setCflShowFlagged}
+                      className="data-[state=checked]:bg-[#ff5555]"
+                      data-testid="switch-cfl-highlight"
+                    />
+                    <Label className="text-[10px] text-[#6b6b7b] cursor-pointer">Highlight flagged on map</Label>
+                  </div>
+                )}
+              </div>
+
+              {cflAnalysis.flaggedCount > 0 && (
+                <>
+                  <div className="border-t border-[#d0d0d8] px-3 py-2">
+                    <div className="text-[10px] font-semibold text-[#2a2a3e] mb-2">Flagged Conduits</div>
+                    <div className="max-h-[120px] overflow-y-auto space-y-0.5">
+                      {cflAnalysis.conduits
+                        .filter(c => c.violatesCfl)
+                        .sort((a, b) => b.courantNumber - a.courantNumber)
+                        .map(c => (
+                          <button
+                            key={c.conduitId}
+                            onClick={() => handleLocateObject('conduit', c.conduitId)}
+                            className="w-full flex items-center justify-between px-2 py-1 rounded text-[9px] hover:bg-black/[0.04] cursor-pointer transition-colors"
+                            data-testid={`cfl-conduit-${c.conduitId}`}
+                          >
+                            <span className="text-[#2a2a3e] font-mono">{c.conduitId}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[#6b6b7b]">L={c.length.toFixed(0)}</span>
+                              <span className="text-[#6b6b7b]">D={c.diameter.toFixed(2)}</span>
+                              <span className="text-[#d04040] font-semibold">Cr={c.courantNumber.toFixed(1)}</span>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-[#d0d0d8] px-3 py-2 space-y-2">
+                    <div className="text-[10px] font-semibold text-[#2a2a3e]">Discretization Settings</div>
+
+                    <div className="flex items-center gap-2">
+                      <Label className="text-[9px] text-[#6b6b7b] w-[70px]">Method:</Label>
+                      <select
+                        value={discretizationSettings.method}
+                        onChange={e => setDiscretizationSettings(prev => ({ ...prev, method: e.target.value as 'fixed_interval' | 'dx_d_ratio' }))}
+                        className="flex-1 text-[9px] rounded px-1.5 py-0.5 bg-[#ffffff] text-[#2a2a3e] border border-[#d0d0d8]"
+                        data-testid="select-disc-method"
+                      >
+                        <option value="fixed_interval">Fixed Interval</option>
+                        <option value="dx_d_ratio">Δx/D Ratio</option>
+                      </select>
+                    </div>
+
+                    {discretizationSettings.method === 'fixed_interval' ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-[9px] text-[#6b6b7b] w-[70px]">Min Length:</Label>
+                          <Input
+                            type="number"
+                            value={discretizationSettings.fixedMinLength}
+                            onChange={e => setDiscretizationSettings(prev => ({ ...prev, fixedMinLength: parseFloat(e.target.value) || 0 }))}
+                            className="flex-1 h-6 text-[9px] bg-[#ffffff] border-[#d0d0d8] text-[#2a2a3e]"
+                            data-testid="input-disc-min"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-[9px] text-[#6b6b7b] w-[70px]">Max Length:</Label>
+                          <Input
+                            type="number"
+                            value={discretizationSettings.fixedMaxLength}
+                            onChange={e => setDiscretizationSettings(prev => ({ ...prev, fixedMaxLength: parseFloat(e.target.value) || 0 }))}
+                            className="flex-1 h-6 text-[9px] bg-[#ffffff] border-[#d0d0d8] text-[#2a2a3e]"
+                            data-testid="input-disc-max"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Label className="text-[9px] text-[#6b6b7b] w-[70px]">Δx/D Ratio:</Label>
+                        <Input
+                          type="number"
+                          value={discretizationSettings.dxDRatio}
+                          onChange={e => setDiscretizationSettings(prev => ({ ...prev, dxDRatio: parseFloat(e.target.value) || 1 }))}
+                          className="flex-1 h-6 text-[9px] bg-[#ffffff] border-[#d0d0d8] text-[#2a2a3e]"
+                          data-testid="input-disc-dxd"
+                        />
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={discretizationSettings.lengtheningEnabled}
+                        onCheckedChange={v => setDiscretizationSettings(prev => ({ ...prev, lengtheningEnabled: v }))}
+                        className="data-[state=checked]:bg-[#2c6eb5]"
+                        data-testid="switch-lengthening"
+                      />
+                      <Label className="text-[9px] text-[#6b6b7b]">Lengthen short conduits</Label>
+                    </div>
+
+                    {discretizationSettings.lengtheningEnabled && (
+                      <div className="flex items-center gap-2">
+                        <Label className="text-[9px] text-[#6b6b7b] w-[70px]">Step (s):</Label>
+                        <Input
+                          type="number"
+                          value={discretizationSettings.lengtheningStep}
+                          onChange={e => setDiscretizationSettings(prev => ({ ...prev, lengtheningStep: parseFloat(e.target.value) || 1 }))}
+                          className="flex-1 h-6 text-[9px] bg-[#ffffff] border-[#d0d0d8] text-[#2a2a3e]"
+                          data-testid="input-lengthening-step"
+                        />
+                      </div>
+                    )}
+
+                    <Button
+                      size="sm"
+                      onClick={handleDiscretize}
+                      className="w-full bg-[#2c6eb5] text-white hover:bg-[#3a7ec5] text-[10px] h-7"
+                      data-testid="btn-discretize"
+                    >
+                      <Scissors className="w-3 h-3 mr-1.5" />
+                      Discretize {cflAnalysis.flaggedCount} Conduit{cflAnalysis.flaggedCount !== 1 ? 's' : ''}
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {discretizationResult && (
+                <div className="border-t border-[#d0d0d8] px-3 py-2">
+                  <div className="text-[10px] font-semibold text-[#2a8a4a] mb-1">Discretization Applied</div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px]">
+                    <span className="text-[#6b6b7b]">Conduits Split:</span>
+                    <span className="text-[#2a2a3e]">{discretizationResult.stats.splitCount}</span>
+                    <span className="text-[#6b6b7b]">New Junctions:</span>
+                    <span className="text-[#2a2a3e]">{discretizationResult.stats.newJunctionCount}</span>
+                    <span className="text-[#6b6b7b]">New Conduit Count:</span>
+                    <span className="text-[#2a2a3e]">{discretizationResult.stats.newConduitCount}</span>
+                    {discretizationResult.stats.lengtheningCount > 0 && (
+                      <>
+                        <span className="text-[#6b6b7b]">Lengthened:</span>
+                        <span className="text-[#2a2a3e]">{discretizationResult.stats.lengtheningCount} (+{discretizationResult.stats.lengtheningTotalAdded.toFixed(1)})</span>
+                      </>
+                    )}
+                    <span className="text-[#6b6b7b]">Method:</span>
+                    <span className="text-[#2a2a3e]">{discretizationResult.stats.method === 'fixed_interval' ? 'Fixed Interval' : 'Δx/D Ratio'}</span>
+                  </div>
+                </div>
+              )}
+
+              {cflAnalysis.flaggedCount === 0 && !discretizationResult && (
+                <div className="px-3 py-3 text-center">
+                  <Check className="w-5 h-5 text-[#2a8a4a] mx-auto mb-1" />
+                  <div className="text-[10px] text-[#2a8a4a] font-medium">All conduits pass CFL criteria</div>
+                  <div className="text-[9px] text-[#6b6b7b] mt-0.5">No discretization needed for stability</div>
+                </div>
+              )}
+            </div>
+          )}
+
           {!results && Object.keys(project.coordinates).length > 0 && interactionMode === 'select' && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-[11px] text-[#8888a0] bg-[#1e1e2e]/80 backdrop-blur-sm border border-[#3a3a52]" data-testid="hint-run">
-              Click <strong className="text-[#4ea8de]">Project &gt; Run</strong> to simulate, or drag an .inp file here
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-[11px] text-[#6b6b7b] bg-white/80 backdrop-blur-sm border border-[#d0d0d8]" data-testid="hint-run">
+              Click <strong className="text-[#2c6eb5]">Project &gt; Run</strong> to simulate, or drag an .inp file here
             </div>
           )}
 
           {Object.keys(project.coordinates).length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-[#8888a0]" data-testid="empty-state">
-              <div className="w-16 h-16 rounded-2xl bg-[#2a2a3e] border border-[#3a3a52] flex items-center justify-center">
-                <FolderOpen className="w-8 h-8 text-[#4ea8de] opacity-60" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-[#6b6b7b]" data-testid="empty-state">
+              <div className="w-16 h-16 rounded-2xl bg-[#f0f0f4] border border-[#d0d0d8] flex items-center justify-center">
+                <FolderOpen className="w-8 h-8 text-[#2c6eb5] opacity-60" />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-[#e0e0e8]">No Network Loaded</p>
+                <p className="text-sm font-medium text-[#2a2a3e]">No Network Loaded</p>
                 <p className="text-xs mt-1">Open an INP file or load from GitHub</p>
               </div>
               <div className="flex gap-2">
@@ -1110,7 +1374,7 @@ export default function SwmmUI() {
                   variant="outline"
                   size="sm"
                   onClick={() => fileInputRef.current?.click()}
-                  className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] hover:bg-[#3a3a52]"
+                  className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4]"
                   data-testid="btn-open-empty"
                 >
                   <FolderOpen className="w-3.5 h-3.5 mr-1.5" /> Open File
@@ -1119,20 +1383,20 @@ export default function SwmmUI() {
                   variant="outline"
                   size="sm"
                   onClick={() => setOpenDialog('github')}
-                  className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] hover:bg-[#3a3a52]"
+                  className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4]"
                   data-testid="btn-github-empty"
                 >
                   <Github className="w-3.5 h-3.5 mr-1.5" /> From GitHub
                 </Button>
               </div>
               <div className="text-center mt-2">
-                <p className="text-[10px] text-[#6a6a80] mb-2">Or load a sample project:</p>
+                <p className="text-[10px] text-[#9090a0] mb-2">Or load a sample project:</p>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleLoadSample('Greenville_US.inp')}
-                    className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] hover:bg-[#3a3a52] text-[11px]"
+                    className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]"
                     data-testid="btn-sample-us-empty"
                   >
                     <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Greenville (US)
@@ -1141,7 +1405,7 @@ export default function SwmmUI() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleLoadSample('Greenville_SI.inp')}
-                    className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] hover:bg-[#3a3a52] text-[11px]"
+                    className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]"
                     data-testid="btn-sample-si-empty"
                   >
                     <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Greenville (SI)
@@ -1152,7 +1416,7 @@ export default function SwmmUI() {
           )}
         </div>
 
-        <div className="w-[220px] shrink-0 overflow-hidden" style={{ backgroundColor: '#2a2a3e', borderLeft: '1px solid #3a3a52' }}>
+        <div className="w-[220px] shrink-0 overflow-hidden" style={{ backgroundColor: '#f8f8fa', borderLeft: '1px solid #d0d0d8' }}>
           <ProjectExplorer
             project={project}
             selectedObj={selectedObj}
@@ -1163,21 +1427,33 @@ export default function SwmmUI() {
         </div>
       </div>
 
-      <div className="h-6 flex items-center px-3 shrink-0" style={{ backgroundColor: '#2a2a3e', borderTop: '1px solid #3a3a52' }}>
+      <div className="h-6 flex items-center px-3 shrink-0" style={{ backgroundColor: '#f0f0f4', borderTop: '1px solid #d0d0d8' }}>
         <StatusItem text={`Flow: ${flowUnits}`} />
         <StatusItem text={`Routing: ${routingModel}`} />
         <StatusItem text={`Infiltration: ${infiltModel}`} />
         <StatusItem
           text={simStatus === 'current' ? 'Results are Current' : simStatus === 'running' ? (simProgressMsg || 'Running...') : 'No Results'}
-          color={simStatus === 'current' ? '#82e0a8' : simStatus === 'running' ? '#f0c060' : '#8888a0'}
+          color={simStatus === 'current' ? '#2a8a4a' : simStatus === 'running' ? '#c08820' : '#6b6b7b'}
           bold={simStatus === 'current'}
         />
+        {cflAnalysis && cflAnalysis.flaggedCount > 0 && (
+          <StatusItem
+            text={`CFL: ${cflAnalysis.flaggedCount} violations`}
+            color="#d04040"
+          />
+        )}
+        {cflAnalysis && cflAnalysis.flaggedCount === 0 && cflAnalysis.totalCount > 0 && (
+          <StatusItem
+            text="CFL: OK"
+            color="#2a8a4a"
+          />
+        )}
         <StatusItem
           text={engineMode === 'remote' ? 'Engine: SWMM 5.2.4' : 'Engine: Mock'}
-          color={engineMode === 'remote' ? '#4ea8de' : '#8888a0'}
+          color={engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
         />
         <div className="flex-1" />
-        <span className="text-[9px] font-mono text-[#6666a0]" data-testid="status-counts">
+        <span className="text-[9px] font-mono text-[#9090a0]" data-testid="status-counts">
           {project.junctions.length + project.outfalls.length + project.storageUnits.length + project.dividers.length} nodes
           {' | '}
           {project.conduits.length + project.pumps.length + project.weirs.length + project.orifices.length + project.outlets.length} links
@@ -1187,12 +1463,12 @@ export default function SwmmUI() {
       </div>
 
       <Dialog open={openDialog === 'github'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8]" data-testid="github-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e]" data-testid="github-dialog">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-[#e0e0e8]">
+            <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <Github className="w-5 h-5" /> Load from GitHub
             </DialogTitle>
-            <DialogDescription className="text-[#8888a0]">
+            <DialogDescription className="text-[#6b6b7b]">
               Enter a GitHub URL to a SWMM5 INP file
             </DialogDescription>
           </DialogHeader>
@@ -1201,16 +1477,16 @@ export default function SwmmUI() {
               placeholder="https://github.com/user/repo/blob/main/model.inp"
               value={githubUrl}
               onChange={e => setGithubUrl(e.target.value)}
-              className="bg-[#1e1e2e] border-[#3a3a52] text-[#e0e0e8] placeholder:text-[#6666a0]"
+              className="bg-white border-[#d0d0d8] text-[#2a2a3e] placeholder:text-[#9090a0]"
               data-testid="input-github-url"
             />
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setOpenDialog(null)}
-                className="bg-[#323248] border-[#3a3a52] text-[#e0e0e8]">
+                className="bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e]">
                 Cancel
               </Button>
               <Button size="sm" onClick={handleGithubLoad} disabled={loading || !githubUrl.trim()}
-                className="bg-[#4ea8de] text-white hover:bg-[#5cb8ee]"
+                className="bg-[#2c6eb5] text-white hover:bg-[#3a7ec5]"
                 data-testid="btn-github-load"
               >
                 {loading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
@@ -1222,18 +1498,18 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'preferences'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] max-w-md" data-testid="preferences-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-md" data-testid="preferences-dialog">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-[#e0e0e8]">
+            <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <Settings className="w-5 h-5" /> Preferences
             </DialogTitle>
-            <DialogDescription className="text-[#8888a0]">
+            <DialogDescription className="text-[#6b6b7b]">
               Configure application behavior and display settings
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="pref-flyover" className="text-[#e0e0e8] text-xs">Flyover Map Hints</Label>
+              <Label htmlFor="pref-flyover" className="text-[#2a2a3e] text-xs">Flyover Map Hints</Label>
               <Switch
                 id="pref-flyover"
                 checked={preferences.flyoverHints}
@@ -1242,7 +1518,7 @@ export default function SwmmUI() {
               />
             </div>
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="pref-confirm" className="text-[#e0e0e8] text-xs">Confirm Deletions</Label>
+              <Label htmlFor="pref-confirm" className="text-[#2a2a3e] text-xs">Confirm Deletions</Label>
               <Switch
                 id="pref-confirm"
                 checked={preferences.confirmDeletions}
@@ -1251,13 +1527,13 @@ export default function SwmmUI() {
               />
             </div>
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="pref-precision" className="text-[#e0e0e8] text-xs">Numerical Precision</Label>
+              <Label htmlFor="pref-precision" className="text-[#2a2a3e] text-xs">Numerical Precision</Label>
               <select
                 id="pref-precision"
                 value={preferences.numericalPrecision}
                 onChange={e => updatePreference('numericalPrecision', +e.target.value)}
                 className="text-xs rounded px-2 py-1"
-                style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+                style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
                 data-testid="select-numerical-precision"
               >
                 {[0, 1, 2, 3, 4, 5, 6].map(n => (
@@ -1266,7 +1542,7 @@ export default function SwmmUI() {
               </select>
             </div>
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="pref-blink" className="text-[#e0e0e8] text-xs">Blinking Map Marker</Label>
+              <Label htmlFor="pref-blink" className="text-[#2a2a3e] text-xs">Blinking Map Marker</Label>
               <Switch
                 id="pref-blink"
                 checked={preferences.blinkingMapMarker}
@@ -1275,7 +1551,7 @@ export default function SwmmUI() {
               />
             </div>
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="pref-nodeids" className="text-[#e0e0e8] text-xs">Show Node IDs</Label>
+              <Label htmlFor="pref-nodeids" className="text-[#2a2a3e] text-xs">Show Node IDs</Label>
               <Switch
                 id="pref-nodeids"
                 checked={preferences.showNodeIds}
@@ -1284,7 +1560,7 @@ export default function SwmmUI() {
               />
             </div>
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="pref-linkids" className="text-[#e0e0e8] text-xs">Show Link IDs</Label>
+              <Label htmlFor="pref-linkids" className="text-[#2a2a3e] text-xs">Show Link IDs</Label>
               <Switch
                 id="pref-linkids"
                 checked={preferences.showLinkIds}
@@ -1293,18 +1569,18 @@ export default function SwmmUI() {
               />
             </div>
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="pref-bgcolor" className="text-[#e0e0e8] text-xs">Background Color</Label>
+              <Label htmlFor="pref-bgcolor" className="text-[#2a2a3e] text-xs">Background Color</Label>
               <div className="flex items-center gap-2">
                 <input
                   id="pref-bgcolor"
                   type="color"
                   value={preferences.mapBackgroundColor}
                   onChange={e => updatePreference('mapBackgroundColor', e.target.value)}
-                  className="w-8 h-8 rounded border border-[#3a3a52] cursor-pointer"
+                  className="w-8 h-8 rounded border border-[#d0d0d8] cursor-pointer"
                   style={{ backgroundColor: 'transparent', padding: 0 }}
                   data-testid="input-background-color"
                 />
-                <span className="text-[10px] font-mono text-[#8888a0]" data-testid="text-background-color">{preferences.mapBackgroundColor}</span>
+                <span className="text-[10px] font-mono text-[#6b6b7b]" data-testid="text-background-color">{preferences.mapBackgroundColor}</span>
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
@@ -1316,7 +1592,7 @@ export default function SwmmUI() {
                   setPreferences(def);
                   savePreferences(def);
                 }}
-                className="bg-[#323248] border-[#3a3a52] text-[#e0e0e8]"
+                className="bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e]"
                 data-testid="btn-reset-preferences"
               >
                 Reset Defaults
@@ -1324,7 +1600,7 @@ export default function SwmmUI() {
               <Button
                 size="sm"
                 onClick={() => setOpenDialog(null)}
-                className="bg-[#4ea8de] text-white"
+                className="bg-[#2c6eb5] text-white"
                 data-testid="btn-close-preferences"
               >
                 Done
@@ -1335,18 +1611,18 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'export'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] max-w-sm" data-testid="export-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm" data-testid="export-dialog">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-[#e0e0e8]">
+            <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <Download className="w-5 h-5" /> Export Map
             </DialogTitle>
-            <DialogDescription className="text-[#8888a0]">
+            <DialogDescription className="text-[#6b6b7b]">
               Export the current map view as a PNG image
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="export-legend" className="text-[#e0e0e8] text-xs">Include Legend</Label>
+              <Label htmlFor="export-legend" className="text-[#2a2a3e] text-xs">Include Legend</Label>
               <Switch
                 id="export-legend"
                 checked={exportIncludeLegend}
@@ -1358,7 +1634,7 @@ export default function SwmmUI() {
               <Button
                 size="sm"
                 onClick={handleExportToFile}
-                className="bg-[#4ea8de] text-white w-full"
+                className="bg-[#2c6eb5] text-white w-full"
                 data-testid="btn-export-file"
               >
                 <Download className="w-3.5 h-3.5 mr-1.5" />
@@ -1368,7 +1644,7 @@ export default function SwmmUI() {
                 size="sm"
                 variant="outline"
                 onClick={handleExportToClipboard}
-                className="bg-[#323248] border-[#3a3a52] text-[#e0e0e8] w-full"
+                className="bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e] w-full"
                 data-testid="btn-export-clipboard"
               >
                 <Clipboard className="w-3.5 h-3.5 mr-1.5" />
@@ -1380,23 +1656,23 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'groupEdit'} onOpenChange={v => { if (!v) { setOpenDialog(null); setGroupSelectedIds(null); setGroupSelectPoints([]); setInteractionMode('select'); } }}>
-        <DialogContent className="bg-[#2a2a3e] border-[#3a3a52] text-[#e0e0e8] max-w-sm" data-testid="group-edit-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm" data-testid="group-edit-dialog">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-[#e0e0e8]">
+            <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               Group Edit — {groupSelectedIds?.size || 0} Objects
             </DialogTitle>
-            <DialogDescription className="text-[#8888a0]">
+            <DialogDescription className="text-[#6b6b7b]">
               Apply a property change to all selected objects
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <Label className="text-[#e0e0e8] text-xs w-20">Property</Label>
+              <Label className="text-[#2a2a3e] text-xs w-20">Property</Label>
               <select
                 value={groupEditProp}
                 onChange={e => setGroupEditProp(e.target.value)}
                 className="flex-1 text-xs rounded px-2 py-1.5"
-                style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+                style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
                 data-testid="select-group-property"
               >
                 <option value="elevation">Elevation</option>
@@ -1410,11 +1686,11 @@ export default function SwmmUI() {
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <Label className="text-[#e0e0e8] text-xs w-20">Value</Label>
+              <Label className="text-[#2a2a3e] text-xs w-20">Value</Label>
               <Input
                 value={groupEditValue}
                 onChange={e => setGroupEditValue(e.target.value)}
-                className="bg-[#1e1e2e] border-[#3a3a52] text-[#e0e0e8]"
+                className="bg-white border-[#d0d0d8] text-[#2a2a3e]"
                 data-testid="input-group-value"
               />
             </div>
@@ -1423,7 +1699,7 @@ export default function SwmmUI() {
                 variant="outline"
                 size="sm"
                 onClick={handleGroupDelete}
-                className="bg-transparent border-[#f07070] text-[#f07070] hover:bg-[#f07070]/10"
+                className="bg-transparent border-[#d04040] text-[#d04040] hover:bg-[#d04040]/10"
                 data-testid="btn-group-delete"
               >
                 <Trash2 className="w-3.5 h-3.5 mr-1" />
@@ -1434,14 +1710,14 @@ export default function SwmmUI() {
                   variant="outline"
                   size="sm"
                   onClick={() => { setOpenDialog(null); setGroupSelectedIds(null); setGroupSelectPoints([]); setInteractionMode('select'); }}
-                  className="bg-[#323248] border-[#3a3a52] text-[#e0e0e8]"
+                  className="bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e]"
                 >
                   Cancel
                 </Button>
                 <Button
                   size="sm"
                   onClick={handleGroupEdit}
-                  className="bg-[#4ea8de] text-white"
+                  className="bg-[#2c6eb5] text-white"
                   data-testid="btn-group-apply"
                 >
                   <Check className="w-3.5 h-3.5 mr-1" />
@@ -1459,14 +1735,14 @@ export default function SwmmUI() {
           style={{
             left: contextMenu.x,
             top: contextMenu.y,
-            backgroundColor: '#2a2a3e',
-            border: '1px solid #3a3a52',
+            backgroundColor: '#ffffff',
+            border: '1px solid #d0d0d8',
           }}
           data-testid="context-menu"
         >
           {contextMenu.obj && (
             <>
-              <div className="px-3 py-1 text-[10px] text-[#8888a0] border-b border-[#3a3a52]" data-testid="context-menu-title">
+              <div className="px-3 py-1 text-[10px] text-[#6b6b7b] border-b border-[#d0d0d8]" data-testid="context-menu-title">
                 {contextMenu.obj.objType} — {contextMenu.obj.id}
               </div>
               <ContextMenuItem icon={<Copy className="w-3 h-3" />} label="Copy" onClick={handleCopy} testId="ctx-copy" />
@@ -1474,12 +1750,12 @@ export default function SwmmUI() {
               {isLinkType && (
                 <ContextMenuItem icon={<RotateCcw className="w-3 h-3" />} label="Reverse" onClick={handleReverseLink} testId="ctx-reverse" />
               )}
-              <div className="h-px my-0.5" style={{ backgroundColor: '#3a3a52' }} />
+              <div className="h-px my-0.5" style={{ backgroundColor: '#d0d0d8' }} />
               <ContextMenuItem icon={<Trash2 className="w-3 h-3" />} label="Delete" onClick={() => { if (contextMenu?.obj) deleteObject(contextMenu.obj); closeContextMenu(); }} danger testId="ctx-delete" />
             </>
           )}
           {!contextMenu.obj && (
-            <div className="px-3 py-1.5 text-[10px] text-[#6666a0]">No object selected</div>
+            <div className="px-3 py-1.5 text-[10px] text-[#9090a0]">No object selected</div>
           )}
         </div>
       )}
@@ -1500,8 +1776,8 @@ function ContextMenuItem({ icon, label, onClick, disabled, danger, testId }: {
       onClick={e => { e.stopPropagation(); onClick?.(); }}
       disabled={disabled}
       className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] transition-colors
-        ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/[0.06] cursor-pointer'}
-        ${danger ? 'text-[#f07070]' : 'text-[#e0e0e8]'}`}
+        ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-black/[0.04] cursor-pointer'}
+        ${danger ? 'text-[#d04040]' : 'text-[#2a2a3e]'}`}
       data-testid={testId}
     >
       {icon}
@@ -1523,12 +1799,12 @@ function ToolbarButton({ icon, label, accent, onClick, disabled, testId }: {
       onClick={onClick}
       disabled={disabled}
       className={`flex flex-col items-center justify-center px-3 py-1 rounded min-w-[54px] transition-colors
-        ${accent ? 'bg-[rgba(78,168,222,0.15)] border border-[#4ea8de]' : 'border border-transparent hover:bg-white/[0.05]'}
+        ${accent ? 'bg-[rgba(44,110,181,0.12)] border border-[#2c6eb5]' : 'border border-transparent hover:bg-black/[0.04]'}
         ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
       data-testid={testId}
     >
-      <span className={accent ? 'text-[#4ea8de]' : 'text-[#c0c0d0]'}>{icon}</span>
-      <span className={`text-[9px] mt-0.5 ${accent ? 'text-[#4ea8de]' : 'text-[#8888a0]'}`}>{label}</span>
+      <span className={accent ? 'text-[#2c6eb5]' : 'text-[#4a4a5a]'}>{icon}</span>
+      <span className={`text-[9px] mt-0.5 ${accent ? 'text-[#2c6eb5]' : 'text-[#6b6b7b]'}`}>{label}</span>
     </button>
   );
 }
@@ -1543,7 +1819,7 @@ function ToolbarIconButton({ icon, onClick, title, testId }: {
     <button
       onClick={onClick}
       title={title}
-      className="p-1 text-[#8888a0] hover:text-[#e0e0e8] transition-colors"
+      className="p-1 text-[#6b6b7b] hover:text-[#2a2a3e] transition-colors"
       data-testid={testId}
     >
       {icon}
@@ -1560,12 +1836,12 @@ function ThemeCombo({ label, value, onChange, options, testId }: {
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-[10px] text-[#8888a0] whitespace-nowrap">{label}:</span>
+      <span className="text-[10px] text-[#6b6b7b] whitespace-nowrap">{label}:</span>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
         className="text-[10px] rounded px-1.5 py-0.5"
-        style={{ backgroundColor: '#323248', color: '#e0e0e8', border: '1px solid #3a3a52' }}
+        style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
         data-testid={testId}
       >
         {options.map(([val, lbl]) => (
@@ -1581,9 +1857,9 @@ function StatusItem({ text, color, bold }: { text: string; color?: string; bold?
     <div
       className="px-3 text-[10px]"
       style={{
-        color: color || '#8888a0',
+        color: color || '#6b6b7b',
         fontWeight: bold ? 600 : 400,
-        borderRight: '1px solid #3a3a52',
+        borderRight: '1px solid #d0d0d8',
       }}
       data-testid={`status-${text.toLowerCase().replace(/\s+/g, '-')}`}
     >

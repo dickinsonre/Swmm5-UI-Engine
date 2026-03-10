@@ -45,7 +45,7 @@ export default function SpeedBar({
   return (
     <div
       className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 p-1.5 rounded-md z-10"
-      style={{ backgroundColor: 'rgba(30,30,46,0.92)', border: '1px solid #3a3a52' }}
+      style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #d0d0d8' }}
       data-testid="speed-bar"
     >
       {tools.map(({ mode, icon: Icon, label, testId }) => {
@@ -57,9 +57,9 @@ export default function SpeedBar({
             title={label}
             className="flex items-center justify-center w-8 h-8 rounded transition-colors"
             style={{
-              backgroundColor: active ? 'rgba(78,168,222,0.25)' : 'transparent',
-              border: active ? '1px solid #4ea8de' : '1px solid transparent',
-              color: active ? '#4ea8de' : '#8888a0',
+              backgroundColor: active ? 'rgba(44,110,181,0.12)' : 'transparent',
+              border: active ? '1px solid #2c6eb5' : '1px solid transparent',
+              color: active ? '#2c6eb5' : '#6b6b7b',
             }}
             data-testid={testId}
           >
@@ -68,13 +68,13 @@ export default function SpeedBar({
         );
       })}
 
-      <div className="w-full h-px my-0.5" style={{ backgroundColor: '#3a3a52' }} />
+      <div className="w-full h-px my-0.5" style={{ backgroundColor: '#d0d0d8' }} />
 
       <button
         onClick={onDelete}
         title="Delete"
         className="flex items-center justify-center w-8 h-8 rounded transition-colors"
-        style={{ color: '#f07070', border: '1px solid transparent' }}
+        style={{ color: '#d04040', border: '1px solid transparent' }}
         data-testid="speed-delete"
       >
         <Trash2 className="w-4 h-4" />
@@ -86,7 +86,7 @@ export default function SpeedBar({
         title="Run Simulation"
         className="flex items-center justify-center w-8 h-8 rounded transition-colors"
         style={{
-          color: simRunning ? '#8888a0' : '#82e0a8',
+          color: simRunning ? '#6b6b7b' : '#2a8a4a',
           border: '1px solid transparent',
           opacity: simRunning ? 0.5 : 1,
           cursor: simRunning ? 'not-allowed' : 'pointer',
@@ -100,7 +100,7 @@ export default function SpeedBar({
         onClick={onFullExtent}
         title="Full Extent"
         className="flex items-center justify-center w-8 h-8 rounded transition-colors"
-        style={{ color: '#8888a0', border: '1px solid transparent' }}
+        style={{ color: '#6b6b7b', border: '1px solid transparent' }}
         data-testid="speed-extent"
       >
         <Maximize className="w-4 h-4" />
