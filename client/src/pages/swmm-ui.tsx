@@ -1106,8 +1106,41 @@ export default function SwmmUI() {
       </div>
 
       {simStatus === 'running' && (
-        <div className="h-2 shrink-0 bg-[#e0e0e8]">
-          <Progress value={simProgress} className="h-2 rounded-none" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px]" data-testid="progress-monitor-overlay">
+          <div className="bg-white border border-[#d0d0d8] rounded-lg shadow-xl w-[360px] overflow-hidden" data-testid="progress-monitor">
+            <div className="px-4 py-2.5 border-b border-[#d0d0d8] bg-[#2c3e6b]">
+              <span className="text-xs text-white">SWMM5 Progress Monitor</span>
+            </div>
+            <div className="px-4 py-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-[#2c6eb5] animate-spin shrink-0" />
+                <div className="flex-1">
+                  <div className="text-xs text-[#2a2a3e] mb-0.5">
+                    {simProgressMsg || 'Running simulation...'}
+                  </div>
+                  <div className="text-[10px] text-[#6b6b7b]">
+                    {engineMode === 'remote' ? 'EPA SWMM 5.2.4 Engine' : 'Mock Engine'}
+                  </div>
+                </div>
+                <span className="text-xs text-[#2c6eb5] font-mono tabular-nums" data-testid="text-progress-pct">
+                  {Math.round(simProgress)}%
+                </span>
+              </div>
+              <div className="w-full bg-[#e8e8ee] rounded-full h-3 overflow-hidden">
+                <div
+                  className="h-full bg-[#2c6eb5] rounded-full transition-all duration-300"
+                  style={{ width: `${simProgress}%` }}
+                  data-testid="progress-bar-fill"
+                />
+              </div>
+              <div className="text-[9px] text-[#9090a0] text-center">
+                {simProgress < 30 ? 'Initializing hydraulic engine...' :
+                 simProgress < 60 ? 'Computing hydraulic routing...' :
+                 simProgress < 90 ? 'Processing time steps...' :
+                 'Finalizing results...'}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
