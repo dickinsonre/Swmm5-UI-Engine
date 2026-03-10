@@ -21,6 +21,7 @@ interface SpeedBarProps {
   onRunSimulation: () => void;
   onFullExtent: () => void;
   simRunning?: boolean;
+  isMobile?: boolean;
 }
 
 const tools: { mode: InteractionMode; icon: typeof Circle; label: string; testId: string }[] = [
@@ -41,7 +42,42 @@ export default function SpeedBar({
   onRunSimulation,
   onFullExtent,
   simRunning,
+  isMobile,
 }: SpeedBarProps) {
+  if (isMobile) {
+    return (
+      <div
+        className="absolute bottom-2 left-2 right-2 flex flex-row gap-0.5 p-1 rounded-lg z-10 overflow-x-auto"
+        style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #d0d0d8', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', WebkitOverflowScrolling: 'touch' }}
+        data-testid="speed-bar"
+      >
+        {tools.map(({ mode, icon: Icon, label, testId }) => {
+          const active = interactionMode === mode;
+          return (
+            <button
+              key={mode}
+              onClick={() => onSetMode(mode)}
+              title={label}
+              className="flex items-center justify-center w-9 h-9 rounded transition-colors"
+              style={{
+                backgroundColor: active ? 'rgba(44,110,181,0.12)' : 'transparent',
+                border: active ? '1px solid #2c6eb5' : '1px solid transparent',
+                color: active ? '#2c6eb5' : '#6b6b7b',
+              }}
+              data-testid={testId}
+            >
+              <Icon className="w-4.5 h-4.5" />
+            </button>
+          );
+        })}
+        <div className="w-px h-9 mx-0.5" style={{ backgroundColor: '#d0d0d8' }} />
+        <button onClick={onDelete} title="Delete" className="flex items-center justify-center w-9 h-9 rounded transition-colors" style={{ color: '#d04040' }} data-testid="speed-delete"><Trash2 className="w-4.5 h-4.5" /></button>
+        <button onClick={onRunSimulation} disabled={simRunning} title="Run" className="flex items-center justify-center w-9 h-9 rounded transition-colors" style={{ color: simRunning ? '#6b6b7b' : '#2a8a4a', opacity: simRunning ? 0.5 : 1 }} data-testid="speed-run"><Play className="w-4.5 h-4.5" /></button>
+        <button onClick={onFullExtent} title="Fit" className="flex items-center justify-center w-9 h-9 rounded transition-colors" style={{ color: '#6b6b7b' }} data-testid="speed-extent"><Maximize className="w-4.5 h-4.5" /></button>
+      </div>
+    );
+  }
+
   return (
     <div
       className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 p-1.5 rounded-md z-10"

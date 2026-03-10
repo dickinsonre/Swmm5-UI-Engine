@@ -13,7 +13,7 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 - `client/src/pages/swmm-ui.tsx` - Main page layout (menus, toolbar, status bar, file handling, preferences, context menus, group editing, object creation/manipulation callbacks)
 - `client/src/components/swmm/NetworkMap.tsx` - Canvas-based network visualization with pan/zoom, hit-testing, rubber-band drawing, group polygon rendering, tooltip overlay
 - `client/src/components/swmm/Panels.tsx` - Legend panel, Project Explorer, Object Locator, Map Query panel
-- `client/src/components/swmm/SpeedBar.tsx` - Vertical speed bar with interaction mode buttons
+- `client/src/components/swmm/SpeedBar.tsx` - Speed bar with interaction mode buttons (vertical on desktop, horizontal scrollable bottom bar on mobile)
 - `client/src/lib/swmm-types.ts` - TypeScript interfaces for all SWMM5 model objects
 - `client/src/lib/inp-parser.ts` - Complete SWMM5 INP file parser and INP file rebuild with safe column padding (`padField`)
 - `client/src/lib/swmm-engine.ts` - Remote/mock engine wrapper with WebSocket progress
@@ -47,6 +47,17 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 - **Map Export**: Save canvas as PNG file or copy to clipboard, with optional legend
 - **Group Selection**: Draw polygon on map, select all enclosed objects, batch edit properties or delete
 - **Preferences**: Flyover hints, confirm deletions, numerical precision, show/hide IDs, background color (localStorage-persisted)
+
+### Mobile Optimization
+- Responsive layout: side panels (170px left, 220px right) hidden on screens ≤768px, accessible via toggle buttons in the title bar
+- Panels open as fixed overlays (z-50) with dark backdrop, close via X button or backdrop click
+- SpeedBar becomes horizontal scrollable bottom bar on mobile (isMobile prop)
+- Canvas supports touch events: single-finger pan, pinch-to-zoom, tap-to-select objects, tap-to-place nodes
+- Welcome screen and sample buttons use compact sizing on mobile
+- Status bar shows abbreviated info on mobile, full details on desktop
+- Progress monitor dialog uses responsive max-width (90vw, max 360px)
+- CFL panel uses full-width on mobile (calc(100%-16px)) vs fixed 320px on desktop
+- CSS classes: `.mobile-hidden` (hides at ≤768px), `.desktop-hidden` (hides at >768px)
 
 ## UI Layout
 ```

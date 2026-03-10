@@ -954,6 +954,106 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     fitExtent();
   }, [fitExtent, interactionMode, groupSelectPoints, onGroupSelectComplete]);
 
+  const touchRef = useRef<{ lastDist: number; lastCenter: { x: number; y: number }; singleTouch: { x: number; y: number } | null; hasMoved: boolean; startTime: number }>({ lastDist: 0, lastCenter: { x: 0, y: 0 }, singleTouch: null, hasMoved: false, startTime: 0 });
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[1].clientX - e.touches[0].clientX;
+      const dy = e.touches[1].clientY - e.touches[0].clientY;
+      touchRef.current.lastDist = Math.sqrt(dx * dx + dy * dy);
+      touchRef.current.lastCenter = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
+      };
+      touchRef.current.singleTouch = null;
+      touchRef.current.hasMoved = true;
+    } else if (e.touches.length === 1) {
+      touchRef.current.singleTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      touchRef.current.hasMoved = false;
+      touchRef.current.startTime = Date.now();
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    if (e.touches.length === 2) {
+      const dx = e.touches[1].clientX - e.touches[0].clientX;
+      const dy = e.touches[1].clientY - e.touches[0].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+      if (touchRef.current.lastDist > 0) {
+        const factor = dist / touchRef.current.lastDist;
+        setMapState(prev => ({
+          zoom: prev.zoom * factor,
+          panX: cx - (cx - prev.panX) * factor,
+          panY: cy - (cy - prev.panY) * factor,
+        }));
+      }
+      touchRef.current.lastDist = dist;
+      touchRef.current.lastCenter = { x: cx, y: cy };
+    } else if (e.touches.length === 1 && touchRef.current.singleTouch) {
+      const dx = e.touches[0].clientX - touchRef.current.singleTouch.x;
+      const dy = e.touches[0].clientY - touchRef.current.singleTouch.y;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        touchRef.current.hasMoved = true;
+      }
+      if (touchRef.current.hasMoved) {
+        setMapState(prev => ({ ...prev, panX: prev.panX + dx, panY: prev.panY + dy }));
+        touchRef.current.singleTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 0 && !touchRef.current.hasMoved && touchRef.current.singleTouch) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        const sx = touchRef.current.singleTouch.x - rect.left;
+        const sy = touchRef.current.singleTouch.y - rect.top;
+        const hitNode = hitTestNode(sx, sy);
+        const hitLink = hitTestLink(sx, sy);
+        if (hitNode) {
+          onSelectObj?.({ type: 'node', id: hitNode.nodeId });
+        } else if (hitLink) {
+          onSelectObj?.({ type: 'link', id: hitLink.linkId });
+        } else if (interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage') {
+          const wx = (sx - mapState.panX) / mapState.zoom;
+          const wy = -(sy - mapState.panY) / mapState.zoom;
+          onCreateNode?.(wx, wy, interactionMode.replace('add', '').toLowerCase());
+        } else if (interactionMode === 'addConduit' || interactionMode === 'addPump') {
+          const hitN = hitTestNode(sx, sy);
+          if (hitN) {
+            if (!linkDrawState) {
+              onStartLink?.(hitN.nodeId);
+            } else {
+              onCompleteLink?.(hitN.nodeId, linkDrawState.vertices);
+            }
+          } else if (linkDrawState) {
+            const wx = (sx - mapState.panX) / mapState.zoom;
+            const wy = -(sy - mapState.panY) / mapState.zoom;
+            onAddLinkVertex?.(wx, wy);
+          }
+        } else {
+          onSelectObj?.(null);
+        }
+      }
+    }
+    if (e.touches.length === 0) {
+      touchRef.current.singleTouch = null;
+      touchRef.current.lastDist = 0;
+      touchRef.current.hasMoved = false;
+    } else if (e.touches.length === 1) {
+      touchRef.current.singleTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      touchRef.current.lastDist = 0;
+    }
+  }, [hitTestNode, hitTestLink, onSelectObj, onCreateNode, onStartLink, onCompleteLink, onAddLinkVertex, interactionMode, mapState, linkDrawState]);
+
   const cursorStyle = interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage'
     ? 'copy'
     : interactionMode === 'addConduit' || interactionMode === 'addPump'
@@ -963,7 +1063,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     : 'crosshair';
 
   return (
-    <div ref={containerRef} className="w-full h-full relative overflow-hidden" data-testid="network-map-container">
+    <div ref={containerRef} className="w-full h-full relative overflow-hidden" style={{ touchAction: 'none' }} data-testid="network-map-container">
       <canvas
         ref={canvasRef}
         width={canvasSize.w}
@@ -975,7 +1075,10 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         onMouseLeave={handleMouseLeave}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleRightClick}
-        style={{ width: '100%', height: '100%', cursor: cursorStyle, display: 'block' }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{ width: '100%', height: '100%', cursor: cursorStyle, display: 'block', touchAction: 'none' }}
         data-testid="network-map-canvas"
       />
       {tooltip && (

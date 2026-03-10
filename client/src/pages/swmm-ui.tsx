@@ -17,7 +17,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Info, HelpCircle, FileText, Clipboard,
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
-  Scissors, ChevronLeft, Folder, File,
+  Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -134,9 +134,18 @@ export default function SwmmUI() {
   const [groupSelectedIds, setGroupSelectedIds] = useState<Set<string> | null>(null);
   const [groupEditProp, setGroupEditProp] = useState('elevation');
   const [groupEditValue, setGroupEditValue] = useState('0');
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [mobilePanel, setMobilePanel] = useState<'none' | 'left' | 'right'>('none');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const animRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const networkMapRef = useRef<NetworkMapHandle>(null);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const maxTimeStep = results ? results.timeSteps.length - 1 : 0;
 
@@ -949,9 +958,19 @@ export default function SwmmUI() {
       <div className="h-7 flex items-center px-3 text-xs gap-2 shrink-0" style={{ backgroundColor: '#2c3e6b' }}>
         <span className="font-bold" style={{ color: '#ffffff' }}>&#9670;</span>
         <span className="font-semibold text-white">SWMM5-UI</span>
-        <span className="text-white/70">{fileName}</span>
+        <span className="text-white/70 truncate max-w-[120px] md:max-w-none">{fileName}</span>
         <div className="flex-1" />
-        <span className="text-[10px] text-white/50">Stormwater Management Model</span>
+        <span className="text-[10px] text-white/50 mobile-hidden">Stormwater Management Model</span>
+        {isMobile && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => setMobilePanel(p => p === 'left' ? 'none' : 'left')} className="p-1 rounded" data-testid="btn-mobile-left-panel">
+              <PanelLeftOpen className="w-4 h-4 text-white/70" />
+            </button>
+            <button onClick={() => setMobilePanel(p => p === 'right' ? 'none' : 'right')} className="p-1 rounded" data-testid="btn-mobile-right-panel">
+              <PanelRightOpen className="w-4 h-4 text-white/70" />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="h-8 flex items-stretch shrink-0" style={{ backgroundColor: '#3a5070', borderBottom: '1px solid #d0d0d8' }}>
@@ -979,7 +998,7 @@ export default function SwmmUI() {
         </div>
       </div>
 
-      <div className="h-[52px] flex items-center px-2 gap-0.5 shrink-0 overflow-x-auto" style={{ backgroundColor: '#f0f0f4', borderBottom: '1px solid #d0d0d8' }}>
+      <div className="h-[52px] md:h-[52px] flex items-center px-1 md:px-2 gap-0.5 shrink-0 overflow-x-auto" style={{ backgroundColor: '#f0f0f4', borderBottom: '1px solid #d0d0d8' }}>
         {activeMenu === 'File' && (
           <div className="flex items-center gap-0.5">
             <ToolbarButton icon={<FilePlus className="w-4 h-4" />} label="New" onClick={handleNewProject} testId="btn-new" />
@@ -1173,7 +1192,7 @@ export default function SwmmUI() {
 
       {simStatus === 'running' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px]" data-testid="progress-monitor-overlay">
-          <div className="bg-white border border-[#d0d0d8] rounded-lg shadow-xl w-[360px] overflow-hidden" data-testid="progress-monitor">
+          <div className="bg-white border border-[#d0d0d8] rounded-lg shadow-xl w-[90vw] max-w-[360px] overflow-hidden" data-testid="progress-monitor">
             <div className="px-4 py-2.5 border-b border-[#d0d0d8] bg-[#2c3e6b]">
               <span className="text-xs text-white">SWMM5 Progress Monitor</span>
             </div>
@@ -1219,8 +1238,20 @@ export default function SwmmUI() {
         </div>
       )}
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="w-[170px] shrink-0 overflow-hidden flex flex-col" style={{ backgroundColor: '#f8f8fa', borderRight: '1px solid #d0d0d8' }}>
+      <div className="flex-1 flex overflow-hidden relative">
+        {isMobile && mobilePanel !== 'none' && (
+          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setMobilePanel('none')} data-testid="mobile-panel-backdrop" />
+        )}
+        <div
+          className={`${isMobile ? (mobilePanel === 'left' ? 'fixed left-0 top-0 bottom-0 z-50 w-[260px] shadow-xl' : 'hidden') : 'w-[170px]'} shrink-0 overflow-hidden flex flex-col`}
+          style={{ backgroundColor: '#f8f8fa', borderRight: '1px solid #d0d0d8' }}
+        >
+          {isMobile && mobilePanel === 'left' && (
+            <div className="h-8 flex items-center justify-between px-3 border-b" style={{ backgroundColor: '#2c3e6b', borderColor: '#d0d0d8' }}>
+              <span className="text-xs text-white">Tools & Locator</span>
+              <button onClick={() => setMobilePanel('none')} className="p-1" data-testid="btn-close-left-panel"><X className="w-4 h-4 text-white/70" /></button>
+            </div>
+          )}
           {showLocator && (
             <ObjectLocatorPanel
               project={project}
@@ -1299,6 +1330,7 @@ export default function SwmmUI() {
             onRunSimulation={handleRunSimulation}
             onFullExtent={handleFullExtent}
             simRunning={simStatus === 'running'}
+            isMobile={isMobile}
           />
 
           {interactionMode !== 'select' && (
@@ -1320,7 +1352,7 @@ export default function SwmmUI() {
 
           {showCflPanel && cflAnalysis && (
             <div
-              className="absolute top-2 right-2 w-[320px] max-h-[calc(100%-16px)] overflow-y-auto z-20 rounded-lg shadow-xl"
+              className="absolute top-2 right-2 w-[calc(100%-16px)] md:w-[320px] max-h-[calc(100%-16px)] overflow-y-auto z-20 rounded-lg shadow-xl"
               style={{ backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid #d0d0d8' }}
               data-testid="cfl-panel"
             >
@@ -1528,9 +1560,9 @@ export default function SwmmUI() {
           )}
 
           {Object.keys(project.coordinates).length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-[#6b6b7b]" data-testid="empty-state">
-              <div className="w-16 h-16 rounded-2xl bg-[#f0f0f4] border border-[#d0d0d8] flex items-center justify-center">
-                <FolderOpen className="w-8 h-8 text-[#2c6eb5] opacity-60" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 md:gap-4 text-[#6b6b7b] px-4" data-testid="empty-state">
+              <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-[#f0f0f4] border border-[#d0d0d8] flex items-center justify-center">
+                <FolderOpen className="w-6 h-6 md:w-8 md:h-8 text-[#2c6eb5] opacity-60" />
               </div>
               <div className="text-center">
                 <p className="text-sm font-medium text-[#2a2a3e]">No Network Loaded</p>
@@ -1556,29 +1588,29 @@ export default function SwmmUI() {
                   <Github className="w-3.5 h-3.5 mr-1.5" /> From GitHub
                 </Button>
               </div>
-              <div className="text-center mt-2">
+              <div className="text-center mt-2 max-w-[400px]">
                 <p className="text-[10px] text-[#9090a0] mb-2">Or load a sample project:</p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('Greenville_US.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-us-empty">
-                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Greenville (US)
+                <div className="flex flex-wrap gap-1.5 md:gap-2 justify-center">
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('Greenville_US.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[10px] md:text-[11px] h-7 md:h-8 px-2 md:px-3" data-testid="btn-sample-us-empty">
+                    <BookOpen className="w-3 h-3 md:w-3.5 md:h-3.5 mr-1" /> US
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('Greenville_SI.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-si-empty">
-                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Greenville (SI)
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('Greenville_SI.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[10px] md:text-[11px] h-7 md:h-8 px-2 md:px-3" data-testid="btn-sample-si-empty">
+                    <BookOpen className="w-3 h-3 md:w-3.5 md:h-3.5 mr-1" /> SI
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User1.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user1-empty">
-                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User1
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User1.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[10px] md:text-[11px] h-7 md:h-8 px-2 md:px-3" data-testid="btn-sample-user1-empty">
+                    <BookOpen className="w-3 h-3 md:w-3.5 md:h-3.5 mr-1" /> User1
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User2.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user2-empty">
-                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User2
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User2.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[10px] md:text-[11px] h-7 md:h-8 px-2 md:px-3" data-testid="btn-sample-user2-empty">
+                    <BookOpen className="w-3 h-3 md:w-3.5 md:h-3.5 mr-1" /> User2
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User3.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user3-empty">
-                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User3
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User3.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[10px] md:text-[11px] h-7 md:h-8 px-2 md:px-3" data-testid="btn-sample-user3-empty">
+                    <BookOpen className="w-3 h-3 md:w-3.5 md:h-3.5 mr-1" /> User3
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User4.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user4-empty">
-                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User4
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User4.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[10px] md:text-[11px] h-7 md:h-8 px-2 md:px-3" data-testid="btn-sample-user4-empty">
+                    <BookOpen className="w-3 h-3 md:w-3.5 md:h-3.5 mr-1" /> User4
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User5.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[11px]" data-testid="btn-sample-user5-empty">
-                    <BookOpen className="w-3.5 h-3.5 mr-1.5" /> User5
+                  <Button variant="outline" size="sm" onClick={() => handleLoadSample('User5.inp')} className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4] text-[10px] md:text-[11px] h-7 md:h-8 px-2 md:px-3" data-testid="btn-sample-user5-empty">
+                    <BookOpen className="w-3 h-3 md:w-3.5 md:h-3.5 mr-1" /> User5
                   </Button>
                 </div>
               </div>
@@ -1586,7 +1618,16 @@ export default function SwmmUI() {
           )}
         </div>
 
-        <div className="w-[220px] shrink-0 overflow-hidden" style={{ backgroundColor: '#f8f8fa', borderLeft: '1px solid #d0d0d8' }}>
+        <div
+          className={`${isMobile ? (mobilePanel === 'right' ? 'fixed right-0 top-0 bottom-0 z-50 w-[280px] shadow-xl' : 'hidden') : 'w-[220px]'} shrink-0 overflow-hidden`}
+          style={{ backgroundColor: '#f8f8fa', borderLeft: '1px solid #d0d0d8' }}
+        >
+          {isMobile && mobilePanel === 'right' && (
+            <div className="h-8 flex items-center justify-between px-3 border-b" style={{ backgroundColor: '#2c3e6b', borderColor: '#d0d0d8' }}>
+              <span className="text-xs text-white">Project Explorer</span>
+              <button onClick={() => setMobilePanel('none')} className="p-1" data-testid="btn-close-right-panel"><X className="w-4 h-4 text-white/70" /></button>
+            </div>
+          )}
           <ProjectExplorer
             project={project}
             selectedObj={selectedObj}
@@ -1597,10 +1638,10 @@ export default function SwmmUI() {
         </div>
       </div>
 
-      <div className="h-6 flex items-center px-3 shrink-0" style={{ backgroundColor: '#f0f0f4', borderTop: '1px solid #d0d0d8' }}>
+      <div className="h-6 flex items-center px-2 md:px-3 shrink-0 overflow-x-auto" style={{ backgroundColor: '#f0f0f4', borderTop: '1px solid #d0d0d8' }}>
         <StatusItem text={`Flow: ${flowUnits}`} />
-        <StatusItem text={`Routing: ${routingModel}`} />
-        <StatusItem text={`Infiltration: ${infiltModel}`} />
+        <span className="mobile-hidden"><StatusItem text={`Routing: ${routingModel}`} /></span>
+        <span className="mobile-hidden"><StatusItem text={`Infiltration: ${infiltModel}`} /></span>
         <StatusItem
           text={simStatus === 'current' ? 'Results are Current' : simStatus === 'running' ? (simProgressMsg || 'Running...') : 'No Results'}
           color={simStatus === 'current' ? '#2a8a4a' : simStatus === 'running' ? '#c08820' : '#6b6b7b'}
