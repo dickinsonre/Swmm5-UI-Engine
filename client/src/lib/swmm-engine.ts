@@ -10,7 +10,7 @@ import { projectToInp } from './inp-parser';
 
 export interface SwmmEngine {
   isLoaded: boolean;
-  mode: 'mock' | 'remote';
+  mode: 'mock' | 'remote' | 'local';
   run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults>;
   getStatus(): string;
 }
@@ -26,6 +26,65 @@ export async function checkRemoteEngine(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function checkLocalEngine(): Promise<boolean> {
+  try {
+    const resp = await fetch('/api/swmm/status');
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    return data.found === true;
+  } catch {
+    return false;
+  }
+}
+
+export function createLocalEngine(): SwmmEngine {
+  return {
+    isLoaded: true,
+    mode: 'local' as const,
+    async run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults> {
+      const inpText = projectToInp(project);
+
+      if (onProgress) onProgress(5, 'Sending model to local SWMM 5.2.4 engine...');
+
+      const resp = await fetch('/api/swmm/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: inpText,
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(`Local engine error: ${errData.error || resp.statusText}`);
+      }
+
+      if (onProgress) onProgress(70, 'Processing results...');
+
+      const result = await resp.json();
+
+      if (result.status === 'failed') {
+        const err = new Error(`SWMM simulation failed: ${result.error || 'Unknown error'}`) as any;
+        err.reportContent = result.reportContent || null;
+        throw err;
+      }
+
+      if (!result.reportContent) {
+        throw new Error('Simulation completed but no report generated');
+      }
+
+      if (onProgress) onProgress(90, 'Parsing report...');
+
+      const parsed = parseRptToResults(result.reportContent, project);
+
+      if (onProgress) onProgress(100, 'Simulation complete');
+
+      return parsed;
+    },
+    getStatus() {
+      return 'EPA SWMM 5.2.4 (Local Engine)';
+    },
+  };
 }
 
 export function createRemoteEngine(): SwmmEngine {

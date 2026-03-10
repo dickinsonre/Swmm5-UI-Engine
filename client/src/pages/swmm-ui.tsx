@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-types';
 import { createEmptyProject } from '@/lib/swmm-types';
 import { parseInpFile, SAMPLE_INP } from '@/lib/inp-parser';
-import { createMockEngine, createRemoteEngine, checkRemoteEngine } from '@/lib/swmm-engine';
+import { createMockEngine, createRemoteEngine, createLocalEngine, checkRemoteEngine, checkLocalEngine } from '@/lib/swmm-engine';
 import { computeCflAnalysis, discretizeProject, getDefaultSettings } from '@/lib/cfl-analysis';
 import type { CflAnalysisResult, DiscretizationSettings, DiscretizationResult } from '@/lib/cfl-analysis';
 import type { SwmmEngine } from '@/lib/swmm-engine';
@@ -87,7 +87,8 @@ export default function SwmmUI() {
   const [simStatus, setSimStatus] = useState<'none' | 'running' | 'current' | 'outdated'>('none');
   const [simProgress, setSimProgress] = useState(0);
   const [simProgressMsg, setSimProgressMsg] = useState('');
-  const [engineMode, setEngineMode] = useState<'mock' | 'remote'>('mock');
+  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local'>('mock');
+  const [localAvailable, setLocalAvailable] = useState(false);
   const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
@@ -369,7 +370,7 @@ export default function SwmmUI() {
     const abortCtrl = new AbortController();
     simAbortRef.current = abortCtrl;
 
-    const engine: SwmmEngine = engineMode === 'remote' ? createRemoteEngine() : createMockEngine();
+    const engine: SwmmEngine = engineMode === 'local' ? createLocalEngine() : engineMode === 'remote' ? createRemoteEngine() : createMockEngine();
 
     let progressInterval: ReturnType<typeof setInterval> | null = null;
     if (engine.mode === 'mock') {
@@ -393,7 +394,7 @@ export default function SwmmUI() {
       setReportContent(res.reportContent || null);
       setSimStatus('current');
       setTimeStep(0);
-      const engineLabel = engine.mode === 'remote' ? 'EPA SWMM 5.2.4' : 'Mock Engine';
+      const engineLabel = engine.mode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engine.mode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine';
       toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed (${engineLabel})` });
     } catch (e: any) {
       if (progressInterval) clearInterval(progressInterval);
@@ -528,9 +529,15 @@ export default function SwmmUI() {
   }, [buildExportCanvas, exportIncludeLegend, toast]);
 
   useEffect(() => {
+    checkLocalEngine().then(available => {
+      setLocalAvailable(available);
+      if (available) {
+        setEngineMode('local');
+      }
+    });
     checkRemoteEngine().then(available => {
       setRemoteAvailable(available);
-      if (available) setEngineMode('remote');
+      if (available && !localAvailable) setEngineMode('remote');
     });
   }, []);
 
@@ -1174,18 +1181,24 @@ export default function SwmmUI() {
             )}
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <button
-              onClick={() => setEngineMode(engineMode === 'remote' ? 'mock' : 'remote')}
-              disabled={!remoteAvailable && engineMode !== 'remote'}
+              onClick={() => {
+                const modes: Array<'local' | 'remote' | 'mock'> = [];
+                if (localAvailable) modes.push('local');
+                if (remoteAvailable) modes.push('remote');
+                modes.push('mock');
+                const idx = modes.indexOf(engineMode);
+                setEngineMode(modes[(idx + 1) % modes.length]);
+              }}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors border ${
-                engineMode === 'remote'
+                engineMode === 'local' || engineMode === 'remote'
                   ? 'bg-[rgba(44,110,181,0.12)] border-[#2c6eb5] text-[#2c6eb5]'
                   : 'bg-transparent border-[#d0d0d8] text-[#6b6b7b] hover:text-[#2a2a3e]'
-              } ${!remoteAvailable && engineMode !== 'remote' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-              title={remoteAvailable ? 'Toggle between real SWMM 5.2.4 engine and mock simulation' : 'Remote SWMM engine not available'}
+              } cursor-pointer`}
+              title="Cycle engine mode: Local → Remote → Mock"
               data-testid="btn-engine-toggle"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
-              {engineMode === 'remote' ? 'SWMM 5.2.4' : 'Mock Engine'}
+              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
+              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
             </button>
           </div>
         )}
@@ -1213,7 +1226,7 @@ export default function SwmmUI() {
                     {simProgressMsg || 'Running simulation...'}
                   </div>
                   <div className="text-[10px] text-[#6b6b7b]">
-                    {engineMode === 'remote' ? 'EPA SWMM 5.2.4 Engine' : 'Mock Engine'}
+                    {engineMode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engineMode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine'}
                   </div>
                 </div>
                 <span className="text-xs text-[#2c6eb5] font-mono tabular-nums" data-testid="text-progress-pct">
@@ -1669,8 +1682,8 @@ export default function SwmmUI() {
           />
         )}
         <StatusItem
-          text={engineMode === 'remote' ? 'Engine: SWMM 5.2.4' : 'Engine: Mock'}
-          color={engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
+          text={engineMode === 'local' ? 'Engine: Local 5.2.4' : engineMode === 'remote' ? 'Engine: Remote 5.2.4' : 'Engine: Mock'}
+          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
         />
         <div className="flex-1" />
         <span className="text-[9px] font-mono text-[#9090a0]" data-testid="status-counts">
