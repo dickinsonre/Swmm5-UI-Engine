@@ -93,7 +93,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | null>(null);
-  const [githubUrl, setGithubUrl] = useState('');
+  const [githubUrl, setGithubUrl] = useState('https://github.com/SWMMEnablement/1729-SWMM5-Models');
   const [preferences, setPreferences] = useState<SwmmPreferences>(loadPreferences);
 
   const updatePreference = useCallback(<K extends keyof SwmmPreferences>(key: K, value: SwmmPreferences[K]) => {
@@ -204,7 +204,7 @@ export default function SwmmUI() {
     }
     setLoading(false);
     setOpenDialog(null);
-    setGithubUrl('');
+    setGithubUrl('https://github.com/SWMMEnablement/1729-SWMM5-Models');
   }, [githubUrl, toast]);
 
   const handleNewProject = useCallback(() => {
