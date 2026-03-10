@@ -98,6 +98,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   const hasDragged = useRef(false);
   const mouseButton = useRef(0);
   const hasInitialized = useRef(false);
+  const lastProjectCoords = useRef<Record<string, [number, number]> | null>(null);
   const movingNode = useRef<string | null>(null);
   const isLayerVisible = useCallback((layer: string) => layerVisibility[layer] !== false, [layerVisibility]);
 
@@ -184,6 +185,10 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   }), [fitExtent, centerOnWorld]);
 
   useEffect(() => {
+    if (project.coordinates !== lastProjectCoords.current) {
+      lastProjectCoords.current = project.coordinates;
+      hasInitialized.current = false;
+    }
     if (hasInitialized.current) return;
     if (Object.keys(project.coordinates).length === 0 && Object.keys(project.polygons).length === 0) return;
     hasInitialized.current = true;
