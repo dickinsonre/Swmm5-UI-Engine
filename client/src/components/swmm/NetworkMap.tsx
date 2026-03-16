@@ -363,24 +363,50 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     canvas.height = canvasSize.h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.fillStyle = preferences?.mapBackgroundColor || COLORS.mapBg;
+    ctx.fillStyle = preferences?.mapBackgroundColor || '#f8f9fb';
     ctx.fillRect(0, 0, canvasSize.w, canvasSize.h);
 
-    const gridSpacing = 50;
-    ctx.strokeStyle = COLORS.grid;
-    ctx.lineWidth = 1;
-    for (let x = 0; x < canvasSize.w; x += gridSpacing) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, canvasSize.h);
-      ctx.stroke();
-    }
-    for (let y = 0; y < canvasSize.h; y += gridSpacing) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvasSize.w, y);
-      ctx.stroke();
-    }
+    const drawWorldGrid = () => {
+      const majorWorldSpacing = Math.pow(10, Math.floor(Math.log10(200 / mapState.zoom)));
+      const minorWorldSpacing = majorWorldSpacing / 5;
+      const screenToWorld = (sx: number, sy: number): [number, number] => [
+        (sx - mapState.panX) / mapState.zoom,
+        -(sy - mapState.panY) / mapState.zoom,
+      ];
+      const [wLeft, wTop] = screenToWorld(0, 0);
+      const [wRight, wBottom] = screenToWorld(canvasSize.w, canvasSize.h);
+      const wMinX = Math.min(wLeft, wRight);
+      const wMaxX = Math.max(wLeft, wRight);
+      const wMinY = Math.min(wTop, wBottom);
+      const wMaxY = Math.max(wTop, wBottom);
+
+      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = 'rgba(180,195,215,0.18)';
+      const startMinorX = Math.floor(wMinX / minorWorldSpacing) * minorWorldSpacing;
+      for (let wx = startMinorX; wx <= wMaxX; wx += minorWorldSpacing) {
+        const sx = wx * mapState.zoom + mapState.panX;
+        ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, canvasSize.h); ctx.stroke();
+      }
+      const startMinorY = Math.floor(wMinY / minorWorldSpacing) * minorWorldSpacing;
+      for (let wy = startMinorY; wy <= wMaxY; wy += minorWorldSpacing) {
+        const sy = -wy * mapState.zoom + mapState.panY;
+        ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvasSize.w, sy); ctx.stroke();
+      }
+
+      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = 'rgba(180,195,215,0.4)';
+      const startMajorX = Math.floor(wMinX / majorWorldSpacing) * majorWorldSpacing;
+      for (let wx = startMajorX; wx <= wMaxX; wx += majorWorldSpacing) {
+        const sx = wx * mapState.zoom + mapState.panX;
+        ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, canvasSize.h); ctx.stroke();
+      }
+      const startMajorY = Math.floor(wMinY / majorWorldSpacing) * majorWorldSpacing;
+      for (let wy = startMajorY; wy <= wMaxY; wy += majorWorldSpacing) {
+        const sy = -wy * mapState.zoom + mapState.panY;
+        ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvasSize.w, sy); ctx.stroke();
+      }
+    };
+    drawWorldGrid();
 
     if (showSubcatchments) {
       for (const [scId, pts] of Object.entries(project.polygons)) {
@@ -430,11 +456,11 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       ctx.fillText(rgId, sx, sy + s + 10);
     }
 
-    const nodeMap: Record<string, { type: string }> = {};
-    project.junctions.forEach(j => nodeMap[j.id] = { type: 'junction' });
-    project.outfalls.forEach(o => nodeMap[o.id] = { type: 'outfall' });
-    project.storageUnits.forEach(s => nodeMap[s.id] = { type: 'storage' });
-    project.dividers.forEach(d => nodeMap[d.id] = { type: 'divider' });
+    const nodeMap: Record<string, { type: string; maxDepth: number }> = {};
+    project.junctions.forEach(j => nodeMap[j.id] = { type: 'junction', maxDepth: j.maxDepth });
+    project.outfalls.forEach(o => nodeMap[o.id] = { type: 'outfall', maxDepth: 0 });
+    project.storageUnits.forEach(s => nodeMap[s.id] = { type: 'storage', maxDepth: s.maxDepth });
+    project.dividers.forEach(d => nodeMap[d.id] = { type: 'divider', maxDepth: d.maxDepth });
 
     const allLinks = [
       ...(isLayerVisible('conduits') ? project.conduits.map(c => ({ id: c.id, from: c.fromNode, to: c.toNode, type: 'conduit' as const })) : []),
@@ -529,6 +555,13 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
 
+    const depthFillColor = (ratio: number) => {
+      if (ratio >= 0.95) return '#ef4444';
+      if (ratio >= 0.75) return '#f59e0b';
+      if (ratio >= 0.4) return '#3b82f6';
+      return '#60a5fa';
+    };
+
     for (const [nodeId, [nx, ny]] of Object.entries(project.coordinates)) {
       const nType = nodeMap[nodeId]?.type || 'junction';
       if (nType === 'junction' && !isLayerVisible('junctions')) continue;
@@ -538,14 +571,25 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       const isSelected = selectedObj?.id === nodeId;
       const r = Math.max(4, Math.min(8, mapState.zoom * 250));
 
-      ctx.fillStyle = getNodeColor(nodeId, nType);
+      const nodeColor = getNodeColor(nodeId, nType);
       ctx.strokeStyle = isSelected ? '#000000' : 'rgba(0,0,0,0.4)';
       ctx.lineWidth = isSelected ? 2.5 : 1;
+
+      const nr = results && results.timeSteps[timeStep] ? results.timeSteps[timeStep].nodes[nodeId] : null;
+      const hasDepthFill = nr && nType !== 'outfall';
+      const nodeMaxD = nodeMap[nodeId]?.maxDepth || 4;
+      const depthRatio = hasDepthFill ? Math.min(1, Math.max(0, nr.depth / Math.max(nodeMaxD, 0.5))) : 0;
 
       if (nType === 'storage') {
         ctx.beginPath();
         ctx.rect(sx - r, sy - r, r * 2, r * 2);
+        ctx.fillStyle = hasDepthFill ? '#ffffff' : nodeColor;
         ctx.fill();
+        if (hasDepthFill && depthRatio > 0) {
+          const fillH = r * 2 * depthRatio;
+          ctx.fillStyle = depthFillColor(depthRatio);
+          ctx.fillRect(sx - r, sy + r - fillH, r * 2, fillH);
+        }
         ctx.stroke();
       } else if (nType === 'outfall') {
         ctx.beginPath();
@@ -553,6 +597,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         ctx.lineTo(sx + r, sy + r);
         ctx.lineTo(sx - r, sy + r);
         ctx.closePath();
+        ctx.fillStyle = nodeColor;
         ctx.fill();
         ctx.stroke();
       } else if (nType === 'divider') {
@@ -562,7 +607,28 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         ctx.lineTo(sx, sy + r);
         ctx.lineTo(sx - r, sy);
         ctx.closePath();
+        ctx.fillStyle = hasDepthFill ? '#ffffff' : nodeColor;
         ctx.fill();
+        if (hasDepthFill && depthRatio > 0) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(sx, sy - r);
+          ctx.lineTo(sx + r, sy);
+          ctx.lineTo(sx, sy + r);
+          ctx.lineTo(sx - r, sy);
+          ctx.closePath();
+          ctx.clip();
+          const fillH = r * 2 * depthRatio;
+          ctx.fillStyle = depthFillColor(depthRatio);
+          ctx.fillRect(sx - r, sy + r - fillH, r * 2, fillH);
+          ctx.restore();
+        }
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - r);
+        ctx.lineTo(sx + r, sy);
+        ctx.lineTo(sx, sy + r);
+        ctx.lineTo(sx - r, sy);
+        ctx.closePath();
         ctx.stroke();
       } else if (discretizedJunctionIds && discretizedJunctionIds.has(nodeId)) {
         const dr = r * 0.7;
@@ -579,8 +645,33 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       } else {
         ctx.beginPath();
         ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fillStyle = hasDepthFill ? '#ffffff' : nodeColor;
         ctx.fill();
+        if (hasDepthFill && depthRatio > 0) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(sx, sy, r - 0.5, 0, Math.PI * 2);
+          ctx.clip();
+          const fillH = r * 2 * depthRatio;
+          ctx.fillStyle = depthFillColor(depthRatio);
+          ctx.fillRect(sx - r, sy + r - fillH, r * 2, fillH);
+          ctx.restore();
+        }
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
         ctx.stroke();
+      }
+
+      if (hasDepthFill && depthRatio >= 0.95) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(sx, sy, r + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
       }
 
       if (preferences?.showNodeIds !== false) {

@@ -1,0 +1,388 @@
+Looking at this screenshot carefully, here is a comprehensive UX improvement plan organized by impact.
+
+---
+
+## What Works Well (Keep)
+
+- Status bar at bottom is information-dense and correct
+- Project Explorer tree structure is logical
+- Engine mode indicator (green dot + "Local 5.2.4") is clear
+- Node/link color coding is consistent
+
+---
+
+## Improvement 1 — Map Canvas: Empty Space Problem
+
+The biggest UX issue. The network occupies roughly 30% of the canvas. The remaining 70% is blank gray. Three fixes:
+
+**Auto fit-to-extent on load:**
+```ts
+// On file load or first render, auto-zoom to network bounds
+function fitNetworkToCanvas(nodes: Node[], canvas: HTMLCanvasElement) {
+  const xs = nodes.map(n => n.x);
+  const ys = nodes.map(n => n.y);
+  const padding = 80; // px
+
+  const minX = Math.min(...xs) - padding;
+  const maxX = Math.max(...xs) + padding;
+  const minY = Math.min(...ys) - padding;
+  const maxY = Math.max(...ys) + padding;
+
+  const scaleX = canvas.width  / (maxX - minX);
+  const scaleY = canvas.height / (maxY - minY);
+  const zoom   = Math.min(scaleX, scaleY);
+
+  return {
+    zoom,
+    panX: -minX * zoom,
+    panY: -minY * zoom,
+  };
+}
+```
+
+**Add a subtle grid** to the empty canvas so it reads as a work surface, not empty space:
+
+```css
+.map-canvas {
+  background-color: #f8f9fb;
+  background-image:
+    linear-gradient(rgba(180,195,215,0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180,195,215,0.4) 1px, transparent 1px),
+    linear-gradient(rgba(180,195,215,0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180,195,215,0.15) 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+```
+
+**Replace the hint text** at the bottom of the canvas. The current "Click Project > Run to simulate, or drag an .inp file here" is fine as text but competes with nothing. Make it a proper empty state:
+
+```tsx
+{nodes.length === 0 && (
+  <div className="absolute inset-0 flex flex-col items-center
+                  justify-center gap-4 pointer-events-none">
+    <Upload className="w-12 h-12 text-blue-300 opacity-50" />
+    <p className="text-sm text-slate-400 font-medium">
+      Drag an .inp file here to open
+    </p>
+    <div className="flex gap-3">
+      <button className="pointer-events-auto px-4 py-2 text-xs
+                         bg-blue-600 text-white rounded hover:bg-blue-700">
+        Open File
+      </button>
+      <button className="pointer-events-auto px-4 py-2 text-xs
+                         border border-slate-300 rounded hover:bg-slate-50">
+        Load Sample
+      </button>
+    </div>
+  </div>
+)}
+```
+
+---
+
+## Improvement 2 — Left Panel: Legend + Layers Merger
+
+The left panel has two separate sections — **Map Legend** and **Layers** — that are logically one thing. Merge them into a single **Legend & Layers** panel where each legend row has its own visibility toggle:
+
+```tsx
+// Before: separate Legend section + separate Layers checkboxes
+// After: unified rows
+
+function LegendRow({ color, label, visible, onToggle }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer
+                      hover:bg-slate-100 px-2 py-1 rounded group">
+      <input
+        type="checkbox"
+        checked={visible}
+        onChange={onToggle}
+        className="accent-blue-500"
+      />
+      <span
+        className="w-4 h-3 rounded-sm border border-slate-300 shrink-0"
+        style={{ background: color }}
+      />
+      <span className="text-xs text-slate-600 flex-1">{label}</span>
+    </label>
+  );
+}
+```
+
+This removes 40% of the left panel height and eliminates the disconnect between "what the colors mean" and "whether to show them."
+
+---
+
+## Improvement 3 — Toolbar: Consolidate and Clarify
+
+The current context toolbar has 8 items: Setup, Locate, Summary, Details, **Run**, Report, Profile, CFL. The active item (Run) uses a filled blue style but the others look identical to disabled. Problems:
+
+- "Details" and "Summary" are ambiguous — details of what?
+- "Profile" has no icon hint about what it does
+- Run is the primary action but sits 5th in the list
+
+**Proposed reorganization:**
+
+```
+[  Run ▶  ]    [  Report  ]    |    [ Setup ]  [ Locate ]  [ Profile ]  [ CFL ]
+ Primary CTA     Secondary           Utility tools (right-aligned or secondary row)
+```
+
+Give Run a distinct visual weight — it is the single most important button in the app:
+
+```tsx
+<button className="flex items-center gap-2 px-5 py-2 rounded
+                   bg-emerald-600 hover:bg-emerald-700
+                   text-white font-semibold text-sm shadow-sm
+                   border border-emerald-700">
+  <Play className="w-4 h-4 fill-white" />
+  Run Simulation
+</button>
+```
+
+---
+
+## Improvement 4 — Project Explorer: Visual Hierarchy
+
+Several issues in the current tree:
+
+**Problem 1:** Items with 0 count (Dividers (0), Orifices (0), Outlets (0), Transects (0), Streets (0), Inlets (0)) clutter the tree. Dim or collapse-by-default these empty sections:
+
+```tsx
+<TreeItem
+  label="Dividers"
+  count={0}
+  className={count === 0
+    ? "opacity-40 pointer-events-none"  // dim empty
+    : ""}
+/>
+```
+
+**Problem 2:** The dot indicators (● for populated, ○ for empty) are too subtle. Use count badges instead:
+
+```tsx
+// Replace the dot with a count badge
+{count > 0 && (
+  <span className="ml-auto text-xs bg-blue-100 text-blue-700
+                   px-1.5 py-0.5 rounded font-mono min-w-[20px]
+                   text-center">
+    {count}
+  </span>
+)}
+```
+
+**Problem 3:** The vertical toolbar icons between canvas and explorer (select arrow, circle, triangle, square, etc.) have no labels and no tooltip visible in the screenshot. Add tooltips and a subtle label below each:
+
+```tsx
+<Tooltip content="Add Junction">
+  <button className="flex flex-col items-center gap-1 p-2
+                     hover:bg-slate-200 rounded w-full">
+    <Circle className="w-5 h-5 text-slate-600" />
+    <span className="text-[9px] text-slate-500">Junction</span>
+  </button>
+</Tooltip>
+```
+
+---
+
+## Improvement 5 — Node Rendering on Canvas
+
+The current nodes are plain filled circles with no depth or state differentiation. After simulation, they should communicate hydraulic state visually:
+
+```ts
+function drawNode(ctx, node, results, theme) {
+  const depth = results?.nodeDepth[node.id] ?? 0;
+  const maxDepth = node.maxDepth || 4;
+  const fillRatio = Math.min(depth / maxDepth, 1);
+
+  // Outer ring — always node type color
+  ctx.beginPath();
+  ctx.arc(node.sx, node.sy, NODE_RADIUS + 3, 0, Math.PI * 2);
+  ctx.fillStyle = nodeTypeColor(node.type);
+  ctx.fill();
+
+  // Inner fill — depth as water level (blue fill rising from bottom)
+  ctx.beginPath();
+  ctx.arc(node.sx, node.sy, NODE_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+
+  // Water level arc
+  if (fillRatio > 0) {
+    const startAngle = Math.PI - (fillRatio * Math.PI);
+    ctx.beginPath();
+    ctx.arc(node.sx, node.sy, NODE_RADIUS, startAngle, Math.PI * 2 - startAngle);
+    ctx.fillStyle = depthColor(fillRatio); // blue → yellow → red
+    ctx.fill();
+  }
+
+  // Flooding indicator — pulsing red halo
+  if (depth >= maxDepth) {
+    ctx.beginPath();
+    ctx.arc(node.sx, node.sy, NODE_RADIUS + 6, 0, Math.PI * 2);
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([3, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+```
+
+---
+
+## Improvement 6 — Status Bar Enhancement
+
+The current status bar is good but passive. Make it interactive:
+
+```tsx
+<div className="status-bar flex items-center gap-0 text-xs
+                border-t border-slate-200 bg-slate-50 h-7">
+
+  {/* Clickable items open relevant settings */}
+  <StatusChip
+    label="CFS"
+    prefix="Flow:"
+    color="slate"
+    onClick={() => openDialog("options")}
+    tooltip="Click to change flow units"
+  />
+  <StatusChip
+    label="DYNWAVE"
+    prefix="Routing:"
+    color="blue"
+    onClick={() => openDialog("routing")}
+  />
+  <StatusChip
+    label="GREEN_AMPT"
+    prefix="Infiltration:"
+    color="green"
+    onClick={() => openDialog("infiltration")}
+  />
+
+  {/* Simulation result — prominent when available */}
+  <StatusChip
+    label="No Results"
+    color="slate"
+    icon={<Clock className="w-3 h-3" />}
+  />
+
+  {/* CFL — color coded */}
+  <StatusChip
+    label="CFL: OK"
+    color="emerald"
+    icon={<CheckCircle className="w-3 h-3" />}
+  />
+
+  {/* Engine — prominent */}
+  <StatusChip
+    label="Local 5.2.4"
+    color="emerald"
+    icon={<div className="w-2 h-2 rounded-full bg-emerald-500" />}
+    className="ml-auto"
+  />
+
+  {/* Network stats */}
+  <span className="px-3 text-slate-400">
+    7 nodes · 8 links · 5 subcatchments
+  </span>
+</div>
+```
+
+---
+
+## Improvement 7 — Selected Element Properties Panel
+
+When a user clicks a node or link, nothing happens in the current screenshot (no selection state visible). Add an inline properties panel that slides up from the bottom of the canvas or appears as a floating card:
+
+```tsx
+{selectedElement && (
+  <div className="absolute bottom-8 left-1/2 -translate-x-1/2
+                  bg-white border border-slate-200 shadow-lg rounded-lg
+                  p-4 min-w-[320px] z-10">
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <NodeIcon type={selectedElement.type} className="w-4 h-4" />
+        <span className="font-semibold text-sm">{selectedElement.id}</span>
+        <Badge variant="outline">{selectedElement.type}</Badge>
+      </div>
+      <button onClick={clearSelection}>
+        <X className="w-4 h-4 text-slate-400" />
+      </button>
+    </div>
+
+    {/* Properties table */}
+    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+      <span className="text-slate-500">Elevation</span>
+      <span className="font-mono">{selectedElement.elevation} ft</span>
+      <span className="text-slate-500">Max Depth</span>
+      <span className="font-mono">{selectedElement.maxDepth} ft</span>
+      {/* Simulation results if available */}
+      {results && <>
+        <span className="text-slate-500">Current Depth</span>
+        <span className="font-mono text-blue-600">
+          {results.nodeDepth[selectedElement.id]?.toFixed(2)} ft
+        </span>
+      </>}
+    </div>
+  </div>
+)}
+```
+
+---
+
+## Improvement 8 — Time Slider for Animation (Post-Simulation)
+
+After running a simulation, the current UI has no way to animate through timesteps. Add a time slider that appears in the toolbar when results are loaded:
+
+```tsx
+{results && (
+  <div className="flex items-center gap-3 px-4 py-2 bg-blue-50
+                  border-b border-blue-100">
+    <button onClick={togglePlay}>
+      {playing
+        ? <Pause className="w-4 h-4 text-blue-600" />
+        : <Play  className="w-4 h-4 text-blue-600" />}
+    </button>
+
+    <input
+      type="range"
+      min={0}
+      max={results.timeSteps.length - 1}
+      value={timeStep}
+      onChange={(e) => setTimeStep(Number(e.target.value))}
+      className="flex-1 accent-blue-600"
+    />
+
+    <span className="text-xs font-mono text-blue-700 w-16 text-right">
+      {results.timeSteps[timeStep]}
+    </span>
+
+    <select
+      value={playSpeed}
+      onChange={(e) => setPlaySpeed(Number(e.target.value))}
+      className="text-xs border rounded px-1 py-0.5"
+    >
+      <option value={1}>1×</option>
+      <option value={4}>4×</option>
+      <option value={16}>16×</option>
+    </select>
+  </div>
+)}
+```
+
+---
+
+## Summary of Changes by Priority
+
+| Change | Effort | Visual Impact |
+| --- | --- | --- |
+| Auto fit-to-extent + grid background | Low | Very High |
+| Merge Legend + Layers panels | Low | High |
+| Dim/hide zero-count tree items | Very Low | High |
+| Count badges on tree items | Low | Medium |
+| Run button primary CTA styling | Very Low | High |
+| Selected element properties card | Medium | High |
+| Time slider for simulation replay | Medium | Very High |
+| Node depth visualization post-sim | Medium | Very High |
+| Interactive status bar chips | Low | Medium |
+| Toolbar icon labels | Very Low | Medium |

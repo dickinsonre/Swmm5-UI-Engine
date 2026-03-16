@@ -433,9 +433,14 @@ export default function ProjectExplorer({
             <span className="text-[10px] opacity-60 shrink-0">{node.icon}</span>
           )}
           <span className="truncate flex-1">{node.label}</span>
-          {count !== undefined && (
-            <span className={`text-[9px] shrink-0 tabular-nums ${isDimmed ? 'text-[#c0c0c8]' : 'text-[#6b6b7b]'}`}>
-              ({count})
+          {count !== undefined && count > 0 && (
+            <span className="text-[9px] shrink-0 tabular-nums bg-[#e2eaf3] text-[#2c6eb5] px-1.5 py-px rounded-full font-medium min-w-[18px] text-center">
+              {count}
+            </span>
+          )}
+          {count !== undefined && count === 0 && (
+            <span className="text-[9px] shrink-0 tabular-nums text-[#c0c0c8]">
+              0
             </span>
           )}
           {hasResults && (

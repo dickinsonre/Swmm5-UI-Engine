@@ -24,15 +24,15 @@ interface SpeedBarProps {
   isMobile?: boolean;
 }
 
-const tools: { mode: InteractionMode; icon: typeof Circle; label: string; testId: string }[] = [
-  { mode: 'select', icon: MousePointer2, label: 'Select', testId: 'speed-select' },
-  { mode: 'addJunction', icon: Circle, label: 'Junction', testId: 'speed-junction' },
-  { mode: 'addOutfall', icon: Triangle, label: 'Outfall', testId: 'speed-outfall' },
-  { mode: 'addStorage', icon: Square, label: 'Storage', testId: 'speed-storage' },
-  { mode: 'addConduit', icon: Minus, label: 'Conduit', testId: 'speed-conduit' },
-  { mode: 'addPump', icon: Zap, label: 'Pump', testId: 'speed-pump' },
-  { mode: 'addLabel', icon: Tag, label: 'Label', testId: 'speed-label' },
-  { mode: 'groupSelect', icon: BoxSelect, label: 'Group', testId: 'speed-group' },
+const tools: { mode: InteractionMode; icon: typeof Circle; label: string; shortLabel: string; testId: string }[] = [
+  { mode: 'select', icon: MousePointer2, label: 'Select', shortLabel: 'Sel', testId: 'speed-select' },
+  { mode: 'addJunction', icon: Circle, label: 'Add Junction', shortLabel: 'Junc', testId: 'speed-junction' },
+  { mode: 'addOutfall', icon: Triangle, label: 'Add Outfall', shortLabel: 'Out', testId: 'speed-outfall' },
+  { mode: 'addStorage', icon: Square, label: 'Add Storage', shortLabel: 'Stor', testId: 'speed-storage' },
+  { mode: 'addConduit', icon: Minus, label: 'Add Conduit', shortLabel: 'Cond', testId: 'speed-conduit' },
+  { mode: 'addPump', icon: Zap, label: 'Add Pump', shortLabel: 'Pump', testId: 'speed-pump' },
+  { mode: 'addLabel', icon: Tag, label: 'Add Label', shortLabel: 'Label', testId: 'speed-label' },
+  { mode: 'groupSelect', icon: BoxSelect, label: 'Group Select', shortLabel: 'Grp', testId: 'speed-group' },
 ];
 
 export default function SpeedBar({
@@ -84,14 +84,14 @@ export default function SpeedBar({
       style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #d0d0d8' }}
       data-testid="speed-bar"
     >
-      {tools.map(({ mode, icon: Icon, label, testId }) => {
+      {tools.map(({ mode, icon: Icon, label, shortLabel, testId }) => {
         const active = interactionMode === mode;
         return (
           <button
             key={mode}
             onClick={() => onSetMode(mode)}
             title={label}
-            className="flex items-center justify-center w-8 h-8 rounded transition-colors"
+            className="flex flex-col items-center justify-center w-9 h-9 rounded transition-colors gap-px"
             style={{
               backgroundColor: active ? 'rgba(44,110,181,0.12)' : 'transparent',
               border: active ? '1px solid #2c6eb5' : '1px solid transparent',
@@ -99,7 +99,8 @@ export default function SpeedBar({
             }}
             data-testid={testId}
           >
-            <Icon className="w-4 h-4" />
+            <Icon className="w-3.5 h-3.5" />
+            <span className="text-[7px] leading-none opacity-70">{shortLabel}</span>
           </button>
         );
       })}
@@ -108,19 +109,20 @@ export default function SpeedBar({
 
       <button
         onClick={onDelete}
-        title="Delete"
-        className="flex items-center justify-center w-8 h-8 rounded transition-colors"
+        title="Delete Selected"
+        className="flex flex-col items-center justify-center w-9 h-9 rounded transition-colors gap-px"
         style={{ color: '#d04040', border: '1px solid transparent' }}
         data-testid="speed-delete"
       >
-        <Trash2 className="w-4 h-4" />
+        <Trash2 className="w-3.5 h-3.5" />
+        <span className="text-[7px] leading-none opacity-70">Del</span>
       </button>
 
       <button
         onClick={onRunSimulation}
         disabled={simRunning}
         title="Run Simulation"
-        className="flex items-center justify-center w-8 h-8 rounded transition-colors"
+        className="flex flex-col items-center justify-center w-9 h-9 rounded transition-colors gap-px"
         style={{
           color: simRunning ? '#6b6b7b' : '#2a8a4a',
           border: '1px solid transparent',
@@ -129,17 +131,19 @@ export default function SpeedBar({
         }}
         data-testid="speed-run"
       >
-        <Play className="w-4 h-4" />
+        <Play className="w-3.5 h-3.5" />
+        <span className="text-[7px] leading-none opacity-70">Run</span>
       </button>
 
       <button
         onClick={onFullExtent}
         title="Full Extent"
-        className="flex items-center justify-center w-8 h-8 rounded transition-colors"
+        className="flex flex-col items-center justify-center w-9 h-9 rounded transition-colors gap-px"
         style={{ color: '#6b6b7b', border: '1px solid transparent' }}
         data-testid="speed-extent"
       >
-        <Maximize className="w-4 h-4" />
+        <Maximize className="w-3.5 h-3.5" />
+        <span className="text-[7px] leading-none opacity-70">Fit</span>
       </button>
     </div>
   );

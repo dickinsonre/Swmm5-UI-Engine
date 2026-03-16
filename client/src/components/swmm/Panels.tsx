@@ -52,15 +52,20 @@ export function LegendPanel({
     { key: 'labels', label: 'Labels', icon: 'A' },
   ];
 
+  const layerItems = [
+    { key: 'subcatchments', label: 'Subcatchments', visible: showSubcatch, toggle: () => setShowSubcatch(!showSubcatch) },
+    ...layers.map(l => ({ key: l.key, label: l.label, visible: layerVisibility[l.key] !== false, toggle: () => setLayerVisibility({ ...layerVisibility, [l.key]: !layerVisibility[l.key] }) })),
+  ];
+
   return (
     <ScrollArea className="h-full" data-testid="legend-panel">
       <div className="p-2.5 space-y-3">
         <div className="text-[11px] font-bold text-center pb-1.5 border-b border-[#d0d0d8] text-[#2a2a3e]">
-          Map Legend
+          Legend & Layers
         </div>
 
         <LegendSection
-          title={`Subcatchments — ${subcatchTitle}`}
+          title={subcatchTitle}
           labels={subcatchLabels}
           swatchType="rect"
           checked={showSubcatch}
@@ -68,28 +73,28 @@ export function LegendPanel({
         />
 
         <LegendSection
-          title={`Nodes — ${nodeTitle}`}
+          title={nodeTitle}
           labels={nodeLabels}
           swatchType="circle"
         />
 
         <LegendSection
-          title={`Links — ${linkTitle}`}
+          title={linkTitle}
           labels={linkLabels}
           swatchType="line"
         />
 
         <div className="border-t border-[#d0d0d8] pt-2">
-          <div className="text-[11px] font-semibold text-[#2a2a3e] mb-1.5">Layers</div>
-          {layers.map(l => (
-            <label key={l.key} className="flex items-center gap-1.5 pl-1 py-0.5 cursor-pointer" data-testid={`layer-toggle-${l.key}`}>
+          <div className="text-[10px] font-semibold text-[#4a4a5a] mb-1">Layers</div>
+          {layerItems.map(l => (
+            <label key={l.key} className="flex items-center gap-1.5 pl-1 py-[3px] cursor-pointer rounded hover:bg-black/[0.04] transition-colors" data-testid={`layer-toggle-${l.key}`}>
               <input
                 type="checkbox"
-                checked={layerVisibility[l.key] !== false}
-                onChange={() => setLayerVisibility({ ...layerVisibility, [l.key]: !layerVisibility[l.key] })}
+                checked={l.visible}
+                onChange={l.toggle}
                 className="w-3 h-3 accent-[#2c6eb5]"
               />
-              <span className="text-[10px] text-[#6b6b7b]">{l.icon} {l.label}</span>
+              <span className={`text-[10px] transition-colors ${l.visible ? 'text-[#2a2a3e]' : 'text-[#b0b0b8]'}`}>{l.label}</span>
             </label>
           ))}
         </div>

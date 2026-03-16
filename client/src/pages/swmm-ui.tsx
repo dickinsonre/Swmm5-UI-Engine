@@ -20,6 +20,7 @@ import {
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
+  Droplets, CloudRain, CheckCircle2, Clock,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -1349,7 +1350,7 @@ export default function SwmmUI() {
             <ToolbarButton
               icon={simStatus === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               label="Run"
-              accent
+              primary
               onClick={handleRunSimulation}
               disabled={simStatus === 'running'}
               testId="btn-run"
@@ -1853,40 +1854,43 @@ export default function SwmmUI() {
         </div>
       </div>
 
-      <div className="h-6 flex items-center px-2 md:px-3 shrink-0 overflow-x-auto" style={{ backgroundColor: '#f0f0f4', borderTop: '1px solid #d0d0d8' }}>
-        <StatusItem text={`Flow: ${flowUnits}`} />
-        <span className="mobile-hidden"><StatusItem text={`Routing: ${routingModel}`} /></span>
-        <span className="mobile-hidden"><StatusItem text={`Infiltration: ${infiltModel}`} /></span>
+      <div className="h-7 flex items-center px-1 md:px-2 shrink-0 overflow-x-auto gap-0.5" style={{ backgroundColor: '#f0f0f4', borderTop: '1px solid #d0d0d8' }} data-testid="status-bar">
+        <StatusItem text={flowUnits} icon={<Droplets className="w-3 h-3" />} />
+        <span className="mobile-hidden"><StatusItem text={routingModel} icon={<ArrowLeftRight className="w-3 h-3" />} /></span>
+        <span className="mobile-hidden"><StatusItem text={infiltModel} icon={<CloudRain className="w-3 h-3" />} /></span>
         <StatusItem
-          text={simStatus === 'current' ? 'Results are Current' : simStatus === 'running' ? (simProgressMsg || 'Running...') : 'No Results'}
+          text={simStatus === 'current' ? 'Results Current' : simStatus === 'running' ? (simProgressMsg || 'Running...') : 'No Results'}
           color={simStatus === 'current' ? '#2a8a4a' : simStatus === 'running' ? '#c08820' : '#6b6b7b'}
           bold={simStatus === 'current'}
+          icon={simStatus === 'current' ? <CheckCircle2 className="w-3 h-3" /> : simStatus === 'running' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
         />
         {cflAnalysis && cflAnalysis.flaggedCount > 0 && (
           <StatusItem
-            text={`CFL: ${cflAnalysis.flaggedCount} violations`}
+            text={`CFL: ${cflAnalysis.flaggedCount}`}
             color="#d04040"
+            icon={<AlertTriangle className="w-3 h-3" />}
+            onClick={() => setShowCflPanel(true)}
           />
         )}
         {cflAnalysis && cflAnalysis.flaggedCount === 0 && cflAnalysis.totalCount > 0 && (
           <StatusItem
             text="CFL: OK"
             color="#2a8a4a"
+            icon={<CheckCircle2 className="w-3 h-3" />}
           />
         )}
         <StatusItem
-          text={engineMode === 'local' ? 'Engine: Local 5.2.4' : engineMode === 'remote' ? 'Engine: Remote 5.2.4' : 'Engine: Mock'}
+          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
           color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
+          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
         />
         <div className="flex-1" />
-        <span className="text-[9px] font-mono text-[#9090a0]" data-testid="status-counts">
-          {project.junctions.length + project.outfalls.length + project.storageUnits.length + project.dividers.length} nodes
-          {' | '}
-          {project.conduits.length + project.pumps.length + project.weirs.length + project.orifices.length + project.outlets.length} links
-          {' | '}
-          {project.subcatchments.length} subcatch
+        <span className="text-[9px] font-mono text-[#6b6b7b] flex items-center gap-1.5" data-testid="status-counts">
+          <span className="bg-[#e8edf2] px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.junctions.length + project.outfalls.length + project.storageUnits.length + project.dividers.length} nodes</span>
+          <span className="bg-[#e8edf2] px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.conduits.length + project.pumps.length + project.weirs.length + project.orifices.length + project.outlets.length} links</span>
+          <span className="bg-[#e8edf2] px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.subcatchments.length} subcatch</span>
         </span>
-        <span className="text-[9px] text-[#9090a0] mx-2">|</span>
+        <span className="text-[9px] text-[#9090a0] mx-1.5">|</span>
         <a
           href="https://github.com/SWMMEnablement"
           target="_blank"
@@ -1894,7 +1898,7 @@ export default function SwmmUI() {
           className="text-[9px] text-[#6b6b7b] hover:text-[#2c6eb5] transition-colors"
           data-testid="link-credit"
         >
-          Created by SWMMEnablement
+          SWMMEnablement
         </a>
       </div>
 
@@ -2587,10 +2591,11 @@ function ContextMenuItem({ icon, label, onClick, disabled, danger, testId }: {
   );
 }
 
-function ToolbarButton({ icon, label, accent, onClick, disabled, testId }: {
+function ToolbarButton({ icon, label, accent, primary, onClick, disabled, testId }: {
   icon: React.ReactNode;
   label: string;
   accent?: boolean;
+  primary?: boolean;
   onClick?: () => void;
   disabled?: boolean;
   testId?: string;
@@ -2600,12 +2605,12 @@ function ToolbarButton({ icon, label, accent, onClick, disabled, testId }: {
       onClick={onClick}
       disabled={disabled}
       className={`flex flex-col items-center justify-center px-3 py-1 rounded min-w-[54px] transition-colors
-        ${accent ? 'bg-[rgba(44,110,181,0.12)] border border-[#2c6eb5]' : 'border border-transparent hover:bg-black/[0.04]'}
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+        ${primary ? 'bg-[#1a7a3a] border border-[#15692f] shadow-sm' : accent ? 'bg-[rgba(44,110,181,0.12)] border border-[#2c6eb5]' : 'border border-transparent hover:bg-black/[0.04]'}
+        ${disabled ? 'opacity-50 cursor-not-allowed' : primary ? 'cursor-pointer hover:bg-[#1e8a42]' : 'cursor-pointer'}`}
       data-testid={testId}
     >
-      <span className={accent ? 'text-[#2c6eb5]' : 'text-[#4a4a5a]'}>{icon}</span>
-      <span className={`text-[9px] mt-0.5 ${accent ? 'text-[#2c6eb5]' : 'text-[#6b6b7b]'}`}>{label}</span>
+      <span className={primary ? 'text-white' : accent ? 'text-[#2c6eb5]' : 'text-[#4a4a5a]'}>{icon}</span>
+      <span className={`text-[9px] mt-0.5 ${primary ? 'text-white font-semibold' : accent ? 'text-[#2c6eb5]' : 'text-[#6b6b7b]'}`}>{label}</span>
     </button>
   );
 }
@@ -2653,17 +2658,19 @@ function ThemeCombo({ label, value, onChange, options, testId }: {
   );
 }
 
-function StatusItem({ text, color, bold }: { text: string; color?: string; bold?: boolean }) {
+function StatusItem({ text, color, bold, icon, onClick }: { text: string; color?: string; bold?: boolean; icon?: React.ReactNode; onClick?: () => void }) {
   return (
     <div
-      className="px-3 text-[10px]"
+      onClick={onClick}
+      className={`px-2 py-0.5 text-[10px] flex items-center gap-1 ${onClick ? 'cursor-pointer hover:bg-black/[0.06] rounded transition-colors' : ''}`}
       style={{
         color: color || '#6b6b7b',
         fontWeight: bold ? 600 : 400,
-        borderRight: '1px solid #d0d0d8',
+        borderRight: onClick ? 'none' : '1px solid #d0d0d8',
       }}
       data-testid={`status-${text.toLowerCase().replace(/\s+/g, '-')}`}
     >
+      {icon && <span className="flex items-center">{icon}</span>}
       {text}
     </div>
   );
