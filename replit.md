@@ -1,182 +1,213 @@
 # SWMM5-UI
 
 ## Overview
-Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 INP files from desktop or GitHub, visualizes stormwater networks on a canvas map, and runs the SWMM5 engine (mock/WASM). Full desktop-like engineering UI with object creation, manipulation, and group editing.
+Web-based interface for EPA SWMM5 (Storm Water Management Model). Full desktop-like engineering UI that reads SWMM5 INP files from desktop or GitHub, parses all INP sections, visualizes stormwater networks on a canvas map, runs real SWMM5 simulations via the local EPA SWMM 5.2.4 binary, performs CFL stability analysis with one-click conduit discretization, and supports GIS/CAD/CSV import+export. ~10,000 lines of frontend+backend TypeScript.
 
 ## Architecture
-- **Frontend**: React + TypeScript + Tailwind CSS with light EPANET-style theme (dark navy menu bar, white map canvas, light gray panels)
-- **Backend**: Express.js (minimal - just GitHub proxy endpoint)
-- **No database required** - all data is client-side INP file parsing
+- **Frontend**: React 18 + TypeScript + Tailwind CSS + Vite. Light EPANET-style theme (dark navy title/menu, white canvas, light gray panels). All SWMM data lives client-side as parsed `SwmmProject` objects.
+- **Backend**: Express.js — GitHub file proxy, local SWMM engine runner (`/api/swmm/run`), remote BatchSWMM proxy (`/api/swmm-proxy/*`), WebSocket proxy for progress.
+- **No database** — all data is client-side INP file parsing. Session secret is used only for Express session middleware.
+- **Local SWMM binary**: `/home/runner/workspace/swmm-engine/runswmm` (EPA SWMM 5.2.4)
 
 ## Key Files
-### Frontend
-- `client/src/pages/swmm-ui.tsx` - Main page layout (menus, toolbar, status bar, file handling, preferences, context menus, group editing, object creation/manipulation callbacks)
-- `client/src/components/swmm/NetworkMap.tsx` - Canvas-based network visualization with pan/zoom, hit-testing, rubber-band drawing, group polygon rendering, tooltip overlay
-- `client/src/components/swmm/Panels.tsx` - Legend panel, Object Locator, Map Query panel
-- `client/src/components/swmm/ProjectExplorer.tsx` - Full HTML Project Explorer with tree navigation, search, context menus, data grid overlay, property editor
-- `client/src/components/swmm/SpeedBar.tsx` - Speed bar with interaction mode buttons (vertical on desktop, horizontal scrollable bottom bar on mobile)
-- `client/src/lib/swmm-types.ts` - TypeScript interfaces for all SWMM5 model objects
-- `client/src/lib/inp-parser.ts` - Complete SWMM5 INP file parser and INP file rebuild with safe column padding (`padField`)
-- `client/src/lib/swmm-engine.ts` - Remote/mock/local engine wrapper with WebSocket progress
-- `client/src/lib/swmm-out-parser.ts` - SWMM binary .out file parser (header, element names, per-timestep float32 arrays)
-- `client/src/lib/cfl-analysis.ts` - ReSWMM CFL analysis and conduit discretization engine
-- `client/src/lib/import-export.ts` - CSV, DXF, and GeoJSON import/export utilities for nodes and links
 
-### Backend
-- `server/routes.ts` - GitHub file proxy (`/api/fetch-github`, SSRF-secured), GitHub repo browser (`/api/github-browse`), SWMM engine proxy (`/api/swmm-proxy/*`), WebSocket proxy for BatchSWMM progress
+### Frontend (~9,600 lines)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `client/src/pages/swmm-ui.tsx` | 2865 | Main page: menus, toolbar, status bar, file I/O, preferences, dialogs (github, export, import, profile plot, group edit, CFL, report), context menus, undo/redo, all callbacks |
+| `client/src/components/swmm/NetworkMap.tsx` | 1157 | Canvas-based network map: pan/zoom, hit-testing (nodes/links/subcatchments), rubber-band drawing, group polygon, tooltip overlay, multi-select highlight, touch events |
+| `client/src/components/swmm/ProjectExplorer.tsx` | 1206 | Project Explorer: tree navigation, search, context menus, data grid overlay with editable cells, property editor with inline editing |
+| `client/src/components/swmm/Panels.tsx` | 900 | Legend panel, Object Locator, Map Query panel (with result-property support) |
+| `client/src/components/swmm/SpeedBar.tsx` | 146 | Speed bar: interaction mode buttons (vertical desktop / horizontal mobile) |
+| `client/src/lib/swmm-types.ts` | 453 | All TypeScript interfaces: SwmmProject (40+ fields), Junction, Conduit, Subcatchment, LidControl, Aquifer, Transect, SnowPack, Street, Inlet, SimulationResults, etc. |
+| `client/src/lib/inp-parser.ts` | 1263 | Complete INP parser (`parseInpFile`) + serializer (`projectToInp`). Handles all 30+ sections with safe column padding (`padField`) |
+| `client/src/lib/swmm-engine.ts` | 527 | Engine abstraction: `createLocalEngine()`, `createRemoteEngine()`, `createMockEngine()`. Local runs binary + parses .out; remote uses BatchSWMM proxy; mock generates synthetic results |
+| `client/src/lib/swmm-out-parser.ts` | 209 | Binary .out parser: magic numbers (516114522), version, flow units, element name tables, per-timestep float32 arrays (8 subcatch + 6 node + 5 link vars). Cap 5000 steps |
+| `client/src/lib/cfl-analysis.ts` | 361 | CFL analysis + conduit discretization engine (runs in browser) |
+| `client/src/lib/import-export.ts` | 509 | CSV, DXF, GeoJSON import/export for nodes and links |
+
+### Backend (~358 lines)
+| File | Purpose |
+|------|---------|
+| `server/routes.ts` | GitHub proxy (`/api/fetch-github`, SSRF-secured), repo browser (`/api/github-browse`), local SWMM runner (`/api/swmm/run` — writes INP to tmp, executes `runswmm`, returns .rpt + base64 .out), remote proxy (`/api/swmm-proxy/*`), WebSocket proxy |
+| `server/index.ts` | Express server setup on port 5000, session, Vite dev middleware |
+| `server/vite.ts` | Vite dev server integration |
+
+## Data Flow
+
+### INP File → SwmmProject
+```
+User opens file → parseInpFile(text) → SwmmProject object → setProject(parsed)
+  ↓ sections: JUNCTIONS, CONDUITS, XSECTIONS, COORDINATES, OPTIONS, etc.
+  ↓ each section → typed array (Junction[], Conduit[]) or Record (xsections, losses)
+  ↓ rawSections preserves unrecognized sections verbatim
+```
+
+### Simulation Flow
+```
+User clicks Run → projectToInp(project) → POST /api/swmm/run (INP text)
+  ↓ server writes tmp .inp → exec runswmm → reads .rpt + .out
+  ↓ response: { reportContent, outBase64 }
+  ↓ client: parseSwmmOut(base64→ArrayBuffer) → SimulationResults
+  ↓ fallback: parseRptToResults(reportContent) if .out fails
+  ↓ results stored in state → drives map themes, time slider, profile plot, queries
+```
+
+### State Management
+- `project: SwmmProject` — the full model (source of truth)
+- `results: SimulationResults | null` — parsed simulation output
+- `selectedObj: SelectedObject | null` — currently selected map element
+- `multiSelectIds: Set<string> | null` — Shift+click multi-selection
+- `timeStep: number` — current animation frame index into results.timeSteps[]
+- Undo/redo: `undoStackRef` / `redoStackRef` (cap 50), pushed on every project change
 
 ## Features
-- Parse all SWMM5 INP sections: TITLE, OPTIONS, RAINGAGES, SUBCATCHMENTS, SUBAREAS, INFILTRATION, JUNCTIONS, OUTFALLS, DIVIDERS, STORAGE, CONDUITS, PUMPS, ORIFICES, WEIRS, OUTLETS, XSECTIONS, LOSSES, CURVES, TIMESERIES, PATTERNS, CONTROLS, DWF, POLLUTANTS, LANDUSES, COORDINATES, VERTICES, POLYGONS, SYMBOLS, LABELS, MAP
-- Canvas network map with pan (drag), zoom (scroll), and element selection (nodes, links, subcatchments)
-- Layer visibility toggles for junctions, outfalls, storage, conduits, pumps, subcatchments, labels, raingages
-- Link hit-testing with point-to-segment distance calculation
-- Project Explorer tree with expandable categories and element counts
-- Property editor showing selected element details + simulation results
-- Map legend with subcatchment/node/link theme selection
-- Time slider and animation for simulation results
-- File open from desktop (drag & drop or file picker) and GitHub URL
-- Save/export INP file
-- Mock simulation engine (ready for WASM integration)
 
-### Interactive Features (T001-T010)
-- **Speed Bar**: Vertical icon toolbar for interaction mode selection (Select, Add Junction, Add Outfall, Add Storage, Add Conduit, Add Pump, Add Label, Group Select, Delete, Run, Full Extent)
-- **Node Creation**: Click map in add-node mode to place junctions/outfalls/storage units with auto-generated IDs
-- **Link Drawing**: Click start node → optional intermediate vertices → click end node to draw conduits/pumps with rubber-band preview
-- **Node Moving**: Ctrl+drag on selected node to reposition it
-- **Right-Click Context Menu**: Copy, Paste (properties), Reverse (links), Delete with graph-integrity cleanup
-- **Flyover Tooltips**: Hover over objects to see ID + current theme value or property
-- **Object Locator**: Search by type + ID, center map on found object
-- **Map Query**: Filter objects by property criteria, highlight matches in red on map
-- **Map Export**: Save canvas as PNG file or copy to clipboard, with optional legend
-- **Group Selection**: Draw polygon on map, select all enclosed objects, batch edit properties or delete
-- **Preferences**: Flyover hints, confirm deletions, numerical precision, show/hide IDs, background color (localStorage-persisted)
-- **Report Viewer**: View full .rpt report file in a dialog after simulation (auto-opens on failure); Copy to clipboard or Download as .rpt file; accessible via Project > Report toolbar button
-- **Import Data**: Import nodes/links from CSV (with Add New/Modify modes), CAD DXF files (with layer selection), and GeoJSON files (with field mapping); File > Import toolbar button
-- **Export Data**: Export nodes CSV, links CSV, DXF network, and PNG map image; File > Export toolbar button
-- **Undo/Redo**: History stack (cap 50 snapshots) with Ctrl+Z/Ctrl+Y keyboard shortcuts and Edit toolbar buttons
-- **Inline Property Editing**: Click-to-edit cells in Project Explorer property editor for junction, conduit, outfall, storage, subcatchment, weir, orifice, divider properties
-- **Data Grid Cell Editing**: Click editable cells in data grid overlay to modify numeric properties (elevation, length, roughness, area, etc.) with commit-on-blur/Enter
-- **Multi-Select (Shift+Click)**: Shift+click on map nodes/links/subcatchments to toggle selection; multi-selected items highlighted in blue (#338aff); cleared on regular click
-- **Profile Plot**: Longitudinal section dialog with recharts AreaChart; select conduits by ID with autocomplete, auto-trace downstream path; shows invert, crown, ground, and HGL (when simulation results available)
-- **Map Query on Results**: Query panel supports simulation result properties (node depth/head/flooding, link flow/velocity/capacity, subcatchment runoff/rainfall/infiltration)
-- **Binary .out Parser**: `swmm-out-parser.ts` parses SWMM binary output files for real time-series data (magic numbers, element names, per-timestep float32 arrays)
-- **Missing INP Parsers**: LID_CONTROLS, LID_USAGE, GROUNDWATER, AQUIFERS, TRANSECTS, SNOWPACKS, STREETS, INLETS, INLET_USAGE sections fully parsed and serialized
+### Core
+- Parse 30+ SWMM5 INP sections including LID_CONTROLS, GROUNDWATER, AQUIFERS, TRANSECTS, SNOWPACKS, STREETS, INLETS
+- Canvas network map with pan/zoom, element selection, layer visibility toggles
+- Three simulation engine modes: Local (green, EPA binary), Remote (blue, BatchSWMM cloud), Mock (gray, synthetic)
+- Time slider + animation for stepping through simulation results
+- File open from desktop (drag & drop / picker) and GitHub URL/repo browser
+- Save/export INP file with safe column padding
 
-### Mobile Optimization
-- Responsive layout: side panels (170px left, 220px right) hidden on screens ≤768px, accessible via toggle buttons in the title bar
-- Panels open as fixed overlays (z-50) with dark backdrop, close via X button or backdrop click
-- SpeedBar becomes horizontal scrollable bottom bar on mobile (isMobile prop)
-- Canvas supports touch events: single-finger pan, pinch-to-zoom, tap-to-select objects, tap-to-place nodes
-- Welcome screen and sample buttons use compact sizing on mobile
-- Status bar shows abbreviated info on mobile, full details on desktop
-- Progress monitor dialog uses responsive max-width (90vw, max 360px)
-- CFL panel uses full-width on mobile (calc(100%-16px)) vs fixed 320px on desktop
-- CSS classes: `.mobile-hidden` (hides at ≤768px), `.desktop-hidden` (hides at >768px)
+### Interactive Editing
+- **Node Creation**: Click map to place junctions/outfalls/storage with auto-generated IDs
+- **Link Drawing**: Click-to-click with rubber-band preview and intermediate vertices
+- **Node Moving**: Ctrl+drag on selected node
+- **Context Menu**: Right-click for Copy/Paste/Reverse/Delete
+- **Inline Property Editing**: Click-to-edit in Project Explorer property panel
+- **Data Grid Editing**: Click editable cells in tabular data grid (with double-commit guard)
+- **Undo/Redo**: Ctrl+Z/Y with 50-snapshot cap
+- **Group Selection**: Draw polygon → batch edit properties or delete
+- **Multi-Select**: Shift+click to toggle items (blue highlight), cleared on regular click or project load
+
+### Analysis & Visualization
+- **CFL Analysis**: Computes Courant stability for every conduit; one-click discretization
+- **Profile Plot**: Longitudinal section via recharts AreaChart — select conduits with autocomplete, auto-trace downstream, shows invert/crown/ground/HGL
+- **Map Query**: Filter by static properties or simulation results (depth, flow, velocity, etc.), highlight matches in red
+- **Report Viewer**: View .rpt report, copy/download
+- **Flyover Tooltips**: Hover to see ID + current theme value
+- **Object Locator**: Search by type + ID, center map
+
+### Import/Export
+- **Import**: CSV nodes/links (Add/Modify modes), CAD DXF (with layer selection), GeoJSON (with field mapping)
+- **Export**: CSV nodes/links, DXF network, PNG map image
+
+### Mobile
+- Responsive layout: side panels hidden ≤768px, toggle via title bar buttons
+- SpeedBar horizontal scrollable bottom bar
+- Touch: single-finger pan, pinch-to-zoom, tap-to-select/place
+- Compact sizing on welcome screen, status bar, progress dialog, CFL panel
 
 ## UI Layout
 ```
-Title Bar | Menu Bar (File|Edit|View|Map|Project|Help)
-Context Toolbar (changes per menu)
-Legend/Locator/Query | Network Map (Canvas) + SpeedBar | Project Explorer + Properties
-Status Bar (with "Created by SWMMEnablement" credit link)
+┌─────────────────────────────────────────────────────┐
+│ Title Bar (SWMM5) │ Menu (File|Edit|View|Map|Project|Help) │
+├─────────────────────────────────────────────────────┤
+│ Context Toolbar (changes per active menu)           │
+├──────┬──────────────────────────────────┬────────────┤
+│Legend│                                  │ Project    │
+│Locator│    Network Map (Canvas)        │ Explorer   │
+│Query │           + SpeedBar            │ + Properties│
+├──────┴──────────────────────────────────┴────────────┤
+│ Status Bar (engine mode, coordinates, object count) │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## Design Theme
 - Title bar: `#2c3e6b`, Menu bar: `#3a5070`, Toolbar/status: `#f0f0f4`, Panels: `#f8f8fa`
 - Borders: `#d0d0d8`, Primary text: `#2a2a3e`, Secondary: `#6b6b7b`, Accent blue: `#2c6eb5`
 - Map canvas: `#ffffff`, Grid: `rgba(0,0,0,0.06)`, Labels: `rgba(0,0,0,0.65)`
+- Multi-select highlight: `#338aff`, Group select: `#ffaa33`, Query match: `#ff4444`, CFL flagged: `#ff5555`
+- Engine mode colors: local=`#2a8a4a`, remote=`#2c6eb5`, mock=gray
 - Y-axis inverted in worldToScreen: `[wx * zoom + panX, -wy * zoom + panY]`
 
 ## Mouse Interaction
-- **Select mode**: Click to select nodes/links/subcatchments, drag to pan, Ctrl+drag to move selected node
+- **Select mode**: Click to select, drag to pan, Ctrl+drag to move node, Shift+click to multi-select
 - **Add node modes**: Click to place new node at world coordinate
 - **Add link modes**: Click node to start, click map for vertices, click another node to complete
-- **Group select mode**: Click to add polygon vertices, double-click/right-click to close polygon
+- **Group select mode**: Click to add polygon vertices, double-click/right-click to close
 - **Right-click**: Context menu (select mode) or exit creation mode
 - **Escape**: Cancel current mode, return to select
-- Scroll: zoom, Double-click: fit to extent
+- **Scroll**: zoom, **Double-click**: fit to extent
 
 ## Exported Types
-- `SwmmPreferences` interface exported from `swmm-ui.tsx`, imported in `NetworkMap.tsx`
-- `InteractionMode` type exported from `SpeedBar.tsx`
-- `MapQuery` type and `evaluateQuery` function exported from `Panels.tsx`
+- `SwmmPreferences` interface from `swmm-ui.tsx` → `NetworkMap.tsx`
+- `InteractionMode` type from `SpeedBar.tsx`
+- `MapQuery` type + `evaluateQuery(query, project, results?, timeStep?)` from `Panels.tsx`
 - `NetworkMapHandle` interface (getCanvas, fitExtent, centerOnWorld) from `NetworkMap.tsx`
+- `SwmmProject`, `SelectedObject`, `SimulationResults` from `swmm-types.ts`
+- `parseInpFile`, `projectToInp`, `SAMPLE_INP` from `inp-parser.ts`
+- `parseSwmmOut` from `swmm-out-parser.ts`
+- `createLocalEngine`, `createRemoteEngine`, `createMockEngine`, `checkLocalEngine`, `checkRemoteEngine` from `swmm-engine.ts`
 
 ## Sample Projects
-- Seven sample models available via File > Samples dropdown or empty state screen
-- `client/public/samples/Greenville_US.inp` — US Customary units (CFS), ~14,000 lines, 172 nodes
-- `client/public/samples/Greenville_SI.inp` — SI/Metric units (CMS), same network
-- `client/public/samples/User1.inp` — Mountain Drainage (58 subcatchments, CMS, Horton, DynWave)
-- `client/public/samples/User2.inp` — Urban Collection (17 subcatchments, CFS, storage nodes, DynWave)
-- `client/public/samples/User3.inp` — Large Metro Network (100+ subcatchments, CMS, dual drainage, DynWave)
-- `client/public/samples/User4.inp` — Regional Stormwater (98 subcatchments, CFS, large network, DynWave)
-- `client/public/samples/User5.inp` — Complex Watershed (96 subcatchments, CFS, Froude-limited, DynWave)
-- Both demonstrate all SWMM5 features (LID, aquifers, groundwater, transects, etc.)
-- Loaded on-demand via fetch (not bundled into JS)
-- Parser silently skips unrecognized sections
+Seven sample models via File > Samples or empty state screen:
+- `Greenville_US.inp` / `Greenville_SI.inp` — 172 nodes, US/SI units
+- `User1.inp` — Mountain Drainage (58 subcatchments, CMS, Horton, DynWave)
+- `User2.inp` — Urban Collection (17 subcatchments, CFS, storage, DynWave)
+- `User3.inp` — Large Metro (100+ subcatchments, CMS, dual drainage)
+- `User4.inp` — Regional Stormwater (98 subcatchments, CFS, large network)
+- `User5.inp` — Complex Watershed (96 subcatchments, CFS, Froude-limited)
+- All loaded on-demand via fetch from `client/public/samples/`
 
-## ReSWMM Engine (`client/src/lib/cfl-analysis.ts`)
+## API Endpoints
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/fetch-github?url=` | Proxy GitHub raw file (SSRF-secured) |
+| GET | `/api/github-browse?url=` | Browse GitHub repo directories |
+| GET | `/api/swmm/status` | Check local SWMM binary availability |
+| POST | `/api/swmm/run` | Run local SWMM: receives INP text, writes tmp file, exec `runswmm`, returns `{reportContent, outBase64}` |
+| GET | `/api/swmm-proxy/status` | Check remote BatchSWMM + local availability |
+| POST | `/api/swmm-proxy/upload` | Upload INP to remote engine |
+| POST | `/api/swmm-proxy/batch/:jobId/start` | Start remote simulation |
+| GET | `/api/swmm-proxy/batch/:jobId/status` | Poll remote job status |
+| GET | `/api/swmm-proxy/batch/:jobId/results` | Get remote simulation results |
 
-The ReSWMM engine runs entirely in the browser (client-side). It takes a parsed SWMM .inp file and splits long conduits into shorter segments to improve hydraulic model stability and CFL compliance.
+## Key Technical Details
 
-### 1. Input Parsing (`client/src/lib/inp-parser.ts`)
-The INP file is parsed into structured data. The parser reads the raw text file and extracts every section — [JUNCTIONS], [CONDUITS], [XSECTIONS], [COORDINATES], [LOSSES], [OPTIONS], etc. — by splitting on whitespace-delimited columns. Each section becomes a typed array (e.g., `Conduit[]`, `Junction[]`, `XSection`). The parser also reads [OPTIONS] to determine flow units (CFS vs LPS), which controls whether US or SI gravity constants are used.
+### Binary .out Parser (`swmm-out-parser.ts`)
+- Magic: first int32 = 516114522, second int32 = 0
+- Header: version, flow units, subcatch/node/link/pollutant counts
+- Element names: length-prefixed strings (int32 length + ASCII chars)
+- Property counts per type: subcatch, node, link properties
+- Time steps: float64 timestamp + float32 arrays for each element
+- Subcatch vars (8): rainfall, snow depth, evap, infiltration, runoff, GW outflow, GW elevation, soil moisture
+- Node vars (6): depth, head, volume, lateral inflow, total inflow, flooding
+- Link vars (5): flow, depth, velocity, volume, capacity
+- Capped at 5000 time steps for memory safety
 
-### 2. CFL Analysis (`computeCflAnalysis`)
-Before discretizing, the engine computes the Courant-Friedrichs-Lewy (CFL) time step for every conduit. The formula is:
+### CFL Analysis (`cfl-analysis.ts`)
+- CFL time step = Length / sqrt(g × diameter)
+- g = 32.174 ft/s² (US) or 9.81 m/s² (SI)
+- Discretization: splits long conduits into N segments with interpolated intermediate junctions
+- Methods: Fixed Interval (min/max length) or dx/D Ratio (diameter × ratio)
+- Preserves losses distribution, offsets, cross-sections
 
-```
-CFL time step = Length / sqrt(g × diameter)
-```
+### INP Parser Patterns
+- Sections detected by `[SECTION_NAME]` headers
+- Whitespace-delimited columns parsed by `split(/\s+/)`
+- Serializer uses `padField(value, width)` — guarantees ≥1 space between fields
+- `rawSections` preserves unrecognized sections verbatim for round-trip fidelity
+- Non-conduit XSECTIONS (orifices, weirs, outlets) preserved separately to avoid SWMM ERROR 143
 
-Where g is 32.174 ft/s² (US) or 9.81 m/s² (SI). This tells you the maximum stable time step for each conduit. Short, fat pipes have tiny CFL time steps and cause instability — those are the ones that benefit from discretization.
+### ProjectExplorer Editing
+- `EDITABLE_FIELDS` map: `objType → propLabel → { field, collection }` drives inline property editing
+- `GRID_EDITABLE_COLS` map: `category → colKey → { field, collection }` drives data grid cell editing
+- Both use `onUpdateProject(updater)` pattern: `(prev: SwmmProject) => SwmmProject`
+- Double-commit guard via `committedRef` in DataGridRow prevents blur+Enter from firing twice
 
-### 3. Conduit Lengthening (optional)
-If enabled, the engine first applies "lengthening" — a pre-pass that extends any conduit whose length is below the minimum CFL-stable length for the configured time step. The minimum length is `sqrt(g × diameter) × lengtheningStep`. This adjusts short conduits without splitting them.
+### Multi-Select
+- `multiSelectIds: Set<string>` tracks Shift+clicked elements
+- `handleShiftClick(id, objType)` toggles membership
+- `handleSelectObj(obj)` clears multi-select on regular click
+- Reset on all project load paths (file open, GitHub, sample, new project)
+- Blue highlight (#338aff) in both `getNodeColor` and `getLinkColor`
 
-### 4. Discretization (`discretizeProject`)
-This is the core algorithm. For each conduit:
-
-- **Look up cross-section** from the xsection map to get the pipe diameter
-- **Calculate target segment length** based on the chosen method:
-  - Fixed Interval: Clamp between user-specified min/max lengths
-  - dx/D Ratio: Target length = diameter × user ratio
-- **Determine segment count**: `ceil(conduit.length / targetLength)`
-- **Skip unsplittable shapes**: Conduits with DUMMY or IRREGULAR cross-sections are preserved as-is (SWMM doesn't allow intermediate nodes on these)
-- **Skip if only 1 segment needed** (conduit already short enough)
-- **Split the conduit** into N equal-length segments:
-  - New conduits: Named `OriginalName_1`, `OriginalName_2`, etc. Each gets the same roughness and cross-section shape. Inlet/outlet offsets are only applied to the first/last segment.
-  - New intermediate junctions: Named `OriginalName_N1`, `OriginalName_N2`, etc. Elevation is linearly interpolated between the upstream and downstream nodes. Max depth is inherited from the upstream node. The MNSA (minimum nodal surface area / ponded area) is set from the user config.
-  - New coordinates: X/Y positions are linearly interpolated along the line between endpoint coordinates for visualization.
-  - Losses: Entry loss goes on the first segment, exit loss on the last, average loss distributed across all.
-
-### 5. INP File Rebuild (`projectToInp` in `inp-parser.ts`)
-After discretization, the engine reconstructs a valid .inp file:
-
-- Writes all sections — JUNCTIONS, CONDUITS, XSECTIONS, LOSSES, COORDINATES — with the new discretized data
-- Preserves non-conduit XSECTIONS — Cross-sections for orifices, weirs, and outlets are identified (link names not matching any conduit) and included. Without this, SWMM throws ERROR 143.
-- Preserves everything else verbatim via `rawSections` — subcatchments, raingages, timeseries, rules, controls, pollutants, LIDs, etc.
-- Uses safe column padding (`padField`) — guarantees at least one space between fields even when values exceed the column width, preventing SWMM parse errors like ERROR 211
-
-### 6. Running the Simulation
-The rebuilt INP file is uploaded to the Express backend, which proxies to the BatchSWMM remote engine:
-
-- **Upload**: `POST /api/swmm-proxy/upload` sends the INP file
-- **Start**: `POST /api/swmm-proxy/batch/:jobId/start` triggers the SWMM 5.2.4 engine
-- **Progress**: WebSocket proxy at `/api/swmm-proxy/ws` relays real-time progress messages from the remote BatchSWMM server (progress, file_progress, result, completed)
-- **Results**: The `.rpt` report content is parsed by `parseRptToResults` in `swmm-engine.ts` to extract node depth summaries, link flow summaries, subcatchment runoff summaries into `SimulationResults`
-
-Both the remote engine and mock engine send progress updates and final results back to the frontend for display in the progress monitor dialog.
-
-The key engineering challenge was making the rebuilt INP file perfectly SWMM-compatible — column alignment, preserving non-conduit sections, handling edge cases like DUMMY shapes, and ensuring numeric fields never bleed into adjacent columns. Each bug fix came from running real models and tracing SWMM error codes back to the generated file.
-
-## Simulation Engine
-- Three modes: **Local** (EPA SWMM 5.2.4 binary at `/home/runner/workspace/swmm-engine/runswmm`), **Remote** (BatchSWMM cloud), and **Mock** (simulated results)
-- Local engine: uploads INP to server, runs binary, returns .rpt + .out (binary parsed by `swmm-out-parser.ts`)
-- Remote engine connects to BatchSWMM app at `https://batch-swmm-runner-robertdickinson.replit.app`
-- Server proxies API calls through `/api/swmm-proxy/*` endpoints
-- WebSocket proxy on server relays progress from remote BatchSWMM to browser client
-- Upload flow: POST INP to `/api/swmm-proxy/upload` → start batch → WS proxy for progress/results → parse RPT report
-- Engine mode toggle in Project toolbar; auto-detects local/remote availability on load
-- Status bar shows current engine mode with color coding: local=#2a8a4a, remote=#2c6eb5, mock=gray
-- `swmm-engine.ts` exports: `createMockEngine()`, `createRemoteEngine()`, `createLocalEngine()`, `checkRemoteEngine()`, `checkLocalEngine()`
+### Profile Plot
+- `ProfilePlotContent` component in swmm-ui.tsx
+- Conduit selection via autocomplete input + auto-trace downstream
+- Computes station, invert, crown, ground, HGL at each node along the path
+- Node lookup: junctions + outfalls + storage + dividers
+- Uses recharts `AreaChart` with `Area` layers for each elevation type
