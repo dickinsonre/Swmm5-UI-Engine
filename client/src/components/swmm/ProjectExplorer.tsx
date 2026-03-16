@@ -11,6 +11,7 @@ export interface ProjectExplorerProps {
   results: SimulationResults | null;
   timeStep: number;
   onViewTable?: (section: string) => void;
+  onUpdateProject?: (updater: (prev: SwmmProject) => SwmmProject) => void;
 }
 
 interface TreeNodeDef {
@@ -219,7 +220,7 @@ interface ContextMenuState {
 }
 
 export default function ProjectExplorer({
-  project, selectedObj, onSelectObj, results, timeStep, onViewTable
+  project, selectedObj, onSelectObj, results, timeStep, onViewTable, onUpdateProject
 }: ProjectExplorerProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     options: false, nodes: true, links: true, subcatchments: false,
@@ -551,25 +552,15 @@ export default function ProjectExplorer({
             </span>
           </div>
           <ScrollArea className="max-h-[220px]">
-            <table className="w-full border-collapse text-[10px]" data-testid="property-table">
-              <thead>
-                <tr className="bg-[#e8e8ee]">
-                  <th className="text-left px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#6b6b7b] font-medium">Property</th>
-                  <th className="text-left px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#6b6b7b] font-medium">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {properties.map(([k, v], i) => (
-                  <tr key={i} className={i % 2 === 0 ? '' : 'bg-black/[0.03]'}>
-                    <td className="px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#2a2a3e]">{k}</td>
-                    <td className="px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#2c6eb5] font-mono">{v}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <PropertyTable
+              properties={properties}
+              selectedObj={selectedObj}
+              project={project}
+              onUpdateProject={onUpdateProject}
+            />
           </ScrollArea>
           <div className="px-1.5 py-1 text-[9px] text-[#9090a0] bg-[rgba(44,110,181,0.06)] border-t border-[#d0d0d8]">
-            Press Enter to edit, F1 for Help
+            Click value to edit. Esc to cancel.
           </div>
         </div>
       )}
@@ -640,6 +631,7 @@ export default function ProjectExplorer({
           timeStep={timeStep}
           onClose={() => setShowDataGrid(null)}
           onSelectObj={onSelectObj}
+          onUpdateProject={onUpdateProject}
         />
       )}
     </div>
@@ -677,9 +669,10 @@ interface DataGridOverlayProps {
   timeStep: number;
   onClose: () => void;
   onSelectObj: (obj: SelectedObject) => void;
+  onUpdateProject?: (updater: (prev: SwmmProject) => SwmmProject) => void;
 }
 
-function DataGridOverlay({ project, nodeId, results, timeStep, onClose, onSelectObj }: DataGridOverlayProps) {
+function DataGridOverlay({ project, nodeId, results, timeStep, onClose, onSelectObj, onUpdateProject }: DataGridOverlayProps) {
   const category = getCategoryFromId(nodeId);
   if (!category) return null;
 
@@ -715,24 +708,147 @@ function DataGridOverlay({ project, nodeId, results, timeStep, onClose, onSelect
             </thead>
             <tbody>
               {objects.map((obj, idx) => (
-                <tr
+                <DataGridRow
                   key={obj.id}
-                  onClick={() => onSelectObj({ id: obj.id, objType: category as SelectedObject['objType'] })}
-                  className={`cursor-pointer transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-[#fafafa]'} hover:bg-[#e8f0fb]`}
-                  data-testid={`grid-row-${obj.id}`}
-                >
-                  {columns.map(col => (
-                    <td key={col.key} className="px-2 py-1 border-b border-[#f0f0f4] text-[#2a2a3e] font-mono whitespace-nowrap">
-                      {col.getValue(obj, project, results, timeStep)}
-                    </td>
-                  ))}
-                </tr>
+                  obj={obj}
+                  idx={idx}
+                  category={category}
+                  columns={columns}
+                  project={project}
+                  results={results}
+                  timeStep={timeStep}
+                  onSelectObj={onSelectObj}
+                  onUpdateProject={onUpdateProject}
+                />
               ))}
             </tbody>
           </table>
         </div>
       </div>
     </div>
+  );
+}
+
+const GRID_EDITABLE_COLS: Record<string, Record<string, { field: string; collection: string }>> = {
+  junction: {
+    elev: { field: 'elevation', collection: 'junctions' },
+    maxDepth: { field: 'maxDepth', collection: 'junctions' },
+    initDepth: { field: 'initDepth', collection: 'junctions' },
+    surDepth: { field: 'surDepth', collection: 'junctions' },
+    aponded: { field: 'aponded', collection: 'junctions' },
+  },
+  outfall: {
+    elev: { field: 'elevation', collection: 'outfalls' },
+  },
+  storage: {
+    elev: { field: 'elevation', collection: 'storageUnits' },
+    maxDepth: { field: 'maxDepth', collection: 'storageUnits' },
+  },
+  conduit: {
+    length: { field: 'length', collection: 'conduits' },
+    roughness: { field: 'roughness', collection: 'conduits' },
+  },
+  subcatchment: {
+    area: { field: 'area', collection: 'subcatchments' },
+    pctImperv: { field: 'pctImperv', collection: 'subcatchments' },
+    width: { field: 'width', collection: 'subcatchments' },
+    slope: { field: 'slope', collection: 'subcatchments' },
+  },
+  weir: {
+    crest: { field: 'crestHeight', collection: 'weirs' },
+    cd: { field: 'cd', collection: 'weirs' },
+  },
+  orifice: {
+    offset: { field: 'offset', collection: 'orifices' },
+    cd: { field: 'cd', collection: 'orifices' },
+  },
+};
+
+function DataGridRow({ obj, idx, category, columns, project, results, timeStep, onSelectObj, onUpdateProject }: {
+  obj: any;
+  idx: number;
+  category: string;
+  columns: ColumnDef[];
+  project: SwmmProject;
+  results: SimulationResults | null;
+  timeStep: number;
+  onSelectObj: (obj: SelectedObject) => void;
+  onUpdateProject?: (updater: (prev: SwmmProject) => SwmmProject) => void;
+}) {
+  const [editCell, setEditCell] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const committedRef = useRef(false);
+
+  const commitEdit = useCallback((colKey: string) => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    if (!onUpdateProject) { setEditCell(null); return; }
+    const editable = GRID_EDITABLE_COLS[category]?.[colKey];
+    if (!editable) { setEditCell(null); return; }
+    const numVal = parseFloat(editValue);
+    if (isNaN(numVal)) { setEditCell(null); return; }
+    const { field, collection } = editable;
+    onUpdateProject(prev => {
+      const arr = (prev as any)[collection];
+      if (!Array.isArray(arr)) return prev;
+      const updated = arr.map((item: any) =>
+        item.id === obj.id ? { ...item, [field]: numVal } : item
+      );
+      return { ...prev, [collection]: updated };
+    });
+    setEditCell(null);
+  }, [editValue, category, obj.id, onUpdateProject]);
+
+  return (
+    <tr
+      className={`cursor-pointer transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-[#fafafa]'} hover:bg-[#e8f0fb]`}
+      data-testid={`grid-row-${obj.id}`}
+    >
+      {columns.map(col => {
+        const isEditable = !!GRID_EDITABLE_COLS[category]?.[col.key] && !!onUpdateProject;
+        const isEditing = editCell === col.key;
+        const displayVal = col.getValue(obj, project, results, timeStep);
+
+        if (isEditing) {
+          return (
+            <td key={col.key} className="px-1 py-0.5 border-b border-[#f0f0f4]">
+              <input
+                type="number"
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                onBlur={() => commitEdit(col.key)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') commitEdit(col.key);
+                  if (e.key === 'Escape') setEditCell(null);
+                }}
+                autoFocus
+                className="w-full text-[11px] font-mono px-1 py-0.5 border border-[#2c6eb5] rounded outline-none bg-white text-[#2a2a3e]"
+                data-testid={`grid-cell-edit-${obj.id}-${col.key}`}
+              />
+            </td>
+          );
+        }
+
+        return (
+          <td
+            key={col.key}
+            className={`px-2 py-1 border-b border-[#f0f0f4] text-[#2a2a3e] font-mono whitespace-nowrap ${isEditable ? 'cursor-text hover:bg-[#e0edfa]' : ''}`}
+            onClick={() => {
+              if (isEditable) {
+                committedRef.current = false;
+                setEditCell(col.key);
+                setEditValue(displayVal);
+              } else {
+                onSelectObj({ id: obj.id, objType: category as SelectedObject['objType'] });
+              }
+            }}
+            data-testid={`grid-cell-${obj.id}-${col.key}`}
+          >
+            {displayVal}
+          </td>
+        );
+      })}
+    </tr>
   );
 }
 
@@ -838,6 +954,137 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
   }
 
   return base;
+}
+
+const EDITABLE_FIELDS: Record<string, Record<string, { field: string; collection: string }>> = {
+  junction: {
+    'Invert El.': { field: 'elevation', collection: 'junctions' },
+    'Max. Depth': { field: 'maxDepth', collection: 'junctions' },
+    'Init. Depth': { field: 'initDepth', collection: 'junctions' },
+    'Surcharge Dp.': { field: 'surDepth', collection: 'junctions' },
+    'Ponded Area': { field: 'aponded', collection: 'junctions' },
+  },
+  outfall: {
+    'Invert El.': { field: 'elevation', collection: 'outfalls' },
+  },
+  storage: {
+    'Invert El.': { field: 'elevation', collection: 'storageUnits' },
+    'Max. Depth': { field: 'maxDepth', collection: 'storageUnits' },
+    'Init. Depth': { field: 'initDepth', collection: 'storageUnits' },
+    'Evap. Factor': { field: 'fevap', collection: 'storageUnits' },
+  },
+  conduit: {
+    'Length (ft)': { field: 'length', collection: 'conduits' },
+    'Roughness': { field: 'roughness', collection: 'conduits' },
+    'In Offset': { field: 'inOffset', collection: 'conduits' },
+    'Out Offset': { field: 'outOffset', collection: 'conduits' },
+  },
+  subcatchment: {
+    'Area (ac)': { field: 'area', collection: 'subcatchments' },
+    '% Imperv': { field: 'pctImperv', collection: 'subcatchments' },
+    'Width (ft)': { field: 'width', collection: 'subcatchments' },
+    'Slope (%)': { field: 'slope', collection: 'subcatchments' },
+  },
+  weir: {
+    'Crest Height': { field: 'crestHeight', collection: 'weirs' },
+    'Disch. Coeff.': { field: 'cd', collection: 'weirs' },
+  },
+  orifice: {
+    'Offset': { field: 'offset', collection: 'orifices' },
+    'Disch. Coeff.': { field: 'cd', collection: 'orifices' },
+  },
+  divider: {
+    'Invert El.': { field: 'elevation', collection: 'dividers' },
+  },
+};
+
+function PropertyTable({ properties, selectedObj, project, onUpdateProject }: {
+  properties: [string, string][];
+  selectedObj: NonNullable<SelectedObject>;
+  project: SwmmProject;
+  onUpdateProject?: (updater: (prev: SwmmProject) => SwmmProject) => void;
+}) {
+  const [editingRow, setEditingRow] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const handleStartEdit = useCallback((idx: number, value: string) => {
+    if (!onUpdateProject) return;
+    const propName = properties[idx][0];
+    const editable = EDITABLE_FIELDS[selectedObj.objType]?.[propName];
+    if (!editable) return;
+    setEditingRow(idx);
+    setEditValue(value);
+  }, [properties, selectedObj, onUpdateProject]);
+
+  const handleCommitEdit = useCallback(() => {
+    if (editingRow === null || !onUpdateProject) return;
+    const propName = properties[editingRow][0];
+    const editable = EDITABLE_FIELDS[selectedObj.objType]?.[propName];
+    if (!editable) { setEditingRow(null); return; }
+
+    const numVal = parseFloat(editValue);
+    if (isNaN(numVal)) { setEditingRow(null); return; }
+
+    const { field, collection } = editable;
+    const id = selectedObj.id;
+
+    onUpdateProject(prev => {
+      const arr = (prev as any)[collection];
+      if (!Array.isArray(arr)) return prev;
+      const updated = arr.map((item: any) =>
+        item.id === id ? { ...item, [field]: numVal } : item
+      );
+      return { ...prev, [collection]: updated };
+    });
+    setEditingRow(null);
+  }, [editingRow, editValue, properties, selectedObj, onUpdateProject]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleCommitEdit(); }
+    else if (e.key === 'Escape') { setEditingRow(null); }
+  }, [handleCommitEdit]);
+
+  return (
+    <table className="w-full border-collapse text-[10px]" data-testid="property-table">
+      <thead>
+        <tr className="bg-[#e8e8ee]">
+          <th className="text-left px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#6b6b7b] font-medium">Property</th>
+          <th className="text-left px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#6b6b7b] font-medium">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {properties.map(([k, v], i) => {
+          const isEditable = !!EDITABLE_FIELDS[selectedObj.objType]?.[k] && !!onUpdateProject;
+          const isEditing = editingRow === i;
+          return (
+            <tr key={i} className={i % 2 === 0 ? '' : 'bg-black/[0.03]'}>
+              <td className="px-1.5 py-0.5 border-b border-[#d0d0d8] text-[#2a2a3e]">{k}</td>
+              <td
+                className={`px-1.5 py-0.5 border-b border-[#d0d0d8] font-mono ${isEditable ? 'cursor-pointer hover:bg-[#2c6eb5]/10' : ''} ${isEditing ? 'p-0' : 'text-[#2c6eb5]'}`}
+                onClick={() => isEditable && !isEditing && handleStartEdit(i, v)}
+                data-testid={`prop-value-${k.replace(/[^a-zA-Z0-9]/g, '-')}`}
+              >
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
+                    onBlur={handleCommitEdit}
+                    onKeyDown={handleKeyDown}
+                    autoFocus
+                    className="w-full px-1 py-0.5 text-[10px] font-mono border border-[#2c6eb5] rounded bg-white text-[#2a2a3e] outline-none"
+                    data-testid={`prop-input-${k.replace(/[^a-zA-Z0-9]/g, '-')}`}
+                  />
+                ) : (
+                  <span>{v}</span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
 }
 
 function getProperties(

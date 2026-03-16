@@ -22,6 +22,15 @@ import {
   type LandUse,
   type DWFEntry,
   type MapLabel,
+  type LidControl,
+  type LidUsage,
+  type Groundwater,
+  type Aquifer,
+  type Transect,
+  type SnowPack,
+  type Street,
+  type Inlet,
+  type InletUsage,
   createEmptyProject,
 } from './swmm-types';
 
@@ -514,6 +523,159 @@ function parseLabels(lines: string[]): MapLabel[] {
   }).filter(l => !isNaN(l.x) && !isNaN(l.y));
 }
 
+function parseLidControls(lines: string[]): LidControl[] {
+  const controls: Record<string, LidControl> = {};
+  for (const line of lines) {
+    const p = splitFields(line);
+    if (p.length < 2) continue;
+    const id = p[0];
+    if (!controls[id]) {
+      controls[id] = { id, type: p[1], layers: [] };
+    } else {
+      controls[id].layers.push(p.slice(1));
+    }
+  }
+  return Object.values(controls);
+}
+
+function parseLidUsage(lines: string[]): LidUsage[] {
+  return lines.map(line => {
+    const p = splitFields(line);
+    return {
+      subcatchId: p[0] || '',
+      lidId: p[1] || '',
+      number: parseFloat2(p[2]),
+      area: parseFloat2(p[3]),
+      width: parseFloat2(p[4]),
+      initSat: parseFloat2(p[5]),
+      fromImperv: parseFloat2(p[6]),
+      toPerv: parseFloat2(p[7]),
+      rptFile: p[8] || '',
+      drainTo: p[9] || '',
+      fromPerv: parseFloat2(p[10]),
+    };
+  }).filter(l => l.subcatchId);
+}
+
+function parseGroundwater(lines: string[]): Groundwater[] {
+  return lines.map(line => {
+    const p = splitFields(line);
+    return {
+      subcatchId: p[0] || '',
+      aquiferId: p[1] || '',
+      nodeId: p[2] || '',
+      surfElev: parseFloat2(p[3]),
+      a1: parseFloat2(p[4]),
+      b1: parseFloat2(p[5]),
+      a2: parseFloat2(p[6]),
+      b2: parseFloat2(p[7]),
+      a3: parseFloat2(p[8]),
+      fixedDepth: parseFloat2(p[9]),
+      threshold: parseFloat2(p[10]),
+      params: p.slice(11).map(parseFloat2),
+    };
+  }).filter(g => g.subcatchId);
+}
+
+function parseAquifers(lines: string[]): Aquifer[] {
+  return lines.map(line => {
+    const p = splitFields(line);
+    return {
+      id: p[0] || '',
+      porosity: parseFloat2(p[1]),
+      wiltPoint: parseFloat2(p[2]),
+      fieldCap: parseFloat2(p[3]),
+      conductivity: parseFloat2(p[4]),
+      conductSlope: parseFloat2(p[5]),
+      tensionSlope: parseFloat2(p[6]),
+      upperEvap: parseFloat2(p[7]),
+      lowerEvap: parseFloat2(p[8]),
+      lowerGWLoss: parseFloat2(p[9]),
+      bottomElev: parseFloat2(p[10]),
+      waterTableElev: parseFloat2(p[11]),
+      unsatMoisture: parseFloat2(p[12]),
+      params: p.slice(13).map(parseFloat2),
+    };
+  }).filter(a => a.id);
+}
+
+function parseTransects(lines: string[]): Transect[] {
+  const transects: Transect[] = [];
+  let current: Transect | null = null;
+  for (const line of lines) {
+    const p = splitFields(line);
+    if (p[0] === 'NC') {
+      if (current) transects.push(current);
+      current = {
+        id: '',
+        stations: [],
+        roughness: { left: parseFloat2(p[1]), right: parseFloat2(p[2]), channel: parseFloat2(p[3]) },
+        bankStations: { left: 0, right: 0 },
+        modifiers: [],
+      };
+    } else if (p[0] === 'X1' && current) {
+      current.id = p[1] || '';
+      current.bankStations = { left: parseFloat2(p[4]), right: parseFloat2(p[5]) };
+      current.modifiers = p.slice(6).map(parseFloat2);
+    } else if (p[0] === 'GR' && current) {
+      for (let i = 1; i + 1 < p.length; i += 2) {
+        current.stations.push({ x: parseFloat2(p[i]), y: parseFloat2(p[i + 1]) });
+      }
+    }
+  }
+  if (current) transects.push(current);
+  return transects;
+}
+
+function parseSnowpacks(lines: string[]): SnowPack[] {
+  const packs: Record<string, SnowPack> = {};
+  for (const line of lines) {
+    const p = splitFields(line);
+    if (p.length < 2) continue;
+    const id = p[0];
+    if (!packs[id]) packs[id] = { id, parameters: {} };
+    packs[id].parameters[p[1]] = p.slice(2).map(parseFloat2);
+  }
+  return Object.values(packs);
+}
+
+function parseStreets(lines: string[]): Street[] {
+  return lines.map(line => {
+    const p = splitFields(line);
+    return { id: p[0] || '', params: p.slice(1) };
+  }).filter(s => s.id);
+}
+
+function parseInlets(lines: string[]): Inlet[] {
+  const inlets: Record<string, Inlet> = {};
+  for (const line of lines) {
+    const p = splitFields(line);
+    if (p.length < 2) continue;
+    const id = p[0];
+    if (!inlets[id]) {
+      inlets[id] = { id, type: p[1], params: p.slice(2) };
+    } else {
+      inlets[id].params.push(...p.slice(1));
+    }
+  }
+  return Object.values(inlets);
+}
+
+function parseInletUsage(lines: string[]): InletUsage[] {
+  return lines.map(line => {
+    const p = splitFields(line);
+    return {
+      linkId: p[0] || '',
+      inletId: p[1] || '',
+      nodeId: p[2] || '',
+      number: parseFloat2(p[3]),
+      pctClogged: parseFloat2(p[4]),
+      maxFlow: parseFloat2(p[5]),
+      params: p.slice(6),
+    };
+  }).filter(i => i.linkId);
+}
+
 function parseMapExtent(lines: string[]): { x1: number; y1: number; x2: number; y2: number } | null {
   for (const line of lines) {
     const p = splitFields(line);
@@ -540,6 +702,8 @@ export function parseInpFile(text: string): SwmmProject {
     'CONDUITS', 'PUMPS', 'ORIFICES', 'WEIRS', 'OUTLETS',
     'XSECTIONS', 'LOSSES', 'CURVES', 'TIMESERIES', 'PATTERNS',
     'CONTROLS', 'DWF', 'POLLUTANTS', 'LANDUSES',
+    'LID_CONTROLS', 'LID_USAGE', 'GROUNDWATER', 'AQUIFERS',
+    'TRANSECTS', 'SNOWPACKS', 'STREETS', 'INLETS', 'INLET_USAGE',
     'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'LABELS', 'MAP',
   ]);
 
@@ -619,6 +783,33 @@ export function parseInpFile(text: string): SwmmProject {
         break;
       case 'LANDUSES':
         project.landuses = parseLanduses(lines);
+        break;
+      case 'LID_CONTROLS':
+        project.lidControls = parseLidControls(lines);
+        break;
+      case 'LID_USAGE':
+        project.lidUsage = parseLidUsage(lines);
+        break;
+      case 'GROUNDWATER':
+        project.groundwater = parseGroundwater(lines);
+        break;
+      case 'AQUIFERS':
+        project.aquifers = parseAquifers(lines);
+        break;
+      case 'TRANSECTS':
+        project.transects = parseTransects(lines);
+        break;
+      case 'SNOWPACKS':
+        project.snowpacks = parseSnowpacks(lines);
+        break;
+      case 'STREETS':
+        project.streets = parseStreets(lines);
+        break;
+      case 'INLETS':
+        project.inlets = parseInlets(lines);
+        break;
+      case 'INLET_USAGE':
+        project.inletUsage = parseInletUsage(lines);
         break;
       case 'COORDINATES':
         project.coordinates = parseCoordinates(lines);
@@ -795,6 +986,89 @@ export function projectToInp(project: SwmmProject): string {
       for (const [x, y] of pts) {
         lines.push(`${id.padEnd(16)} ${x.toFixed(3).padStart(18)} ${y.toFixed(3).padStart(18)}`);
       }
+    }
+    lines.push('');
+  }
+
+  if (project.lidControls.length) {
+    lines.push('[LID_CONTROLS]');
+    for (const lc of project.lidControls) {
+      lines.push(`${lc.id.padEnd(16)} ${lc.type}`);
+      for (const layer of lc.layers) {
+        lines.push(`${lc.id.padEnd(16)} ${layer.join('    ')}`);
+      }
+    }
+    lines.push('');
+  }
+
+  if (project.lidUsage.length) {
+    lines.push('[LID_USAGE]');
+    for (const lu of project.lidUsage) {
+      lines.push(`${lu.subcatchId.padEnd(16)} ${lu.lidId.padEnd(16)} ${lu.number}    ${lu.area}    ${lu.width}    ${lu.initSat}    ${lu.fromImperv}    ${lu.toPerv}    ${lu.rptFile || '*'}    ${lu.drainTo || '*'}    ${lu.fromPerv}`);
+    }
+    lines.push('');
+  }
+
+  if (project.aquifers.length) {
+    lines.push('[AQUIFERS]');
+    for (const a of project.aquifers) {
+      lines.push(`${a.id.padEnd(16)} ${a.porosity}    ${a.wiltPoint}    ${a.fieldCap}    ${a.conductivity}    ${a.conductSlope}    ${a.tensionSlope}    ${a.upperEvap}    ${a.lowerEvap}    ${a.lowerGWLoss}    ${a.bottomElev}    ${a.waterTableElev}    ${a.unsatMoisture}`);
+    }
+    lines.push('');
+  }
+
+  if (project.groundwater.length) {
+    lines.push('[GROUNDWATER]');
+    for (const gw of project.groundwater) {
+      lines.push(`${gw.subcatchId.padEnd(16)} ${gw.aquiferId.padEnd(16)} ${gw.nodeId.padEnd(16)} ${gw.surfElev}    ${gw.a1}    ${gw.b1}    ${gw.a2}    ${gw.b2}    ${gw.a3}    ${gw.fixedDepth}    ${gw.threshold}`);
+    }
+    lines.push('');
+  }
+
+  if (project.snowpacks.length) {
+    lines.push('[SNOWPACKS]');
+    for (const sp of project.snowpacks) {
+      for (const [key, vals] of Object.entries(sp.parameters)) {
+        lines.push(`${sp.id.padEnd(16)} ${key}    ${vals.join('    ')}`);
+      }
+    }
+    lines.push('');
+  }
+
+  if (project.transects.length) {
+    lines.push('[TRANSECTS]');
+    for (const tr of project.transects) {
+      lines.push(`NC    ${tr.roughness.left}    ${tr.roughness.right}    ${tr.roughness.channel}`);
+      lines.push(`X1    ${tr.id}    0    0    ${tr.bankStations.left}    ${tr.bankStations.right}    ${tr.modifiers.join('    ')}`);
+      const stationPairs: string[] = [];
+      for (const st of tr.stations) stationPairs.push(`${st.x}    ${st.y}`);
+      for (let i = 0; i < stationPairs.length; i += 5) {
+        lines.push(`GR    ${stationPairs.slice(i, i + 5).join('    ')}`);
+      }
+    }
+    lines.push('');
+  }
+
+  if (project.streets.length) {
+    lines.push('[STREETS]');
+    for (const st of project.streets) {
+      lines.push(`${st.id.padEnd(16)} ${st.params.join('    ')}`);
+    }
+    lines.push('');
+  }
+
+  if (project.inlets.length) {
+    lines.push('[INLETS]');
+    for (const inlet of project.inlets) {
+      lines.push(`${inlet.id.padEnd(16)} ${inlet.type}    ${inlet.params.join('    ')}`);
+    }
+    lines.push('');
+  }
+
+  if (project.inletUsage.length) {
+    lines.push('[INLET_USAGE]');
+    for (const iu of project.inletUsage) {
+      lines.push(`${iu.linkId.padEnd(16)} ${iu.inletId.padEnd(16)} ${iu.nodeId.padEnd(16)} ${iu.number}    ${iu.pctClogged}    ${iu.maxFlow}    ${iu.params.join('    ')}`);
     }
     lines.push('');
   }

@@ -161,6 +161,12 @@ export async function registerRoutes(
         let reportContent = '';
         try { reportContent = await readFile(rptPath, 'utf-8'); } catch {}
 
+        let outBase64 = '';
+        try {
+          const outBuf = await readFile(outPath);
+          outBase64 = outBuf.toString('base64');
+        } catch {}
+
         const hasErrors = reportContent.includes('ERROR') ||
           (stdout.includes('There are errors') || stdout.includes('has errors'));
 
@@ -182,6 +188,7 @@ export async function registerRoutes(
         res.json({
           status: 'success',
           reportContent,
+          outBase64,
           stdout,
           exitCode: code,
         });

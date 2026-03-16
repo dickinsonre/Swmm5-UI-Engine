@@ -22,6 +22,7 @@ import {
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -95,7 +96,7 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | null>(null);
   const [importTab, setImportTab] = useState<'csv-nodes' | 'csv-links' | 'dxf' | 'geojson'>('csv-nodes');
   const [importMode, setImportMode] = useState<'add' | 'modify'>('add');
   const [importPreviewText, setImportPreviewText] = useState('');
@@ -148,6 +149,7 @@ export default function SwmmUI() {
   const [copiedObj, setCopiedObj] = useState<{ objType: string; props: any } | null>(null);
   const [groupSelectPoints, setGroupSelectPoints] = useState<[number, number][]>([]);
   const [groupSelectedIds, setGroupSelectedIds] = useState<Set<string> | null>(null);
+  const [multiSelectIds, setMultiSelectIds] = useState<Set<string> | null>(null);
   const [groupEditProp, setGroupEditProp] = useState('elevation');
   const [groupEditValue, setGroupEditValue] = useState('0');
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -159,6 +161,60 @@ export default function SwmmUI() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const networkMapRef = useRef<NetworkMapHandle>(null);
 
+  const undoStackRef = useRef<SwmmProject[]>([]);
+  const redoStackRef = useRef<SwmmProject[]>([]);
+  const lastProjectRef = useRef<SwmmProject>(project);
+
+  const pushUndo = useCallback((proj: SwmmProject) => {
+    undoStackRef.current = [...undoStackRef.current.slice(-49), proj];
+    redoStackRef.current = [];
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+    const prev = undoStackRef.current[undoStackRef.current.length - 1];
+    undoStackRef.current = undoStackRef.current.slice(0, -1);
+    redoStackRef.current = [...redoStackRef.current, project];
+    setProject(prev);
+    lastProjectRef.current = prev;
+    toast({ title: 'Undo', description: 'Reverted last change' });
+  }, [project, toast]);
+
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    const next = redoStackRef.current[redoStackRef.current.length - 1];
+    redoStackRef.current = redoStackRef.current.slice(0, -1);
+    undoStackRef.current = [...undoStackRef.current, project];
+    setProject(next);
+    lastProjectRef.current = next;
+    toast({ title: 'Redo', description: 'Reapplied change' });
+  }, [project, toast]);
+
+  useEffect(() => {
+    if (project !== lastProjectRef.current) {
+      pushUndo(lastProjectRef.current);
+      lastProjectRef.current = project;
+    }
+  }, [project, pushUndo]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo]);
+
+  const handleUpdateProject = useCallback((updater: (prev: SwmmProject) => SwmmProject) => {
+    setProject(updater);
+  }, []);
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener('resize', handleResize);
@@ -169,8 +225,8 @@ export default function SwmmUI() {
 
   const queryMatchIds = useMemo(() => {
     if (!mapQuery.active) return null;
-    return evaluateQuery(mapQuery, project);
-  }, [mapQuery, project]);
+    return evaluateQuery(mapQuery, project, results, timeStep);
+  }, [mapQuery, project, results, timeStep]);
   const queryObjectType = mapQuery.active ? mapQuery.objectType : null;
 
   const handleFileOpen = useCallback(async (file: File) => {
@@ -184,6 +240,7 @@ export default function SwmmUI() {
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
+      setMultiSelectIds(null);
       toast({ title: 'File Loaded', description: `${file.name} loaded successfully` });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -243,6 +300,7 @@ export default function SwmmUI() {
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
+      setMultiSelectIds(null);
       toast({ title: 'File Loaded', description: `${name} loaded from GitHub` });
       setOpenDialog(null);
     } catch (e: any) {
@@ -281,6 +339,7 @@ export default function SwmmUI() {
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
+      setMultiSelectIds(null);
       toast({ title: 'File Loaded', description: `${item.name} loaded from GitHub` });
       setOpenDialog(null);
     } catch (e: any) {
@@ -297,6 +356,7 @@ export default function SwmmUI() {
     setSimStatus('none');
     setTimeStep(0);
     setSelectedObj(null);
+    setMultiSelectIds(null);
   }, []);
 
   const handleLoadSample = useCallback(async (sampleName: string) => {
@@ -313,6 +373,7 @@ export default function SwmmUI() {
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
+      setMultiSelectIds(null);
       toast({ title: 'Sample Loaded', description: `${sampleName} loaded successfully` });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -953,6 +1014,20 @@ export default function SwmmUI() {
     setGroupSelectedIds(null);
   }, []);
 
+  const handleSelectObj = useCallback((obj: SelectedObject | null) => {
+    setSelectedObj(obj);
+    setMultiSelectIds(null);
+  }, []);
+
+  const handleShiftClick = useCallback((id: string, _objType: string) => {
+    setMultiSelectIds(prev => {
+      const next = new Set(prev || []);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next.size > 0 ? next : null;
+    });
+  }, []);
+
   const handleGroupSelectPoint = useCallback((wx: number, wy: number) => {
     setGroupSelectPoints(prev => [...prev, [wx, wy]]);
   }, []);
@@ -1206,6 +1281,9 @@ export default function SwmmUI() {
         )}
         {activeMenu === 'Edit' && (
           <div className="flex items-center gap-0.5">
+            <ToolbarButton icon={<RotateCcw className="w-4 h-4" />} label="Undo" onClick={handleUndo} testId="btn-undo" />
+            <ToolbarButton icon={<RotateCcw className="w-4 h-4 scale-x-[-1]" />} label="Redo" onClick={handleRedo} testId="btn-redo" />
+            <div className="w-px h-5 bg-[#d0d0d8] mx-1" />
             <ToolbarButton icon={<Copy className="w-4 h-4" />} label="Copy" onClick={handleCopy} testId="btn-copy" />
             <ToolbarButton icon={<ClipboardPaste className="w-4 h-4" />} label="Paste" onClick={handlePaste} testId="btn-paste" />
             <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Reverse" onClick={handleReverseLink} testId="btn-reverse" />
@@ -1277,6 +1355,7 @@ export default function SwmmUI() {
               testId="btn-run"
             />
             <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" onClick={() => { if (reportContent) setShowReportDialog(true); else toast({ title: 'No Report', description: 'Run a simulation first to generate a report' }); }} testId="btn-report" />
+            <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Profile" onClick={() => setOpenDialog('profilePlot')} testId="btn-profile-plot" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <ToolbarButton
               icon={<Scissors className="w-4 h-4" />}
@@ -1399,7 +1478,8 @@ export default function SwmmUI() {
                 setShowQueryPanel(false);
                 setMapQuery(prev => ({ ...prev, active: false }));
               }}
-              matchCount={mapQuery.active ? evaluateQuery(mapQuery, project).size : 0}
+              matchCount={mapQuery.active ? evaluateQuery(mapQuery, project, results, timeStep).size : 0}
+              hasResults={!!results}
             />
           )}
           <div className="flex-1 overflow-hidden">
@@ -1420,7 +1500,7 @@ export default function SwmmUI() {
             ref={networkMapRef}
             project={project}
             selectedObj={selectedObj}
-            onSelectObj={setSelectedObj}
+            onSelectObj={handleSelectObj}
             showSubcatchments={showSubcatch}
             subcatchTheme={subcatchTheme}
             nodeTheme={nodeTheme}
@@ -1443,9 +1523,11 @@ export default function SwmmUI() {
             onGroupSelectPoint={handleGroupSelectPoint}
             onGroupSelectComplete={handleGroupSelectComplete}
             onEscapeMode={handleEscapeMode}
+            onShiftClick={handleShiftClick}
             linkDrawState={linkDrawState}
             groupSelectPoints={groupSelectPoints}
             groupSelectedIds={groupSelectedIds}
+            multiSelectIds={multiSelectIds}
           />
 
           <SpeedBar
@@ -1763,9 +1845,10 @@ export default function SwmmUI() {
           <ProjectExplorer
             project={project}
             selectedObj={selectedObj}
-            onSelectObj={setSelectedObj}
+            onSelectObj={handleSelectObj}
             results={results}
             timeStep={timeStep}
+            onUpdateProject={handleUpdateProject}
           />
         </div>
       </div>
@@ -2435,6 +2518,18 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={openDialog === 'profilePlot'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-4xl bg-white border-[#d0d0d8]">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <ArrowLeftRight className="w-4 h-4" /> Profile Plot
+            </DialogTitle>
+            <DialogDescription>Select conduits to define a longitudinal path and view the profile.</DialogDescription>
+          </DialogHeader>
+          <ProfilePlotContent project={project} results={results} timeStep={timeStep} />
+        </DialogContent>
+      </Dialog>
+
       {contextMenu && (
         <div
           className="fixed z-50 min-w-[140px] py-1 rounded shadow-xl"
@@ -2570,6 +2665,189 @@ function StatusItem({ text, color, bold }: { text: string; color?: string; bold?
       data-testid={`status-${text.toLowerCase().replace(/\s+/g, '-')}`}
     >
       {text}
+    </div>
+  );
+}
+
+function ProfilePlotContent({ project, results, timeStep }: {
+  project: SwmmProject;
+  results: SimulationResults | null;
+  timeStep: number;
+}) {
+  const [selectedConduits, setSelectedConduits] = useState<string[]>([]);
+  const [inputVal, setInputVal] = useState('');
+
+  const allConduitIds = useMemo(() => project.conduits.map(c => c.id), [project.conduits]);
+
+  const addConduit = useCallback((id: string) => {
+    if (id && allConduitIds.includes(id) && !selectedConduits.includes(id)) {
+      setSelectedConduits(prev => [...prev, id]);
+      setInputVal('');
+    }
+  }, [allConduitIds, selectedConduits]);
+
+  const autoTrace = useCallback(() => {
+    if (selectedConduits.length === 0) return;
+    const lastConduit = project.conduits.find(c => c.id === selectedConduits[selectedConduits.length - 1]);
+    if (!lastConduit) return;
+    const path = [...selectedConduits];
+    let currentNode = lastConduit.toNode;
+    for (let i = 0; i < 100; i++) {
+      const next = project.conduits.find(c => c.fromNode === currentNode && !path.includes(c.id));
+      if (!next) break;
+      path.push(next.id);
+      currentNode = next.toNode;
+    }
+    setSelectedConduits(path);
+  }, [selectedConduits, project.conduits]);
+
+  const profileData = useMemo(() => {
+    if (selectedConduits.length === 0) return [];
+    const data: { station: number; invert: number; crown: number; ground: number; hgl?: number; label: string }[] = [];
+    let station = 0;
+
+    for (let i = 0; i < selectedConduits.length; i++) {
+      const conduit = project.conduits.find(c => c.id === selectedConduits[i]);
+      if (!conduit) continue;
+
+      const findNode = (nid: string) =>
+        project.junctions.find(j => j.id === nid)
+        || project.outfalls.find(o => o.id === nid)
+        || project.storageUnits.find(s => s.id === nid)
+        || project.dividers.find(d => d.id === nid);
+      const fromJunction = findNode(conduit.fromNode);
+      const toJunction = findNode(conduit.toNode);
+
+      if (!fromJunction || !toJunction) continue;
+
+      const fromElev = fromJunction.elevation ?? 0;
+      const toElev = toJunction.elevation ?? 0;
+      const xs = project.xsections[conduit.id];
+      const geom1 = xs?.geom1 ?? 1;
+      const conduitLength = conduit.length ?? 100;
+      const inOff = conduit.inOffset ?? 0;
+      const outOff = conduit.outOffset ?? 0;
+      const fromMaxDepth = (fromJunction as any).maxDepth ?? 0;
+      const toMaxDepth = (toJunction as any).maxDepth ?? 0;
+
+      if (i === 0) {
+        const fromHgl = results?.timeSteps[timeStep]?.nodes[conduit.fromNode];
+        data.push({
+          station,
+          invert: fromElev,
+          crown: fromElev + inOff + geom1,
+          ground: fromElev + fromMaxDepth,
+          hgl: fromHgl ? fromElev + fromHgl.depth : undefined,
+          label: conduit.fromNode,
+        });
+      }
+
+      station += conduitLength;
+      const toHgl = results?.timeSteps[timeStep]?.nodes[conduit.toNode];
+      data.push({
+        station,
+        invert: toElev,
+        crown: toElev + outOff + geom1,
+        ground: toElev + toMaxDepth,
+        hgl: toHgl ? toElev + toHgl.depth : undefined,
+        label: conduit.toNode,
+      });
+    }
+    return data;
+  }, [selectedConduits, project, results, timeStep]);
+
+  const suggestions = useMemo(() => {
+    if (!inputVal) return [];
+    const lower = inputVal.toLowerCase();
+    return allConduitIds.filter(id => id.toLowerCase().includes(lower) && !selectedConduits.includes(id)).slice(0, 8);
+  }, [inputVal, allConduitIds, selectedConduits]);
+
+  return (
+    <div className="space-y-3" data-testid="profile-plot-content">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={inputVal}
+            onChange={e => setInputVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && suggestions.length > 0) addConduit(suggestions[0]); }}
+            placeholder="Type conduit ID..."
+            className="w-full text-[11px] px-2 py-1.5 rounded border border-[#d0d0d8] bg-white text-[#2a2a3e] outline-none focus:border-[#2c6eb5]"
+            data-testid="input-profile-conduit"
+          />
+          {suggestions.length > 0 && (
+            <div className="absolute top-full left-0 right-0 z-10 bg-white border border-[#d0d0d8] rounded-b shadow-lg max-h-32 overflow-y-auto">
+              {suggestions.map(id => (
+                <button
+                  key={id}
+                  onClick={() => addConduit(id)}
+                  className="w-full text-left px-2 py-1 text-[11px] text-[#2a2a3e] hover:bg-[#e8f0fb]"
+                  data-testid={`profile-suggest-${id}`}
+                >
+                  {id}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <Button size="sm" variant="outline" onClick={autoTrace} disabled={selectedConduits.length === 0} className="text-[11px] h-7 bg-white border-[#d0d0d8] text-[#2a2a3e]" data-testid="btn-auto-trace">
+          Auto-Trace
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setSelectedConduits([])} className="text-[11px] h-7 bg-white border-[#d0d0d8] text-[#2a2a3e]" data-testid="btn-clear-profile">
+          Clear
+        </Button>
+      </div>
+
+      {selectedConduits.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {selectedConduits.map((id, i) => (
+            <span key={id} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-[#e8f0fb] text-[#2c6eb5] border border-[#b8d4f0]" data-testid={`profile-chip-${id}`}>
+              {i + 1}. {id}
+              <button onClick={() => setSelectedConduits(prev => prev.filter(c => c !== id))} className="text-[#6b6b7b] hover:text-[#2a2a3e]">
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {profileData.length > 0 ? (
+        <div className="h-[350px] w-full" data-testid="profile-chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={profileData} margin={{ top: 10, right: 20, bottom: 30, left: 50 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+              <XAxis
+                dataKey="station"
+                label={{ value: 'Station (ft)', position: 'bottom', offset: 10, style: { fontSize: 11, fill: '#6b6b7b' } }}
+                tick={{ fontSize: 10, fill: '#6b6b7b' }}
+              />
+              <YAxis
+                label={{ value: 'Elevation (ft)', angle: -90, position: 'insideLeft', offset: -35, style: { fontSize: 11, fill: '#6b6b7b' } }}
+                tick={{ fontSize: 10, fill: '#6b6b7b' }}
+                domain={['dataMin - 1', 'dataMax + 1']}
+              />
+              <Tooltip
+                contentStyle={{ fontSize: 11, border: '1px solid #d0d0d8' }}
+                formatter={(value: number, name: string) => [value?.toFixed(2), name]}
+                labelFormatter={(label) => {
+                  const pt = profileData.find(d => d.station === label);
+                  return `Station: ${label}${pt?.label ? ` (${pt.label})` : ''}`;
+                }}
+              />
+              <Area type="stepAfter" dataKey="ground" stroke="#8b7355" fill="#d4c5a0" fillOpacity={0.3} name="Ground" strokeWidth={1.5} />
+              <Area type="monotone" dataKey="crown" stroke="#555566" fill="none" strokeWidth={1.5} strokeDasharray="4 2" name="Crown" />
+              <Area type="monotone" dataKey="invert" stroke="#2a2a3e" fill="#e0e0e8" fillOpacity={0.4} name="Invert" strokeWidth={2} />
+              {results && (
+                <Area type="monotone" dataKey="hgl" stroke="#2c6eb5" fill="#2c6eb5" fillOpacity={0.15} name="HGL" strokeWidth={2} />
+              )}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="h-[200px] flex items-center justify-center text-[12px] text-[#9090a0] border border-dashed border-[#d0d0d8] rounded" data-testid="profile-empty">
+          Add conduits above to generate the profile plot
+        </div>
+      )}
     </div>
   );
 }

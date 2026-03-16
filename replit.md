@@ -17,7 +17,8 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 - `client/src/components/swmm/SpeedBar.tsx` - Speed bar with interaction mode buttons (vertical on desktop, horizontal scrollable bottom bar on mobile)
 - `client/src/lib/swmm-types.ts` - TypeScript interfaces for all SWMM5 model objects
 - `client/src/lib/inp-parser.ts` - Complete SWMM5 INP file parser and INP file rebuild with safe column padding (`padField`)
-- `client/src/lib/swmm-engine.ts` - Remote/mock engine wrapper with WebSocket progress
+- `client/src/lib/swmm-engine.ts` - Remote/mock/local engine wrapper with WebSocket progress
+- `client/src/lib/swmm-out-parser.ts` - SWMM binary .out file parser (header, element names, per-timestep float32 arrays)
 - `client/src/lib/cfl-analysis.ts` - ReSWMM CFL analysis and conduit discretization engine
 - `client/src/lib/import-export.ts` - CSV, DXF, and GeoJSON import/export utilities for nodes and links
 
@@ -52,6 +53,14 @@ Web-based interface for EPA SWMM5 (Storm Water Management Model). Reads SWMM5 IN
 - **Report Viewer**: View full .rpt report file in a dialog after simulation (auto-opens on failure); Copy to clipboard or Download as .rpt file; accessible via Project > Report toolbar button
 - **Import Data**: Import nodes/links from CSV (with Add New/Modify modes), CAD DXF files (with layer selection), and GeoJSON files (with field mapping); File > Import toolbar button
 - **Export Data**: Export nodes CSV, links CSV, DXF network, and PNG map image; File > Export toolbar button
+- **Undo/Redo**: History stack (cap 50 snapshots) with Ctrl+Z/Ctrl+Y keyboard shortcuts and Edit toolbar buttons
+- **Inline Property Editing**: Click-to-edit cells in Project Explorer property editor for junction, conduit, outfall, storage, subcatchment, weir, orifice, divider properties
+- **Data Grid Cell Editing**: Click editable cells in data grid overlay to modify numeric properties (elevation, length, roughness, area, etc.) with commit-on-blur/Enter
+- **Multi-Select (Shift+Click)**: Shift+click on map nodes/links/subcatchments to toggle selection; multi-selected items highlighted in blue (#338aff); cleared on regular click
+- **Profile Plot**: Longitudinal section dialog with recharts AreaChart; select conduits by ID with autocomplete, auto-trace downstream path; shows invert, crown, ground, and HGL (when simulation results available)
+- **Map Query on Results**: Query panel supports simulation result properties (node depth/head/flooding, link flow/velocity/capacity, subcatchment runoff/rainfall/infiltration)
+- **Binary .out Parser**: `swmm-out-parser.ts` parses SWMM binary output files for real time-series data (magic numbers, element names, per-timestep float32 arrays)
+- **Missing INP Parsers**: LID_CONTROLS, LID_USAGE, GROUNDWATER, AQUIFERS, TRANSECTS, SNOWPACKS, STREETS, INLETS, INLET_USAGE sections fully parsed and serialized
 
 ### Mobile Optimization
 - Responsive layout: side panels (170px left, 220px right) hidden on screens ≤768px, accessible via toggle buttons in the title bar
@@ -162,11 +171,12 @@ Both the remote engine and mock engine send progress updates and final results b
 The key engineering challenge was making the rebuilt INP file perfectly SWMM-compatible — column alignment, preserving non-conduit sections, handling edge cases like DUMMY shapes, and ensuring numeric fields never bleed into adjacent columns. Each bug fix came from running real models and tracing SWMM error codes back to the generated file.
 
 ## Simulation Engine
-- Two modes: **Remote** (EPA SWMM 5.2.4) and **Mock** (simulated results)
+- Three modes: **Local** (EPA SWMM 5.2.4 binary at `/home/runner/workspace/swmm-engine/runswmm`), **Remote** (BatchSWMM cloud), and **Mock** (simulated results)
+- Local engine: uploads INP to server, runs binary, returns .rpt + .out (binary parsed by `swmm-out-parser.ts`)
 - Remote engine connects to BatchSWMM app at `https://batch-swmm-runner-robertdickinson.replit.app`
 - Server proxies API calls through `/api/swmm-proxy/*` endpoints
 - WebSocket proxy on server relays progress from remote BatchSWMM to browser client
 - Upload flow: POST INP to `/api/swmm-proxy/upload` → start batch → WS proxy for progress/results → parse RPT report
-- Engine mode toggle in Project toolbar; auto-detects remote availability on load
-- Status bar shows current engine mode
-- `swmm-engine.ts` exports: `createMockEngine()`, `createRemoteEngine()`, `checkRemoteEngine()`
+- Engine mode toggle in Project toolbar; auto-detects local/remote availability on load
+- Status bar shows current engine mode with color coding: local=#2a8a4a, remote=#2c6eb5, mock=gray
+- `swmm-engine.ts` exports: `createMockEngine()`, `createRemoteEngine()`, `createLocalEngine()`, `checkRemoteEngine()`, `checkLocalEngine()`

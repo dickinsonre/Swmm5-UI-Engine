@@ -666,6 +666,8 @@ export interface MapQuery {
   operator: '>' | '<' | '=' | '>=' | '<=';
   value: number;
   active: boolean;
+  useResults?: boolean;
+  resultsTimeStep?: number;
 }
 
 const NODE_QUERY_PROPERTIES: [string, string][] = [
@@ -674,6 +676,13 @@ const NODE_QUERY_PROPERTIES: [string, string][] = [
   ['initDepth', 'Init Depth'],
   ['surDepth', 'Surcharge Depth'],
   ['aponded', 'Ponded Area'],
+];
+
+const NODE_RESULTS_PROPERTIES: [string, string][] = [
+  ['depth', 'Depth (result)'],
+  ['head', 'Head (result)'],
+  ['totalInflow', 'Total Inflow (result)'],
+  ['flooding', 'Flooding (result)'],
 ];
 
 const LINK_QUERY_PROPERTIES: [string, string][] = [
@@ -685,6 +694,13 @@ const LINK_QUERY_PROPERTIES: [string, string][] = [
   ['maxFlow', 'Max Flow'],
 ];
 
+const LINK_RESULTS_PROPERTIES: [string, string][] = [
+  ['flow', 'Flow (result)'],
+  ['velocity', 'Velocity (result)'],
+  ['depth', 'Depth (result)'],
+  ['capacity', 'Capacity (result)'],
+];
+
 const SUBCATCH_QUERY_PROPERTIES: [string, string][] = [
   ['area', 'Area'],
   ['pctImperv', '% Imperv'],
@@ -693,13 +709,23 @@ const SUBCATCH_QUERY_PROPERTIES: [string, string][] = [
   ['curbLen', 'Curb Length'],
 ];
 
-function getQueryPropertyOptions(objectType: string): [string, string][] {
-  if (objectType === 'node') return NODE_QUERY_PROPERTIES;
-  if (objectType === 'link') return LINK_QUERY_PROPERTIES;
-  return SUBCATCH_QUERY_PROPERTIES;
+const SUBCATCH_RESULTS_PROPERTIES: [string, string][] = [
+  ['runoff', 'Runoff (result)'],
+  ['rainfall', 'Rainfall (result)'],
+  ['infiltration', 'Infiltration (result)'],
+];
+
+function getQueryPropertyOptions(objectType: string, hasResults?: boolean): [string, string][] {
+  if (objectType === 'node') return hasResults ? [...NODE_QUERY_PROPERTIES, ...NODE_RESULTS_PROPERTIES] : NODE_QUERY_PROPERTIES;
+  if (objectType === 'link') return hasResults ? [...LINK_QUERY_PROPERTIES, ...LINK_RESULTS_PROPERTIES] : LINK_QUERY_PROPERTIES;
+  return hasResults ? [...SUBCATCH_QUERY_PROPERTIES, ...SUBCATCH_RESULTS_PROPERTIES] : SUBCATCH_QUERY_PROPERTIES;
 }
 
-export function evaluateQuery(query: MapQuery, project: SwmmProject): Set<string> {
+const RESULT_NODE_PROPS = new Set(['depth', 'head', 'totalInflow', 'flooding', 'volume', 'lateralInflow']);
+const RESULT_LINK_PROPS = new Set(['flow', 'velocity', 'capacity']);
+const RESULT_SUBCATCH_PROPS = new Set(['runoff', 'rainfall', 'infiltration', 'evap', 'moisture']);
+
+export function evaluateQuery(query: MapQuery, project: SwmmProject, results?: import('@/lib/swmm-types').SimulationResults | null, timeStep?: number): Set<string> {
   const matching = new Set<string>();
   if (!query.active) return matching;
 
@@ -714,38 +740,59 @@ export function evaluateQuery(query: MapQuery, project: SwmmProject): Set<string
     }
   };
 
+  const ts = timeStep ?? 0;
+  const stepData = results?.timeSteps[ts];
+
   if (query.objectType === 'node') {
-    const allNodes = [
-      ...project.junctions.map(j => ({ id: j.id, elevation: j.elevation, maxDepth: j.maxDepth, initDepth: j.initDepth, surDepth: j.surDepth, aponded: j.aponded })),
-      ...project.outfalls.map(o => ({ id: o.id, elevation: o.elevation, maxDepth: 0, initDepth: 0, surDepth: 0, aponded: 0 })),
-      ...project.storageUnits.map(s => ({ id: s.id, elevation: s.elevation, maxDepth: s.maxDepth, initDepth: s.initDepth, surDepth: s.surDepth, aponded: 0 })),
-      ...project.dividers.map(d => ({ id: d.id, elevation: d.elevation, maxDepth: d.maxDepth, initDepth: d.initDepth, surDepth: d.surDepth, aponded: d.aponded })),
-    ];
-    for (const node of allNodes) {
-      const val = (node as any)[query.property];
-      if (val !== undefined && compare(val)) {
-        matching.add(node.id);
+    const isResultProp = RESULT_NODE_PROPS.has(query.property);
+    if (isResultProp && stepData) {
+      for (const [nodeId, nr] of Object.entries(stepData.nodes)) {
+        const val = (nr as any)[query.property];
+        if (val !== undefined && compare(val)) matching.add(nodeId);
+      }
+    } else {
+      const allNodes = [
+        ...project.junctions.map(j => ({ id: j.id, elevation: j.elevation, maxDepth: j.maxDepth, initDepth: j.initDepth, surDepth: j.surDepth, aponded: j.aponded })),
+        ...project.outfalls.map(o => ({ id: o.id, elevation: o.elevation, maxDepth: 0, initDepth: 0, surDepth: 0, aponded: 0 })),
+        ...project.storageUnits.map(s => ({ id: s.id, elevation: s.elevation, maxDepth: s.maxDepth, initDepth: s.initDepth, surDepth: s.surDepth, aponded: 0 })),
+        ...project.dividers.map(d => ({ id: d.id, elevation: d.elevation, maxDepth: d.maxDepth, initDepth: d.initDepth, surDepth: d.surDepth, aponded: d.aponded })),
+      ];
+      for (const node of allNodes) {
+        const val = (node as any)[query.property];
+        if (val !== undefined && compare(val)) matching.add(node.id);
       }
     }
   } else if (query.objectType === 'link') {
-    const allLinks = [
-      ...project.conduits.map(c => ({ id: c.id, length: c.length, roughness: c.roughness, inOffset: c.inOffset, outOffset: c.outOffset, initFlow: c.initFlow, maxFlow: c.maxFlow })),
-      ...project.pumps.map(p => ({ id: p.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
-      ...project.weirs.map(w => ({ id: w.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
-      ...project.orifices.map(o => ({ id: o.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
-      ...project.outlets.map(o => ({ id: o.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
-    ];
-    for (const link of allLinks) {
-      const val = (link as any)[query.property];
-      if (val !== undefined && compare(val)) {
-        matching.add(link.id);
+    const isResultProp = RESULT_LINK_PROPS.has(query.property);
+    if (isResultProp && stepData) {
+      for (const [linkId, lr] of Object.entries(stepData.links)) {
+        const val = (lr as any)[query.property];
+        if (val !== undefined && compare(val)) matching.add(linkId);
+      }
+    } else {
+      const allLinks = [
+        ...project.conduits.map(c => ({ id: c.id, length: c.length, roughness: c.roughness, inOffset: c.inOffset, outOffset: c.outOffset, initFlow: c.initFlow, maxFlow: c.maxFlow })),
+        ...project.pumps.map(p => ({ id: p.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
+        ...project.weirs.map(w => ({ id: w.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
+        ...project.orifices.map(o => ({ id: o.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
+        ...project.outlets.map(o => ({ id: o.id, length: 0, roughness: 0, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 })),
+      ];
+      for (const link of allLinks) {
+        const val = (link as any)[query.property];
+        if (val !== undefined && compare(val)) matching.add(link.id);
       }
     }
   } else {
-    for (const sc of project.subcatchments) {
-      const val = (sc as any)[query.property];
-      if (val !== undefined && compare(val)) {
-        matching.add(sc.id);
+    const isResultProp = RESULT_SUBCATCH_PROPS.has(query.property);
+    if (isResultProp && stepData) {
+      for (const [scId, sr] of Object.entries(stepData.subcatchments)) {
+        const val = (sr as any)[query.property];
+        if (val !== undefined && compare(val)) matching.add(scId);
+      }
+    } else {
+      for (const sc of project.subcatchments) {
+        const val = (sc as any)[query.property];
+        if (val !== undefined && compare(val)) matching.add(sc.id);
       }
     }
   }
@@ -758,10 +805,11 @@ interface MapQueryPanelProps {
   onQueryChange: (q: MapQuery) => void;
   onClose: () => void;
   matchCount: number;
+  hasResults?: boolean;
 }
 
-export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: MapQueryPanelProps) {
-  const propertyOptions = getQueryPropertyOptions(query.objectType);
+export function MapQueryPanel({ query, onQueryChange, onClose, matchCount, hasResults }: MapQueryPanelProps) {
+  const propertyOptions = getQueryPropertyOptions(query.objectType, hasResults);
 
   return (
     <div className="p-2.5 space-y-2 border-b border-[#d0d0d8]" data-testid="map-query-panel">
@@ -781,7 +829,7 @@ export function MapQueryPanel({ query, onQueryChange, onClose, matchCount }: Map
           <span className="text-[10px] text-[#6b6b7b] w-12 shrink-0">Type:</span>
           <select
             value={query.objectType}
-            onChange={e => onQueryChange({ ...query, objectType: e.target.value as MapQuery['objectType'], property: getQueryPropertyOptions(e.target.value)[0][0], active: false })}
+            onChange={e => onQueryChange({ ...query, objectType: e.target.value as MapQuery['objectType'], property: getQueryPropertyOptions(e.target.value, hasResults)[0][0], active: false })}
             className="flex-1 text-[10px] rounded px-1 py-0.5"
             style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
             data-testid="select-query-type"

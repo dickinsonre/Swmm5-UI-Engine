@@ -218,6 +218,92 @@ export interface LossData {
   seepageRate: number;
 }
 
+export interface LidControl {
+  id: string;
+  type: string;
+  layers: string[][];
+}
+
+export interface LidUsage {
+  subcatchId: string;
+  lidId: string;
+  number: number;
+  area: number;
+  width: number;
+  initSat: number;
+  fromImperv: number;
+  toPerv: number;
+  rptFile: string;
+  drainTo: string;
+  fromPerv: number;
+}
+
+export interface Groundwater {
+  subcatchId: string;
+  aquiferId: string;
+  nodeId: string;
+  surfElev: number;
+  a1: number;
+  b1: number;
+  a2: number;
+  b2: number;
+  a3: number;
+  fixedDepth: number;
+  threshold: number;
+  params: number[];
+}
+
+export interface Aquifer {
+  id: string;
+  porosity: number;
+  wiltPoint: number;
+  fieldCap: number;
+  conductivity: number;
+  conductSlope: number;
+  tensionSlope: number;
+  upperEvap: number;
+  lowerEvap: number;
+  lowerGWLoss: number;
+  bottomElev: number;
+  waterTableElev: number;
+  unsatMoisture: number;
+  params: number[];
+}
+
+export interface Transect {
+  id: string;
+  stations: { x: number; y: number }[];
+  roughness: { left: number; right: number; channel: number };
+  bankStations: { left: number; right: number };
+  modifiers: number[];
+}
+
+export interface SnowPack {
+  id: string;
+  parameters: Record<string, number[]>;
+}
+
+export interface Street {
+  id: string;
+  params: string[];
+}
+
+export interface Inlet {
+  id: string;
+  type: string;
+  params: string[];
+}
+
+export interface InletUsage {
+  linkId: string;
+  inletId: string;
+  nodeId: string;
+  number: number;
+  pctClogged: number;
+  maxFlow: number;
+  params: string[];
+}
+
 export interface SwmmProject {
   title: string[];
   options: Record<string, string>;
@@ -244,6 +330,15 @@ export interface SwmmProject {
   dwf: DWFEntry[];
   pollutants: Pollutant[];
   landuses: LandUse[];
+  lidControls: LidControl[];
+  lidUsage: LidUsage[];
+  groundwater: Groundwater[];
+  aquifers: Aquifer[];
+  transects: Transect[];
+  snowpacks: SnowPack[];
+  streets: Street[];
+  inlets: Inlet[];
+  inletUsage: InletUsage[];
   coordinates: Record<string, [number, number]>;
   vertices: Record<string, [number, number][]>;
   polygons: Record<string, [number, number][]>;
@@ -337,6 +432,15 @@ export function createEmptyProject(): SwmmProject {
     dwf: [],
     pollutants: [],
     landuses: [],
+    lidControls: [],
+    lidUsage: [],
+    groundwater: [],
+    aquifers: [],
+    transects: [],
+    snowpacks: [],
+    streets: [],
+    inlets: [],
+    inletUsage: [],
     coordinates: {},
     vertices: {},
     polygons: {},

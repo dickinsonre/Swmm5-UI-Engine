@@ -7,6 +7,7 @@ import type {
   SubcatchResult,
 } from './swmm-types';
 import { projectToInp } from './inp-parser';
+import { parseSwmmOut } from './swmm-out-parser';
 
 export interface SwmmEngine {
   isLoaded: boolean;
@@ -73,9 +74,24 @@ export function createLocalEngine(): SwmmEngine {
         throw new Error('Simulation completed but no report generated');
       }
 
-      if (onProgress) onProgress(90, 'Parsing report...');
+      if (onProgress) onProgress(90, 'Parsing results...');
 
-      const parsed = parseRptToResults(result.reportContent, project);
+      let parsed: SimulationResults;
+
+      if (result.outBase64) {
+        try {
+          const binaryStr = atob(result.outBase64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+          parsed = parseSwmmOut(bytes.buffer, project);
+          parsed.reportContent = result.reportContent;
+        } catch (outErr) {
+          console.warn('Failed to parse .out binary, falling back to .rpt:', outErr);
+          parsed = parseRptToResults(result.reportContent, project);
+        }
+      } else {
+        parsed = parseRptToResults(result.reportContent, project);
+      }
 
       if (onProgress) onProgress(100, 'Simulation complete');
 

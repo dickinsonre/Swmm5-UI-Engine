@@ -47,9 +47,11 @@ interface Props {
   onGroupSelectPoint?: (wx: number, wy: number) => void;
   onGroupSelectComplete?: () => void;
   onEscapeMode?: () => void;
+  onShiftClick?: (id: string, objType: string) => void;
   linkDrawState?: { fromNodeId: string; vertices: [number, number][] } | null;
   groupSelectPoints?: [number, number][];
   groupSelectedIds?: Set<string> | null;
+  multiSelectIds?: Set<string> | null;
 }
 
 export interface NetworkMapHandle {
@@ -84,9 +86,11 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   onGroupSelectPoint,
   onGroupSelectComplete,
   onEscapeMode,
+  onShiftClick,
   linkDrawState,
   groupSelectPoints,
   groupSelectedIds,
+  multiSelectIds,
 }: Props, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -268,6 +272,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   }, [project, worldToScreen, isLayerVisible]);
 
   const getNodeColor = useCallback((nodeId: string, nodeType: string) => {
+    if (multiSelectIds && multiSelectIds.has(nodeId)) return '#338aff';
     if (groupSelectedIds && groupSelectedIds.has(nodeId)) return '#ffaa33';
     if (queryMatchIds && queryObjectType === 'node') {
       if (queryMatchIds.has(nodeId)) return '#ff4444';
@@ -287,9 +292,10 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     if (nodeType === 'outfall') return '#2a8a4a';
     if (nodeType === 'storage') return '#c08820';
     return COLORS.nodeDefault;
-  }, [results, timeStep, nodeTheme, queryMatchIds, queryObjectType, groupSelectedIds]);
+  }, [results, timeStep, nodeTheme, queryMatchIds, queryObjectType, groupSelectedIds, multiSelectIds]);
 
   const getLinkColor = useCallback((linkId: string) => {
+    if (multiSelectIds && multiSelectIds.has(linkId)) return '#338aff';
     if (groupSelectedIds && groupSelectedIds.has(linkId)) return '#ffaa33';
     if (queryMatchIds && queryObjectType === 'link') {
       if (queryMatchIds.has(linkId)) return '#ff4444';
@@ -307,7 +313,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
     return COLORS.linkDefault;
-  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds, cflFlaggedIds]);
+  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds, multiSelectIds, cflFlaggedIds]);
 
   const getLinkWidth = useCallback((linkId: string) => {
     if (results && results.timeSteps[timeStep]) {
@@ -876,16 +882,25 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     }
 
     const hitRadius = 12;
+    const isShift = e.shiftKey;
 
     const hitNode = hitTestNode(sx, sy, hitRadius);
     if (hitNode) {
-      onSelectObj({ id: hitNode.nodeId, objType: hitNode.nodeType as any });
+      if (isShift && onShiftClick) {
+        onShiftClick(hitNode.nodeId, hitNode.nodeType);
+      } else {
+        onSelectObj({ id: hitNode.nodeId, objType: hitNode.nodeType as any });
+      }
       return;
     }
 
     const hitLink = hitTestLink(sx, sy);
     if (hitLink) {
-      onSelectObj({ id: hitLink.linkId, objType: hitLink.linkType as any });
+      if (isShift && onShiftClick) {
+        onShiftClick(hitLink.linkId, hitLink.linkType);
+      } else {
+        onSelectObj({ id: hitLink.linkId, objType: hitLink.linkType as any });
+      }
       return;
     }
 
@@ -893,14 +908,18 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       for (const [scId, pts] of Object.entries(project.polygons)) {
         const screenPts = pts.map(p => worldToScreen(p[0], p[1]));
         if (pointInPolygon(sx, sy, screenPts)) {
-          onSelectObj({ id: scId, objType: 'subcatchment' });
+          if (isShift && onShiftClick) {
+            onShiftClick(scId, 'subcatchment');
+          } else {
+            onSelectObj({ id: scId, objType: 'subcatchment' });
+          }
           return;
         }
       }
     }
 
-    onSelectObj(null);
-  }, [project, worldToScreen, screenToWorld, onSelectObj, isLayerVisible, showSubcatchments, interactionMode, onCreateNode, linkDrawState, onStartLink, onCompleteLink, onAddLinkVertex, onGroupSelectPoint, hitTestNode, hitTestLink]);
+    if (!isShift) onSelectObj(null);
+  }, [project, worldToScreen, screenToWorld, onSelectObj, isLayerVisible, showSubcatchments, interactionMode, onCreateNode, linkDrawState, onStartLink, onCompleteLink, onAddLinkVertex, onGroupSelectPoint, hitTestNode, hitTestLink, onShiftClick]);
 
   const handleRightClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
