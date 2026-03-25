@@ -83,8 +83,10 @@ User clicks Run → projectToInp(project) → POST /api/swmm/run (INP text)
 - **Multi-Select**: Shift+click to toggle items (blue highlight), cleared on regular click or project load
 
 ### Analysis & Visualization
+- **Time Series Graph**: Interactive hydrograph/time series charts for any node, link, or subcatchment. Select element + variables (depth, flow, velocity, flooding, etc.), view line charts over full simulation duration. Compare mode overlays up to 6 elements. Peak detection with time annotation. Uses recharts LineChart.
 - **CFL Analysis**: Computes Courant stability for every conduit; one-click discretization
 - **Profile Plot**: Longitudinal section via recharts AreaChart — select conduits with autocomplete, auto-trace downstream, shows invert/crown/ground/HGL
+- **Node Depth Visualization**: Post-simulation nodes show water level fill proportional to depth/maxDepth. Color coding: blue (low), amber (>75%), red (>95%). Flooding halo for surcharging nodes.
 - **Map Query**: Filter by static properties or simulation results (depth, flow, velocity, etc.), highlight matches in red
 - **Report Viewer**: View .rpt report, copy/download
 - **Flyover Tooltips**: Hover to see ID + current theme value

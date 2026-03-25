@@ -20,10 +20,10 @@ import {
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
-  Droplets, CloudRain, CheckCircle2, Clock,
+  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -97,7 +97,7 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | null>(null);
   const [importTab, setImportTab] = useState<'csv-nodes' | 'csv-links' | 'dxf' | 'geojson'>('csv-nodes');
   const [importMode, setImportMode] = useState<'add' | 'modify'>('add');
   const [importPreviewText, setImportPreviewText] = useState('');
@@ -1357,6 +1357,7 @@ export default function SwmmUI() {
             />
             <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" onClick={() => { if (reportContent) setShowReportDialog(true); else toast({ title: 'No Report', description: 'Run a simulation first to generate a report' }); }} testId="btn-report" />
             <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Profile" onClick={() => setOpenDialog('profilePlot')} testId="btn-profile-plot" />
+            <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (results) setOpenDialog('timeSeries'); else toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); }} testId="btn-graph" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <ToolbarButton
               icon={<Scissors className="w-4 h-4" />}
@@ -2534,6 +2535,18 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={openDialog === 'timeSeries'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-5xl bg-white border-[#d0d0d8]" data-testid="time-series-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" /> Time Series Graph
+            </DialogTitle>
+            <DialogDescription>View simulation results over time for any node, link, or subcatchment.</DialogDescription>
+          </DialogHeader>
+          {results && <TimeSeriesPlotContent project={project} results={results} selectedObj={selectedObj} timeStep={timeStep} />}
+        </DialogContent>
+      </Dialog>
+
       {contextMenu && (
         <div
           className="fixed z-50 min-w-[140px] py-1 rounded shadow-xl"
@@ -2672,6 +2685,296 @@ function StatusItem({ text, color, bold, icon, onClick }: { text: string; color?
     >
       {icon && <span className="flex items-center">{icon}</span>}
       {text}
+    </div>
+  );
+}
+
+const TS_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
+const NODE_VARS: { key: string; label: string; unit: string }[] = [
+  { key: 'depth', label: 'Depth', unit: 'ft' },
+  { key: 'head', label: 'Head', unit: 'ft' },
+  { key: 'totalInflow', label: 'Total Inflow', unit: 'CFS' },
+  { key: 'lateralInflow', label: 'Lateral Inflow', unit: 'CFS' },
+  { key: 'flooding', label: 'Flooding', unit: 'CFS' },
+  { key: 'volume', label: 'Volume', unit: 'ft³' },
+];
+const LINK_VARS: { key: string; label: string; unit: string }[] = [
+  { key: 'flow', label: 'Flow', unit: 'CFS' },
+  { key: 'velocity', label: 'Velocity', unit: 'ft/s' },
+  { key: 'depth', label: 'Depth', unit: 'ft' },
+  { key: 'capacity', label: 'Capacity', unit: '' },
+  { key: 'volume', label: 'Volume', unit: 'ft³' },
+];
+const SUBCATCH_VARS: { key: string; label: string; unit: string }[] = [
+  { key: 'rainfall', label: 'Rainfall', unit: 'in/hr' },
+  { key: 'runoff', label: 'Runoff', unit: 'CFS' },
+  { key: 'infiltration', label: 'Infiltration', unit: 'in/hr' },
+  { key: 'evap', label: 'Evaporation', unit: 'in/hr' },
+  { key: 'gwOutflow', label: 'GW Outflow', unit: 'CFS' },
+  { key: 'moisture', label: 'Soil Moisture', unit: '' },
+];
+
+function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
+  project: SwmmProject;
+  results: SimulationResults;
+  selectedObj: SelectedObject;
+  timeStep: number;
+}) {
+  const nodeIds = useMemo(() => [
+    ...project.junctions.map(j => j.id),
+    ...project.outfalls.map(o => o.id),
+    ...project.storageUnits.map(s => s.id),
+    ...project.dividers.map(d => d.id),
+  ], [project]);
+  const linkIds = useMemo(() => [
+    ...project.conduits.map(c => c.id),
+    ...project.pumps.map(p => p.id),
+    ...project.weirs.map(w => w.id),
+    ...project.orifices.map(o => o.id),
+    ...project.outlets.map(o => o.id),
+  ], [project]);
+  const subcatchIds = useMemo(() => project.subcatchments.map(s => s.id), [project]);
+
+  const initCategory = selectedObj
+    ? (nodeIds.includes(selectedObj.id) ? 'node' : linkIds.includes(selectedObj.id) ? 'link' : subcatchIds.includes(selectedObj.id) ? 'subcatch' : 'node')
+    : 'node';
+
+  const [category, setCategory] = useState<'node' | 'link' | 'subcatch'>(initCategory);
+  const [elementIds, setElementIds] = useState<string[]>(selectedObj ? [selectedObj.id] : []);
+  const [activeVars, setActiveVars] = useState<string[]>(() => {
+    if (initCategory === 'node') return ['depth'];
+    if (initCategory === 'link') return ['flow'];
+    return ['runoff'];
+  });
+  const [searchText, setSearchText] = useState('');
+  const [showCompare, setShowCompare] = useState(false);
+
+  const varDefs = category === 'node' ? NODE_VARS : category === 'link' ? LINK_VARS : SUBCATCH_VARS;
+  const allIds = category === 'node' ? nodeIds : category === 'link' ? linkIds : subcatchIds;
+
+  const filteredIds = useMemo(() => {
+    if (!searchText) return allIds.slice(0, 100);
+    const lower = searchText.toLowerCase();
+    return allIds.filter(id => id.toLowerCase().includes(lower)).slice(0, 100);
+  }, [allIds, searchText]);
+
+  const chartData = useMemo(() => {
+    if (elementIds.length === 0 || activeVars.length === 0) return [];
+    return results.timeSteps.map((ts, i) => {
+      const row: Record<string, number | string> = { time: ts.dateTime, idx: i };
+      for (const elId of elementIds) {
+        for (const v of activeVars) {
+          const key = elementIds.length > 1 ? `${elId}_${v}` : v;
+          if (category === 'node') {
+            const nr = ts.nodes[elId];
+            row[key] = nr ? (nr as Record<string, number>)[v] ?? 0 : 0;
+          } else if (category === 'link') {
+            const lr = ts.links[elId];
+            row[key] = lr ? (lr as Record<string, number>)[v] ?? 0 : 0;
+          } else {
+            const sr = ts.subcatchments[elId];
+            row[key] = sr ? (sr as Record<string, number>)[v] ?? 0 : 0;
+          }
+        }
+      }
+      return row;
+    });
+  }, [results, elementIds, activeVars, category]);
+
+  const lineKeys = useMemo(() => {
+    const keys: { key: string; label: string; color: string }[] = [];
+    let ci = 0;
+    for (const elId of elementIds) {
+      for (const v of activeVars) {
+        const varDef = varDefs.find(vd => vd.key === v);
+        const key = elementIds.length > 1 ? `${elId}_${v}` : v;
+        const label = elementIds.length > 1 ? `${elId} — ${varDef?.label || v}` : (varDef?.label || v);
+        keys.push({ key, label, color: TS_COLORS[ci % TS_COLORS.length] });
+        ci++;
+      }
+    }
+    return keys;
+  }, [elementIds, activeVars, varDefs]);
+
+  const peakValues = useMemo(() => {
+    if (chartData.length === 0 || lineKeys.length === 0) return {};
+    const peaks: Record<string, { max: number; time: string }> = {};
+    for (const lk of lineKeys) {
+      let maxVal = -Infinity;
+      let maxTime = '';
+      for (const row of chartData) {
+        const val = row[lk.key] as number;
+        if (val > maxVal) { maxVal = val; maxTime = row.time as string; }
+      }
+      peaks[lk.key] = { max: maxVal, time: maxTime };
+    }
+    return peaks;
+  }, [chartData, lineKeys]);
+
+  const handleCategoryChange = (cat: 'node' | 'link' | 'subcatch') => {
+    setCategory(cat);
+    setElementIds([]);
+    setSearchText('');
+    if (cat === 'node') setActiveVars(['depth']);
+    else if (cat === 'link') setActiveVars(['flow']);
+    else setActiveVars(['runoff']);
+  };
+
+  const toggleElement = (id: string) => {
+    if (showCompare) {
+      setElementIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id].slice(0, 6));
+    } else {
+      setElementIds([id]);
+    }
+  };
+
+  const toggleVar = (key: string) => {
+    setActiveVars(prev => prev.includes(key) ? prev.filter(v => v !== key) : [...prev, key]);
+  };
+
+  return (
+    <div className="flex gap-3" style={{ minHeight: 420 }} data-testid="time-series-content">
+      <div className="w-44 shrink-0 flex flex-col gap-2 border-r border-[#d0d0d8] pr-3">
+        <div className="flex gap-1">
+          {(['node', 'link', 'subcatch'] as const).map(cat => (
+            <button
+              key={cat}
+              onClick={() => handleCategoryChange(cat)}
+              className={`flex-1 text-[10px] py-1 rounded font-medium transition-colors ${
+                category === cat ? 'bg-[#2c6eb5] text-white' : 'bg-[#e8edf2] text-[#4a4a5a] hover:bg-[#d0d8e4]'
+              }`}
+              data-testid={`ts-cat-${cat}`}
+            >
+              {cat === 'node' ? 'Nodes' : cat === 'link' ? 'Links' : 'Subcatch'}
+            </button>
+          ))}
+        </div>
+
+        <Input
+          placeholder="Search..."
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          className="h-6 text-[10px] bg-white border-[#d0d0d8]"
+          data-testid="ts-search"
+        />
+
+        <label className="flex items-center gap-1.5 text-[9px] text-[#6b6b7b] cursor-pointer">
+          <input type="checkbox" checked={showCompare} onChange={() => setShowCompare(!showCompare)} className="w-3 h-3 accent-[#2c6eb5]" />
+          Compare (multi-select)
+        </label>
+
+        <div className="flex-1 overflow-y-auto border border-[#d0d0d8] rounded" style={{ maxHeight: 220 }}>
+          {filteredIds.map(id => (
+            <div
+              key={id}
+              onClick={() => toggleElement(id)}
+              className={`px-2 py-[3px] text-[10px] font-mono cursor-pointer transition-colors truncate ${
+                elementIds.includes(id) ? 'bg-[#2c6eb5] text-white' : 'text-[#2a2a3e] hover:bg-[#e8edf2]'
+              }`}
+              data-testid={`ts-el-${id}`}
+            >
+              {id}
+            </div>
+          ))}
+          {filteredIds.length === 0 && <div className="px-2 py-2 text-[9px] text-[#9090a0] text-center">No results</div>}
+        </div>
+
+        <div className="text-[9px] font-semibold text-[#4a4a5a] mt-1">Variables</div>
+        {varDefs.map(v => (
+          <label key={v.key} className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-[#f0f0f4] rounded px-1 py-px" data-testid={`ts-var-${v.key}`}>
+            <input
+              type="checkbox"
+              checked={activeVars.includes(v.key)}
+              onChange={() => toggleVar(v.key)}
+              className="w-3 h-3 accent-[#2c6eb5]"
+            />
+            <span className={activeVars.includes(v.key) ? 'text-[#2a2a3e] font-medium' : 'text-[#6b6b7b]'}>{v.label}</span>
+            {v.unit && <span className="text-[8px] text-[#9090a0] ml-auto">{v.unit}</span>}
+          </label>
+        ))}
+      </div>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        {elementIds.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center text-[#9090a0] text-sm">
+            Select a {category === 'node' ? 'node' : category === 'link' ? 'link' : 'subcatchment'} to view its time series
+          </div>
+        ) : chartData.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center text-[#9090a0] text-sm">No data available</div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-semibold text-[#2c3e6b]">
+                {elementIds.length === 1 ? elementIds[0] : `${elementIds.length} elements`}
+                {activeVars.length === 1 && ` — ${varDefs.find(v => v.key === activeVars[0])?.label}`}
+              </div>
+              {Object.keys(peakValues).length > 0 && (
+                <div className="flex gap-3">
+                  {lineKeys.map(lk => {
+                    const p = peakValues[lk.key];
+                    return p ? (
+                      <span key={lk.key} className="text-[9px] text-[#6b6b7b]">
+                        <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: lk.color }} />
+                        Peak: <span className="font-mono font-medium text-[#2a2a3e]">{p.max.toFixed(2)}</span> at {p.time}
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="flex-1" style={{ minHeight: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fontSize: 9, fill: '#6b6b7b' }}
+                    interval="preserveStartEnd"
+                    minTickGap={50}
+                  />
+                  <YAxis tick={{ fontSize: 9, fill: '#6b6b7b' }} width={55} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 11, backgroundColor: '#fff', border: '1px solid #d0d0d8', borderRadius: 6 }}
+                    labelStyle={{ fontWeight: 600, color: '#2c3e6b' }}
+                  />
+                  {lineKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 10 }} />}
+                  {lineKeys.map(lk => (
+                    <Line
+                      key={lk.key}
+                      type="monotone"
+                      dataKey={lk.key}
+                      name={lk.label}
+                      stroke={lk.color}
+                      strokeWidth={1.5}
+                      dot={false}
+                      activeDot={{ r: 3, strokeWidth: 0 }}
+                    />
+                  ))}
+                  {results.timeSteps.length > 0 && timeStep > 0 && timeStep < results.timeSteps.length && (
+                    <Line
+                      dataKey={() => null}
+                      stroke="transparent"
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center gap-2 mt-2 text-[9px] text-[#6b6b7b]">
+              <span>{results.timeSteps.length} time steps</span>
+              <span>·</span>
+              <span>Duration: {results.timeSteps.length > 0 ? results.timeSteps[results.timeSteps.length - 1].dateTime : '—'}</span>
+              {elementIds.length === 1 && activeVars.length === 1 && peakValues[activeVars[0]] && (
+                <>
+                  <span>·</span>
+                  <span className="font-medium text-[#2c6eb5]">
+                    Peak {varDefs.find(v => v.key === activeVars[0])?.label}: {peakValues[activeVars[0]].max.toFixed(3)} {varDefs.find(v => v.key === activeVars[0])?.unit} at {peakValues[activeVars[0]].time}
+                  </span>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
