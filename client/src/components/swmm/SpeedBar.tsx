@@ -47,33 +47,34 @@ export default function SpeedBar({
   if (isMobile) {
     return (
       <div
-        className="absolute bottom-2 left-2 right-2 flex flex-row gap-0.5 p-1 rounded-lg z-10 overflow-x-auto"
-        style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #d0d0d8', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', WebkitOverflowScrolling: 'touch' }}
+        className="absolute bottom-3 left-3 right-3 flex flex-row gap-0.5 p-1.5 rounded-xl z-10 overflow-x-auto"
+        style={{ backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid #d0d0d8', boxShadow: '0 4px 16px rgba(0,0,0,0.18)', WebkitOverflowScrolling: 'touch' }}
         data-testid="speed-bar"
       >
-        {tools.map(({ mode, icon: Icon, label, testId }) => {
+        {tools.map(({ mode, icon: Icon, shortLabel, label, testId }) => {
           const active = interactionMode === mode;
           return (
             <button
               key={mode}
               onClick={() => onSetMode(mode)}
               title={label}
-              className="flex items-center justify-center w-9 h-9 rounded transition-colors"
+              className="flex flex-col items-center justify-center min-w-[36px] h-11 rounded-lg transition-colors gap-0.5 px-1"
               style={{
                 backgroundColor: active ? 'rgba(44,110,181,0.12)' : 'transparent',
-                border: active ? '1px solid #2c6eb5' : '1px solid transparent',
+                border: active ? '1.5px solid #2c6eb5' : '1.5px solid transparent',
                 color: active ? '#2c6eb5' : '#6b6b7b',
               }}
               data-testid={testId}
             >
-              <Icon className="w-4.5 h-4.5" />
+              <Icon className="w-4 h-4" />
+              <span className="text-[7px] leading-none opacity-70">{shortLabel}</span>
             </button>
           );
         })}
-        <div className="w-px h-9 mx-0.5" style={{ backgroundColor: '#d0d0d8' }} />
-        <button onClick={onDelete} title="Delete" className="flex items-center justify-center w-9 h-9 rounded transition-colors" style={{ color: '#d04040' }} data-testid="speed-delete"><Trash2 className="w-4.5 h-4.5" /></button>
-        <button onClick={onRunSimulation} disabled={simRunning} title="Run" className="flex items-center justify-center w-9 h-9 rounded transition-colors" style={{ color: simRunning ? '#6b6b7b' : '#2a8a4a', opacity: simRunning ? 0.5 : 1 }} data-testid="speed-run"><Play className="w-4.5 h-4.5" /></button>
-        <button onClick={onFullExtent} title="Fit" className="flex items-center justify-center w-9 h-9 rounded transition-colors" style={{ color: '#6b6b7b' }} data-testid="speed-extent"><Maximize className="w-4.5 h-4.5" /></button>
+        <div className="w-px h-10 mx-0.5 self-center" style={{ backgroundColor: '#d0d0d8' }} />
+        <button onClick={onDelete} title="Delete" className="flex flex-col items-center justify-center min-w-[36px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: '#d04040' }} data-testid="speed-delete"><Trash2 className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Del</span></button>
+        <button onClick={onRunSimulation} disabled={simRunning} title="Run" className="flex flex-col items-center justify-center min-w-[36px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: simRunning ? '#6b6b7b' : '#2a8a4a', opacity: simRunning ? 0.5 : 1 }} data-testid="speed-run"><Play className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Run</span></button>
+        <button onClick={onFullExtent} title="Fit" className="flex flex-col items-center justify-center min-w-[36px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: '#6b6b7b' }} data-testid="speed-extent"><Maximize className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Fit</span></button>
       </div>
     );
   }

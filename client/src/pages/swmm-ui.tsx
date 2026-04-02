@@ -1171,12 +1171,22 @@ export default function SwmmUI() {
         <div className="flex-1" />
         <span className="text-[10px] text-white/50 mobile-hidden">Stormwater Management Model</span>
         {isMobile && (
-          <div className="flex items-center gap-1">
-            <button onClick={() => setMobilePanel(p => p === 'left' ? 'none' : 'left')} className="p-1 rounded" data-testid="btn-mobile-left-panel">
-              <PanelLeftOpen className="w-4 h-4 text-white/70" />
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => setMobilePanel(p => p === 'left' ? 'none' : 'left')}
+              className="p-1.5 rounded-md transition-colors"
+              style={{ backgroundColor: mobilePanel === 'left' ? 'rgba(255,255,255,0.2)' : 'transparent' }}
+              data-testid="btn-mobile-left-panel"
+            >
+              <PanelLeftOpen className="w-4 h-4 text-white/80" />
             </button>
-            <button onClick={() => setMobilePanel(p => p === 'right' ? 'none' : 'right')} className="p-1 rounded" data-testid="btn-mobile-right-panel">
-              <PanelRightOpen className="w-4 h-4 text-white/70" />
+            <button
+              onClick={() => setMobilePanel(p => p === 'right' ? 'none' : 'right')}
+              className="p-1.5 rounded-md transition-colors"
+              style={{ backgroundColor: mobilePanel === 'right' ? 'rgba(255,255,255,0.2)' : 'transparent' }}
+              data-testid="btn-mobile-right-panel"
+            >
+              <PanelRightOpen className="w-4 h-4 text-white/80" />
             </button>
           </div>
         )}
@@ -1187,7 +1197,7 @@ export default function SwmmUI() {
           <button
             key={m}
             onClick={() => setActiveMenu(m)}
-            className="px-4 flex items-center text-xs transition-all duration-150"
+            className="px-2 sm:px-4 flex items-center text-[11px] sm:text-xs transition-all duration-150"
             style={{
               backgroundColor: activeMenu === m ? '#4a6a9a' : 'transparent',
               color: activeMenu === m ? '#fff' : 'rgba(255,255,255,0.85)',
@@ -1200,14 +1210,14 @@ export default function SwmmUI() {
           </button>
         ))}
         <div className="flex-1" />
-        <div className="flex items-center gap-1 pr-3">
+        <div className="flex items-center gap-1 pr-2 sm:pr-3">
           <ToolbarIconButton icon={<Save className="w-3.5 h-3.5" />} onClick={handleSave} title="Save" testId="btn-save" />
           <ToolbarIconButton icon={<FolderOpen className="w-3.5 h-3.5" />} onClick={() => fileInputRef.current?.click()} title="Open" testId="btn-open" />
-          <ToolbarIconButton icon={<Search className="w-3.5 h-3.5" />} title="Find" testId="btn-find" />
+          <span className="hidden sm:inline"><ToolbarIconButton icon={<Search className="w-3.5 h-3.5" />} title="Find" testId="btn-find" /></span>
         </div>
       </div>
 
-      <div className="h-[52px] md:h-[52px] flex items-center px-1 md:px-2 gap-0.5 shrink-0 overflow-x-auto" style={{ backgroundColor: '#f0f0f4', borderBottom: '1px solid #d0d0d8' }}>
+      <div className="h-[40px] sm:h-[52px] flex items-center px-1 md:px-2 gap-0.5 shrink-0 overflow-x-auto" style={{ backgroundColor: '#f0f0f4', borderBottom: '1px solid #d0d0d8' }}>
         {activeMenu === 'File' && (
           <div className="flex items-center gap-0.5">
             <ToolbarButton icon={<FilePlus className="w-4 h-4" />} label="New" onClick={handleNewProject} testId="btn-new" />
@@ -1300,38 +1310,37 @@ export default function SwmmUI() {
           </div>
         )}
         {activeMenu === 'View' && (
-          <div className="flex items-center gap-4 px-2 w-full">
-            <ThemeCombo label="Subcatchments" value={subcatchTheme} onChange={setSubcatchTheme}
+          <div className="flex items-center gap-2 sm:gap-4 px-1 sm:px-2 w-full overflow-x-auto">
+            <ThemeCombo label="Sub" value={subcatchTheme} onChange={setSubcatchTheme}
               options={[['imperv', '% Imperv'], ['runoff', 'Runoff'], ['rainfall', 'Rainfall'], ['infiltration', 'Infiltration']]} testId="combo-subcatch" />
             <ThemeCombo label="Nodes" value={nodeTheme} onChange={setNodeTheme}
               options={[['depth', 'Depth'], ['head', 'Head']]} testId="combo-nodes" />
             <ThemeCombo label="Links" value={linkTheme} onChange={setLinkTheme}
               options={[['flow', 'Flow'], ['depth', 'Depth'], ['velocity', 'Velocity']]} testId="combo-links" />
-            <div className="flex-1" />
+            <div className="flex-1 min-w-0" />
             {results && (
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[#6b6b7b]">Time:</span>
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <input
                   type="range"
                   min={0}
                   max={maxTimeStep}
                   value={timeStep}
                   onChange={e => setTimeStep(+e.target.value)}
-                  className="w-28"
+                  className="w-16 sm:w-28"
                   style={{ accentColor: '#2c6eb5' }}
                   data-testid="time-slider"
                 />
-                <span className="text-[10px] font-mono text-[#2c6eb5] min-w-[70px]" data-testid="time-display">
+                <span className="text-[9px] sm:text-[10px] font-mono text-[#2c6eb5] min-w-[50px] sm:min-w-[70px]" data-testid="time-display">
                   {currentTime.split(' ')[1] || `Step ${timeStep}`}
                 </span>
                 <button
                   onClick={() => setIsAnimating(!isAnimating)}
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] rounded border"
+                  className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 text-[9px] sm:text-[10px] rounded border shrink-0"
                   style={{ borderColor: '#d0d0d8', color: isAnimating ? '#d04040' : '#2c6eb5' }}
                   data-testid="btn-animate"
                 >
                   {isAnimating ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                  {isAnimating ? 'Stop' : 'Animate'}
+                  <span className="hidden sm:inline">{isAnimating ? 'Stop' : 'Animate'}</span>
                 </button>
               </div>
             )}
@@ -1464,13 +1473,13 @@ export default function SwmmUI() {
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setMobilePanel('none')} data-testid="mobile-panel-backdrop" />
         )}
         <div
-          className={`${isMobile ? (mobilePanel === 'left' ? 'fixed left-0 top-0 bottom-0 z-50 w-[260px] shadow-xl' : 'hidden') : 'w-[170px]'} shrink-0 overflow-hidden flex flex-col`}
+          className={`${isMobile ? (mobilePanel === 'left' ? 'fixed left-0 top-0 bottom-0 z-50 w-[280px] shadow-2xl animate-in slide-in-from-left duration-200' : 'hidden') : 'w-[170px]'} shrink-0 overflow-hidden flex flex-col`}
           style={{ backgroundColor: '#f8f8fa', borderRight: '1px solid #d0d0d8' }}
         >
           {isMobile && mobilePanel === 'left' && (
-            <div className="h-8 flex items-center justify-between px-3 border-b" style={{ backgroundColor: '#2c3e6b', borderColor: '#d0d0d8' }}>
-              <span className="text-xs text-white">Tools & Locator</span>
-              <button onClick={() => setMobilePanel('none')} className="p-1" data-testid="btn-close-left-panel"><X className="w-4 h-4 text-white/70" /></button>
+            <div className="h-10 flex items-center justify-between px-3 border-b shrink-0" style={{ backgroundColor: '#2c3e6b', borderColor: '#d0d0d8' }}>
+              <span className="text-sm font-medium text-white">Layers & Tools</span>
+              <button onClick={() => setMobilePanel('none')} className="p-1.5 rounded-full hover:bg-white/10" data-testid="btn-close-left-panel"><X className="w-4 h-4 text-white/80" /></button>
             </div>
           )}
           {showLocator && (
@@ -1559,17 +1568,17 @@ export default function SwmmUI() {
 
           {interactionMode !== 'select' && (
             <div
-              className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded text-[11px] z-10"
+              className="absolute top-2 left-1/2 -translate-x-1/2 px-2 sm:px-3 py-1 sm:py-1.5 rounded text-[10px] sm:text-[11px] z-10 max-w-[90%] text-center"
               style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #2c6eb5', color: '#2c6eb5' }}
               data-testid="mode-indicator"
             >
-              {interactionMode === 'addJunction' && 'Click to place Junction (Esc to cancel)'}
-              {interactionMode === 'addOutfall' && 'Click to place Outfall (Esc to cancel)'}
-              {interactionMode === 'addStorage' && 'Click to place Storage (Esc to cancel)'}
-              {interactionMode === 'addConduit' && (linkDrawState ? 'Click node to complete Conduit, or click map for vertex (Esc to cancel)' : 'Click start node for Conduit (Esc to cancel)')}
-              {interactionMode === 'addPump' && (linkDrawState ? 'Click node to complete Pump (Esc to cancel)' : 'Click start node for Pump (Esc to cancel)')}
-              {interactionMode === 'addLabel' && 'Click to place Label (Esc to cancel)'}
-              {interactionMode === 'groupSelect' && 'Click to add polygon points, double-click or right-click to close (Esc to cancel)'}
+              {interactionMode === 'addJunction' && (isMobile ? 'Tap to place Junction' : 'Click to place Junction (Esc to cancel)')}
+              {interactionMode === 'addOutfall' && (isMobile ? 'Tap to place Outfall' : 'Click to place Outfall (Esc to cancel)')}
+              {interactionMode === 'addStorage' && (isMobile ? 'Tap to place Storage' : 'Click to place Storage (Esc to cancel)')}
+              {interactionMode === 'addConduit' && (linkDrawState ? (isMobile ? 'Tap node to complete' : 'Click node to complete Conduit, or click map for vertex (Esc to cancel)') : (isMobile ? 'Tap start node' : 'Click start node for Conduit (Esc to cancel)'))}
+              {interactionMode === 'addPump' && (linkDrawState ? (isMobile ? 'Tap node to complete' : 'Click node to complete Pump (Esc to cancel)') : (isMobile ? 'Tap start node' : 'Click start node for Pump (Esc to cancel)'))}
+              {interactionMode === 'addLabel' && (isMobile ? 'Tap to place Label' : 'Click to place Label (Esc to cancel)')}
+              {interactionMode === 'groupSelect' && (isMobile ? 'Tap to add polygon points' : 'Click to add polygon points, double-click or right-click to close (Esc to cancel)')}
               {interactionMode === 'query' && 'Query mode active'}
             </div>
           )}
@@ -1778,8 +1787,8 @@ export default function SwmmUI() {
           )}
 
           {!results && Object.keys(project.coordinates).length > 0 && interactionMode === 'select' && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-[11px] text-[#6b6b7b] bg-white/80 backdrop-blur-sm border border-[#d0d0d8]" data-testid="hint-run">
-              Click <strong className="text-[#2c6eb5]">Project &gt; Run</strong> to simulate, or drag an .inp file here
+            <div className="absolute bottom-14 sm:bottom-4 left-1/2 -translate-x-1/2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-[11px] text-[#6b6b7b] bg-white/80 backdrop-blur-sm border border-[#d0d0d8] max-w-[90%] text-center" data-testid="hint-run">
+              {isMobile ? <>Tap <strong className="text-[#2c6eb5]">Project &gt; Run</strong> to simulate</> : <>Click <strong className="text-[#2c6eb5]">Project &gt; Run</strong> to simulate, or drag an .inp file here</>}
             </div>
           )}
 
@@ -1843,13 +1852,13 @@ export default function SwmmUI() {
         </div>
 
         <div
-          className={`${isMobile ? (mobilePanel === 'right' ? 'fixed right-0 top-0 bottom-0 z-50 w-[280px] shadow-xl' : 'hidden') : 'w-[220px]'} shrink-0 overflow-hidden`}
+          className={`${isMobile ? (mobilePanel === 'right' ? 'fixed right-0 top-0 bottom-0 z-50 w-[300px] shadow-2xl animate-in slide-in-from-right duration-200' : 'hidden') : 'w-[220px]'} shrink-0 overflow-hidden flex flex-col`}
           style={{ backgroundColor: '#f8f8fa', borderLeft: '1px solid #d0d0d8' }}
         >
           {isMobile && mobilePanel === 'right' && (
-            <div className="h-8 flex items-center justify-between px-3 border-b" style={{ backgroundColor: '#2c3e6b', borderColor: '#d0d0d8' }}>
-              <span className="text-xs text-white">Project Explorer</span>
-              <button onClick={() => setMobilePanel('none')} className="p-1" data-testid="btn-close-right-panel"><X className="w-4 h-4 text-white/70" /></button>
+            <div className="h-10 flex items-center justify-between px-3 border-b shrink-0" style={{ backgroundColor: '#2c3e6b', borderColor: '#d0d0d8' }}>
+              <span className="text-sm font-medium text-white">Project Explorer</span>
+              <button onClick={() => setMobilePanel('none')} className="p-1.5 rounded-full hover:bg-white/10" data-testid="btn-close-right-panel"><X className="w-4 h-4 text-white/80" /></button>
             </div>
           )}
           <ProjectExplorer
@@ -1863,12 +1872,12 @@ export default function SwmmUI() {
         </div>
       </div>
 
-      <div className="h-7 flex items-center px-1 md:px-2 shrink-0 overflow-x-auto gap-0.5" style={{ backgroundColor: '#f0f0f4', borderTop: '1px solid #d0d0d8' }} data-testid="status-bar">
+      <div className="h-6 sm:h-7 flex items-center px-1 md:px-2 shrink-0 overflow-x-auto gap-0.5" style={{ backgroundColor: '#f0f0f4', borderTop: '1px solid #d0d0d8' }} data-testid="status-bar">
         <StatusItem text={flowUnits} icon={<Droplets className="w-3 h-3" />} />
         <span className="mobile-hidden"><StatusItem text={routingModel} icon={<ArrowLeftRight className="w-3 h-3" />} /></span>
         <span className="mobile-hidden"><StatusItem text={infiltModel} icon={<CloudRain className="w-3 h-3" />} /></span>
         <StatusItem
-          text={simStatus === 'current' ? 'Results Current' : simStatus === 'running' ? (simProgressMsg || 'Running...') : 'No Results'}
+          text={simStatus === 'current' ? (isMobile ? 'OK' : 'Results Current') : simStatus === 'running' ? (simProgressMsg || 'Running...') : (isMobile ? 'No Sim' : 'No Results')}
           color={simStatus === 'current' ? '#2a8a4a' : simStatus === 'running' ? '#c08820' : '#6b6b7b'}
           bold={simStatus === 'current'}
           icon={simStatus === 'current' ? <CheckCircle2 className="w-3 h-3" /> : simStatus === 'running' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
@@ -1894,17 +1903,17 @@ export default function SwmmUI() {
           icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
         />
         <div className="flex-1" />
-        <span className="text-[9px] font-mono text-[#6b6b7b] flex items-center gap-1.5" data-testid="status-counts">
-          <span className="bg-[#e8edf2] px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.junctions.length + project.outfalls.length + project.storageUnits.length + project.dividers.length} nodes</span>
-          <span className="bg-[#e8edf2] px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.conduits.length + project.pumps.length + project.weirs.length + project.orifices.length + project.outlets.length} links</span>
-          <span className="bg-[#e8edf2] px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.subcatchments.length} subcatch</span>
+        <span className="text-[8px] sm:text-[9px] font-mono text-[#6b6b7b] flex items-center gap-1 sm:gap-1.5" data-testid="status-counts">
+          <span className="bg-[#e8edf2] px-1 sm:px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.junctions.length + project.outfalls.length + project.storageUnits.length + project.dividers.length}<span className="hidden sm:inline"> nodes</span><span className="sm:hidden">N</span></span>
+          <span className="bg-[#e8edf2] px-1 sm:px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.conduits.length + project.pumps.length + project.weirs.length + project.orifices.length + project.outlets.length}<span className="hidden sm:inline"> links</span><span className="sm:hidden">L</span></span>
+          <span className="hidden sm:inline bg-[#e8edf2] px-1.5 py-0.5 rounded text-[#4a4a5a]">{project.subcatchments.length} subcatch</span>
         </span>
-        <span className="text-[9px] text-[#9090a0] mx-1.5">|</span>
+        <span className="text-[9px] text-[#9090a0] mx-1 sm:mx-1.5 hidden sm:inline">|</span>
         <a
           href="https://github.com/SWMMEnablement"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[9px] text-[#6b6b7b] hover:text-[#2c6eb5] transition-colors"
+          className="text-[8px] sm:text-[9px] text-[#6b6b7b] hover:text-[#2c6eb5] transition-colors hidden sm:inline"
           data-testid="link-credit"
         >
           SWMMEnablement
@@ -1912,7 +1921,7 @@ export default function SwmmUI() {
       </div>
 
       <Dialog open={openDialog === 'github'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-lg" data-testid="github-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-lg w-[95vw] sm:w-auto max-h-[90vh] overflow-y-auto" data-testid="github-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <Github className="w-5 h-5" /> SWMM5 Model Repository
@@ -2005,7 +2014,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'preferences'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-md" data-testid="preferences-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-md w-[95vw] sm:w-auto max-h-[90vh] overflow-y-auto" data-testid="preferences-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <Settings className="w-5 h-5" /> Preferences
@@ -2118,7 +2127,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'export'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm" data-testid="export-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm w-[95vw] sm:w-auto max-h-[90vh] overflow-y-auto" data-testid="export-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <Download className="w-5 h-5" /> Export Map
@@ -2163,7 +2172,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'groupEdit'} onOpenChange={v => { if (!v) { setOpenDialog(null); setGroupSelectedIds(null); setGroupSelectPoints([]); setInteractionMode('select'); } }}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm" data-testid="group-edit-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm w-[95vw] sm:w-auto max-h-[90vh] overflow-y-auto" data-testid="group-edit-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               Group Edit — {groupSelectedIds?.size || 0} Objects
@@ -2237,7 +2246,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'importData'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-lg" data-testid="import-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-lg w-[95vw] sm:w-auto max-h-[90vh] overflow-y-auto" data-testid="import-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <Upload className="w-5 h-5" /> Import Data
@@ -2415,7 +2424,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'exportData'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm" data-testid="export-data-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-sm w-[95vw] sm:w-auto max-h-[90vh] overflow-y-auto" data-testid="export-data-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <Download className="w-5 h-5" /> Export Data
@@ -2475,7 +2484,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-3xl max-h-[85vh] flex flex-col" data-testid="report-dialog">
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-3xl w-[95vw] sm:w-auto max-h-[85vh] flex flex-col" data-testid="report-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <BarChart3 className="w-4 h-4" /> SWMM Report
@@ -2532,7 +2541,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'profilePlot'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="max-w-4xl bg-white border-[#d0d0d8]">
+        <DialogContent className="max-w-4xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <ArrowLeftRight className="w-4 h-4" /> Profile Plot
@@ -2544,7 +2553,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <Dialog open={openDialog === 'timeSeries'} onOpenChange={v => !v && setOpenDialog(null)}>
-        <DialogContent className="max-w-5xl bg-white border-[#d0d0d8]" data-testid="time-series-dialog">
+        <DialogContent className="max-w-5xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="time-series-dialog">
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <TrendingUp className="w-4 h-4" /> Time Series Graph
@@ -2625,13 +2634,15 @@ function ToolbarButton({ icon, label, accent, primary, onClick, disabled, testId
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex flex-col items-center justify-center px-3 py-1 rounded min-w-[54px] transition-colors
+      title={label}
+      aria-label={label}
+      className={`flex flex-col items-center justify-center px-2 md:px-3 py-1 rounded min-w-[42px] md:min-w-[54px] transition-colors
         ${primary ? 'bg-[#1a7a3a] border border-[#15692f] shadow-sm' : accent ? 'bg-[rgba(44,110,181,0.12)] border border-[#2c6eb5]' : 'border border-transparent hover:bg-black/[0.04]'}
         ${disabled ? 'opacity-50 cursor-not-allowed' : primary ? 'cursor-pointer hover:bg-[#1e8a42]' : 'cursor-pointer'}`}
       data-testid={testId}
     >
       <span className={primary ? 'text-white' : accent ? 'text-[#2c6eb5]' : 'text-[#4a4a5a]'}>{icon}</span>
-      <span className={`text-[9px] mt-0.5 ${primary ? 'text-white font-semibold' : accent ? 'text-[#2c6eb5]' : 'text-[#6b6b7b]'}`}>{label}</span>
+      <span className={`text-[8px] md:text-[9px] mt-0.5 hidden sm:inline ${primary ? 'text-white font-semibold' : accent ? 'text-[#2c6eb5]' : 'text-[#6b6b7b]'}`}>{label}</span>
     </button>
   );
 }
@@ -2662,12 +2673,12 @@ function ThemeCombo({ label, value, onChange, options, testId }: {
   testId?: string;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-[10px] text-[#6b6b7b] whitespace-nowrap">{label}:</span>
+    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+      <span className="text-[9px] sm:text-[10px] text-[#6b6b7b] whitespace-nowrap">{label}:</span>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="text-[10px] rounded px-1.5 py-0.5"
+        className="text-[9px] sm:text-[10px] rounded px-1 sm:px-1.5 py-0.5"
         style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
         data-testid={testId}
       >
