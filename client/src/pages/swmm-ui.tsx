@@ -1228,73 +1228,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" onClick={() => { setImportPreviewText(''); setImportFileName(''); setDxfLayers([]); setDxfSelectedLayers(new Set()); setDxfEntities([]); setGeojsonFeatures([]); setGeojsonFields([]); setGeojsonIdField(''); setGeojsonElevField(''); setOpenDialog('importData'); }} testId="btn-import" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
             <div className="w-px h-8 mx-1" style={{ backgroundColor: '#d0d0d8' }} />
-            <div className="relative">
-              <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Samples" onClick={() => setShowSamplesMenu(v => !v)} testId="btn-samples" />
-              {showSamplesMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowSamplesMenu(false)} />
-                  <div className="absolute left-0 top-full mt-0.5 z-50 min-w-[260px] max-h-[400px] overflow-y-auto rounded shadow-lg border" style={{ backgroundColor: '#ffffff', borderColor: '#d0d0d8' }}>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
-                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_US.inp'); }}
-                      data-testid="btn-sample-greenville-us"
-                    >
-                      Greenville (US Customary Units)
-                      <span className="block text-[10px] text-[#6b6b7b]">All SWMM5 features - CFS, Green-Ampt, DynWave</span>
-                    </button>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
-                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_SI.inp'); }}
-                      data-testid="btn-sample-greenville-si"
-                    >
-                      Greenville (SI / Metric Units)
-                      <span className="block text-[10px] text-[#6b6b7b]">All SWMM5 features - CMS, Green-Ampt, DynWave</span>
-                    </button>
-                    <div className="border-t" style={{ borderColor: '#d0d0d8' }} />
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
-                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User1.inp'); }}
-                      data-testid="btn-sample-user1"
-                    >
-                      User1 — Mountain Drainage
-                      <span className="block text-[10px] text-[#6b6b7b]">58 subcatchments, CMS, Horton, DynWave</span>
-                    </button>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
-                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User2.inp'); }}
-                      data-testid="btn-sample-user2"
-                    >
-                      User2 — Urban Collection
-                      <span className="block text-[10px] text-[#6b6b7b]">17 subcatchments, CFS, storage nodes, DynWave</span>
-                    </button>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
-                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User3.inp'); }}
-                      data-testid="btn-sample-user3"
-                    >
-                      User3 — Large Metro Network
-                      <span className="block text-[10px] text-[#6b6b7b]">100+ subcatchments, CMS, dual drainage, DynWave</span>
-                    </button>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
-                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User4.inp'); }}
-                      data-testid="btn-sample-user4"
-                    >
-                      User4 — Regional Stormwater
-                      <span className="block text-[10px] text-[#6b6b7b]">98 subcatchments, CFS, large network, DynWave</span>
-                    </button>
-                    <button
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.04] text-[#2a2a3e]"
-                      onClick={() => { setShowSamplesMenu(false); handleLoadSample('User5.inp'); }}
-                      data-testid="btn-sample-user5"
-                    >
-                      User5 — Complex Watershed
-                      <span className="block text-[10px] text-[#6b6b7b]">96 subcatchments, CFS, Froude-limited, DynWave</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Samples" onClick={() => setShowSamplesMenu(v => !v)} testId="btn-samples" />
           </div>
         )}
         {activeMenu === 'Edit' && (
@@ -1419,6 +1353,72 @@ export default function SwmmUI() {
           </div>
         )}
       </div>
+
+      {showSamplesMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowSamplesMenu(false)} />
+          <div className="fixed left-3 right-3 sm:left-auto sm:right-auto sm:w-[300px] top-[90px] sm:top-[100px] z-50 max-h-[70vh] overflow-y-auto rounded-xl shadow-2xl border" style={{ backgroundColor: '#ffffff', borderColor: '#d0d0d8' }}>
+            <div className="px-3 py-2 border-b font-medium text-xs text-[#2a2a3e]" style={{ borderColor: '#d0d0d8', backgroundColor: '#f8f8fa' }}>Sample Projects</div>
+            <button
+              className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+              onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_US.inp'); }}
+              data-testid="btn-sample-greenville-us"
+            >
+              Greenville (US Customary Units)
+              <span className="block text-[10px] text-[#6b6b7b] mt-0.5">All SWMM5 features - CFS, Green-Ampt, DynWave</span>
+            </button>
+            <button
+              className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+              onClick={() => { setShowSamplesMenu(false); handleLoadSample('Greenville_SI.inp'); }}
+              data-testid="btn-sample-greenville-si"
+            >
+              Greenville (SI / Metric Units)
+              <span className="block text-[10px] text-[#6b6b7b] mt-0.5">All SWMM5 features - CMS, Green-Ampt, DynWave</span>
+            </button>
+            <div className="border-t" style={{ borderColor: '#e8e8ee' }} />
+            <button
+              className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+              onClick={() => { setShowSamplesMenu(false); handleLoadSample('User1.inp'); }}
+              data-testid="btn-sample-user1"
+            >
+              User1 — Mountain Drainage
+              <span className="block text-[10px] text-[#6b6b7b] mt-0.5">58 subcatchments, CMS, Horton, DynWave</span>
+            </button>
+            <button
+              className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+              onClick={() => { setShowSamplesMenu(false); handleLoadSample('User2.inp'); }}
+              data-testid="btn-sample-user2"
+            >
+              User2 — Urban Collection
+              <span className="block text-[10px] text-[#6b6b7b] mt-0.5">17 subcatchments, CFS, storage nodes, DynWave</span>
+            </button>
+            <button
+              className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+              onClick={() => { setShowSamplesMenu(false); handleLoadSample('User3.inp'); }}
+              data-testid="btn-sample-user3"
+            >
+              User3 — Large Metro Network
+              <span className="block text-[10px] text-[#6b6b7b] mt-0.5">100+ subcatchments, CMS, dual drainage, DynWave</span>
+            </button>
+            <button
+              className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+              onClick={() => { setShowSamplesMenu(false); handleLoadSample('User4.inp'); }}
+              data-testid="btn-sample-user4"
+            >
+              User4 — Regional Stormwater
+              <span className="block text-[10px] text-[#6b6b7b] mt-0.5">98 subcatchments, CFS, large network, DynWave</span>
+            </button>
+            <button
+              className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+              onClick={() => { setShowSamplesMenu(false); handleLoadSample('User5.inp'); }}
+              data-testid="btn-sample-user5"
+            >
+              User5 — Complex Watershed
+              <span className="block text-[10px] text-[#6b6b7b] mt-0.5">96 subcatchments, CFS, Froude-limited, DynWave</span>
+            </button>
+          </div>
+        </>
+      )}
 
       {simStatus === 'running' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px]" data-testid="progress-monitor-overlay">
