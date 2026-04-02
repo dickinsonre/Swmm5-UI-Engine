@@ -47,17 +47,26 @@ export function createLocalEngine(): SwmmEngine {
     async run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults> {
       const inpText = projectToInp(project);
 
-      if (onProgress) onProgress(5, 'Sending model to local SWMM 5.2.4 engine...');
+      if (onProgress) onProgress(5, 'Sending model to SWMM 5.2.4 engine...');
 
-      const resp = await fetch('/api/swmm/run', {
+      const resp = await fetch('/api/swmm/run-or-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: inpText,
       });
 
+      if (resp.status === 404) {
+        const data = await resp.json().catch(() => ({}));
+        if (data.useRemote) {
+          if (onProgress) onProgress(8, 'Local engine unavailable, using remote SWMM 5.2.4...');
+          const remoteEngine = createRemoteEngine();
+          return remoteEngine.run(project, onProgress);
+        }
+      }
+
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({ error: resp.statusText }));
-        throw new Error(`Local engine error: ${errData.error || resp.statusText}`);
+        throw new Error(`SWMM engine error: ${errData.error || resp.statusText}`);
       }
 
       if (onProgress) onProgress(70, 'Processing results...');

@@ -700,15 +700,15 @@ export default function SwmmUI() {
   }, [project, fileName, toast]);
 
   useEffect(() => {
+    let localOk = false;
     checkLocalEngine().then(available => {
+      localOk = available;
       setLocalAvailable(available);
-      if (available) {
-        setEngineMode('local');
-      }
+      if (available) setEngineMode('local');
     });
     checkRemoteEngine().then(available => {
       setRemoteAvailable(available);
-      if (available && !localAvailable) setEngineMode('remote');
+      if (available && !localOk) setEngineMode('remote');
     });
   }, []);
 

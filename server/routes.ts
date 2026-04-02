@@ -202,6 +202,55 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/swmm/run-or-proxy", async (req: Request, res: Response) => {
+    const localFound = existsSync(SWMM_ENGINE_PATH);
+    if (localFound) {
+      const jobId = randomUUID();
+      const tmpDir = join('/tmp', `swmm-${jobId}`);
+      await mkdir(tmpDir, { recursive: true });
+      const inpPath = join(tmpDir, 'model.inp');
+      const rptPath = join(tmpDir, 'model.rpt');
+      const outPath = join(tmpDir, 'model.out');
+      try {
+        const chunks: Buffer[] = [];
+        await new Promise<void>((resolve, reject) => {
+          req.on('data', (chunk: Buffer) => chunks.push(chunk));
+          req.on('end', () => resolve());
+          req.on('error', reject);
+        });
+        const inpText = Buffer.concat(chunks).toString('utf-8');
+        await writeFile(inpPath, inpText, 'utf-8');
+        const proc = spawn(SWMM_ENGINE_PATH, [inpPath, rptPath, outPath]);
+        let stdout = '';
+        let stderr = '';
+        proc.stdout.on('data', (data) => { stdout += data.toString(); });
+        proc.stderr.on('data', (data) => { stderr += data.toString(); });
+        proc.on('close', async (code) => {
+          let reportContent = '';
+          try { reportContent = await readFile(rptPath, 'utf-8'); } catch {}
+          let outBase64 = '';
+          try { const outBuf = await readFile(outPath); outBase64 = outBuf.toString('base64'); } catch {}
+          const hasErrors = reportContent.includes('ERROR') || stdout.includes('There are errors') || stdout.includes('has errors');
+          try { await unlink(inpPath); } catch {}
+          try { await unlink(rptPath); } catch {}
+          try { await unlink(outPath); } catch {}
+          try { const { rmdir } = await import('fs/promises'); await rmdir(tmpDir); } catch {}
+          if (hasErrors) {
+            return res.json({ status: 'failed', error: 'SWMM simulation completed with errors', reportContent, stdout, exitCode: code });
+          }
+          res.json({ status: 'success', reportContent, outBase64, stdout, exitCode: code, engineUsed: 'local' });
+        });
+        proc.on('error', (err) => {
+          res.status(500).json({ error: `Failed to spawn SWMM engine: ${err.message}` });
+        });
+      } catch (error: any) {
+        res.status(500).json({ error: error.message });
+      }
+    } else {
+      res.status(404).json({ error: 'Local engine not available', useRemote: true });
+    }
+  });
+
   app.get("/api/swmm-proxy/status", async (_req: Request, res: Response) => {
     try {
       const localFound = existsSync(SWMM_ENGINE_PATH);
