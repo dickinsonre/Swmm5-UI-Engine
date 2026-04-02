@@ -38,10 +38,12 @@ Priority on startup: Local > WASM > Remote > Mock (first available wins).
 ## INP Parser (inp-parser.ts)
 Parses 30+ SWMM5 INP sections. Key data structures:
 - **Curves**: `Record<string, CurvePoint[]>` — first point stores `type` (STORAGE, PUMP1, etc.)
-- **Timeseries**: `Record<string, TimeSeriesPoint[]>` with dateTime+value
+- **Timeseries**: `Record<string, TimeSeriesPoint[]>` with dateTime+value. Parser handles 4-token `Name Date Time Value` format (date contains `/`, time contains `:`), combining date+time into single dateTime field. FILE-backed timeseries (`Name FILE filename`) are skipped.
 - **Outfalls**: FREE/NORMAL types have no stageData field; FIXED/TIDAL/TIMESERIES types do
 - **Storage**: TABULAR shape takes 1 curveParam (name); FUNCTIONAL takes 3 (A, B, C)
 - **XSection geom1**: `number | string` — string for IRREGULAR shape (transect name reference)
+- **Comment filtering**: `extractSections()` filters ALL lines starting with `;` (single or double), preventing ghost entries from comment lines in PUMPS/CURVES/etc.
+- **Patterns**: DAILY patterns use chunk size 7 (Sun-Sat), all other types use 6
 - **rawSections**: Unrecognized sections preserved verbatim for fidelity
 - `projectToInp()` outputs all structured sections: TITLE, OPTIONS, REPORT, RAINGAGES, SUBCATCHMENTS, SUBAREAS, INFILTRATION, JUNCTIONS, OUTFALLS, DIVIDERS, STORAGE, CONDUITS, PUMPS, WEIRS, ORIFICES, OUTLETS, XSECTIONS, LOSSES, COORDINATES, POLYGONS, SYMBOLS, VERTICES, LID_CONTROLS, LID_USAGE, AQUIFERS, GROUNDWATER, SNOWPACKS, TRANSECTS, STREETS, INLETS, INLET_USAGE, TIMESERIES, CURVES, PATTERNS, CONTROLS, POLLUTANTS, LANDUSES, DWF, LABELS, MAP
 - **Node/link validation**: conduits, pumps, weirs, orifices, outlets filtered by valid node IDs; xsections filtered by valid link IDs; DWF filtered by valid nodes; COVERAGES/BUILDUP/WASHOFF in rawSections filtered by valid landuse names

@@ -227,9 +227,10 @@ export async function registerRoutes(
         proc.stderr.on('data', (data) => { stderr += data.toString(); });
         proc.on('close', async (code) => {
           let reportContent = '';
-          try { reportContent = await readFile(rptPath, 'utf-8'); } catch {}
+          try { reportContent = await readFile(rptPath, 'utf-8'); } catch (e: any) { console.log('[swmm] Failed to read rpt:', e.message); }
           let outBase64 = '';
-          try { const outBuf = await readFile(outPath); outBase64 = outBuf.toString('base64'); } catch {}
+          try { const outBuf = await readFile(outPath); outBase64 = outBuf.toString('base64'); } catch (e: any) { console.log('[swmm] Failed to read out:', e.message); }
+          console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outBase64.length} base64 chars, exit=${code}, stdout=${stdout.substring(0, 200)}`);
           const hasErrors = reportContent.includes('ERROR') || stdout.includes('There are errors') || stdout.includes('has errors');
           try { await unlink(inpPath); } catch {}
           try { await unlink(rptPath); } catch {}

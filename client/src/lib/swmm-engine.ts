@@ -207,7 +207,9 @@ export function createLocalEngine(): SwmmEngine {
 
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({ error: resp.statusText }));
-        throw new Error(`SWMM engine error: ${errData.error || resp.statusText}`);
+        const err = new Error(`SWMM engine error: ${errData.error || resp.statusText}`) as any;
+        err.reportContent = errData.reportContent || null;
+        throw err;
       }
 
       if (onProgress) onProgress(70, 'Processing results...');

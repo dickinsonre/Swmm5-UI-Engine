@@ -475,12 +475,19 @@ export default function SwmmUI() {
       setSimProgressMsg('Complete');
       setResults(res);
       setReportContent(res.reportContent || null);
+      if (res.reportContent) {
+        setShowReportDialog(true);
+      }
       setSimStatus('current');
       setTimeStep(0);
       const engineLabel = engine.mode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engine.mode === 'wasm' ? 'EPA SWMM 5.2.4 (WASM)' : engine.mode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine';
       toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed (${engineLabel})` });
     } catch (e: any) {
       if (progressInterval) clearInterval(progressInterval);
+      if (e.reportContent != null && e.reportContent !== '') {
+        setReportContent(e.reportContent);
+        setShowReportDialog(true);
+      }
       if (abortCtrl.signal.aborted) {
         setSimStatus('none');
         setSimProgressMsg('');
@@ -489,10 +496,6 @@ export default function SwmmUI() {
       }
       setSimStatus('none');
       setSimProgressMsg('');
-      if (e.reportContent != null && e.reportContent !== '') {
-        setReportContent(e.reportContent);
-        setShowReportDialog(true);
-      }
       toast({ title: 'Simulation Error', description: e.message, variant: 'destructive' });
     } finally {
       simAbortRef.current = null;

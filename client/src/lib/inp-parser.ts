@@ -57,7 +57,7 @@ function extractSections(text: string): Record<string, string[]> {
       sections[currentSection] = [];
       continue;
     }
-    if (currentSection && line.trim() && !line.startsWith(';;')) {
+    if (currentSection && line.trim() && !line.trimStart().startsWith(';')) {
       sections[currentSection].push(line);
     }
   }
@@ -392,8 +392,15 @@ function parseTimeseries(lines: string[]): Record<string, TimeSeriesPoint[]> {
   for (const line of lines) {
     const p = splitFields(line);
     if (p.length >= 2) {
-      if (p[0] === 'FILE') continue;
-      if (p.length >= 3 && isNaN(parseFloat(p[1]))) {
+      if (p[0].toUpperCase() === 'FILE' || (p.length >= 2 && p[1].toUpperCase() === 'FILE')) continue;
+      if (p.length >= 4 && p[1].includes('/') && p[2].includes(':')) {
+        currentName = p[0];
+        if (!result[currentName]) result[currentName] = [];
+        result[currentName].push({
+          dateTime: p[1] + ' ' + p[2],
+          value: parseFloat2(p[3]),
+        });
+      } else if (p.length >= 3 && isNaN(parseFloat(p[1]))) {
         currentName = p[0];
         if (!result[currentName]) result[currentName] = [];
         result[currentName].push({
@@ -1008,7 +1015,10 @@ export function projectToInp(project: SwmmProject): string {
   if (validPumps.length) {
     lines.push('[PUMPS]');
     for (const p of validPumps) {
-      lines.push(`${p.id.padEnd(16)} ${p.fromNode.padEnd(16)} ${p.toNode.padEnd(16)} ${p.pumpCurve}    ${p.status}`);
+      let pumpLine = `${p.id.padEnd(16)} ${p.fromNode.padEnd(16)} ${p.toNode.padEnd(16)} ${p.pumpCurve}    ${p.status}`;
+      if (p.startupDepth !== undefined) pumpLine += `    ${p.startupDepth}`;
+      if (p.shutoffDepth !== undefined) pumpLine += `    ${p.shutoffDepth}`;
+      lines.push(pumpLine);
     }
     lines.push('');
   }
@@ -1190,7 +1200,7 @@ export function projectToInp(project: SwmmProject): string {
     lines.push('[TIMESERIES]');
     for (const [name, points] of Object.entries(project.timeseries)) {
       for (const pt of points) {
-        lines.push(`${name.padEnd(16)} ${pt.dateTime.padEnd(10)} ${pt.value}`);
+        lines.push(`${name.padEnd(16)} ${pt.dateTime.padEnd(16)} ${pt.value}`);
       }
     }
     lines.push('');
@@ -1215,8 +1225,9 @@ export function projectToInp(project: SwmmProject): string {
     lines.push('[PATTERNS]');
     for (const [name, pat] of Object.entries(project.patterns)) {
       const mults = pat.multipliers;
-      for (let i = 0; i < mults.length; i += 6) {
-        const chunk = mults.slice(i, i + 6);
+      const chunkSize = pat.type.toUpperCase() === 'DAILY' ? 7 : 6;
+      for (let i = 0; i < mults.length; i += chunkSize) {
+        const chunk = mults.slice(i, i + chunkSize);
         if (i === 0) {
           lines.push(`${name.padEnd(16)} ${pat.type.padEnd(12)} ${chunk.join('    ')}`);
         } else {
