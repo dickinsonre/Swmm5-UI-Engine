@@ -588,7 +588,7 @@ function getProperties(
     if (xs) {
       props.push(
         ['Shape', xs.shape],
-        ['Geom1', xs.geom1.toFixed(2)],
+        ['Geom1', typeof xs.geom1 === 'string' ? xs.geom1 : xs.geom1.toFixed(2)],
         ['Barrels', xs.barrels.toString()],
       );
     }

@@ -903,7 +903,7 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'length', label: 'Length', getValue: o => o.length?.toFixed(2) ?? '' },
         { key: 'roughness', label: 'Roughness', getValue: o => o.roughness?.toFixed(4) ?? '' },
         { key: 'shape', label: 'Shape', getValue: (o, p) => p.xsections[o.id]?.shape ?? '' },
-        { key: 'geom1', label: 'Geom1', getValue: (o, p) => p.xsections[o.id]?.geom1?.toFixed(2) ?? '' },
+        { key: 'geom1', label: 'Geom1', getValue: (o, p) => { const g = p.xsections[o.id]?.geom1; return g == null ? '' : typeof g === 'string' ? g : g.toFixed(2); } },
       );
       if (results) {
         base.push(
@@ -1157,7 +1157,7 @@ function getProperties(
     const xs = project.xsections[id];
     const props: [string, string][] = [['ID', c.id], ['Type', 'Conduit'], ['From Node', c.fromNode], ['To Node', c.toNode],
       ['Length (ft)', c.length.toFixed(2)], ['Roughness', c.roughness.toFixed(4)], ['In Offset', c.inOffset.toFixed(2)], ['Out Offset', c.outOffset.toFixed(2)]];
-    if (xs) props.push(['Shape', xs.shape], ['Geom1', xs.geom1.toFixed(2)], ['Barrels', xs.barrels.toString()]);
+    if (xs) props.push(['Shape', xs.shape], ['Geom1', typeof xs.geom1 === 'string' ? xs.geom1 : xs.geom1.toFixed(2)], ['Barrels', xs.barrels.toString()]);
     if (results?.timeSteps[timeStep]?.links[id]) {
       const lr = results.timeSteps[timeStep].links[id];
       props.push(['--- Results ---', ''], ['Flow (CFS)', lr.flow.toFixed(4)], ['Depth (ft)', lr.depth.toFixed(4)],

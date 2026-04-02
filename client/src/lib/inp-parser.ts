@@ -319,10 +319,11 @@ function parseXsections(lines: string[]): Record<string, XSection> {
   for (const line of lines) {
     const p = splitFields(line);
     if (p[0]) {
+      const shape = p[1] || 'CIRCULAR';
       result[p[0]] = {
         linkId: p[0],
-        shape: p[1] || 'CIRCULAR',
-        geom1: parseFloat2(p[2]),
+        shape,
+        geom1: shape === 'IRREGULAR' ? (p[2] || '') : parseFloat2(p[2]),
         geom2: parseFloat2(p[3]),
         geom3: parseFloat2(p[4]),
         geom4: parseFloat2(p[5]),
@@ -885,6 +886,22 @@ function padField(value: string | number, width: number): string {
 export function projectToInp(project: SwmmProject): string {
   const lines: string[] = [];
 
+  const allNodeIds = new Set([
+    ...project.junctions.map(j => j.id),
+    ...project.outfalls.map(o => o.id),
+    ...project.storageUnits.map(s => s.id),
+    ...project.dividers.map(d => d.id),
+  ]);
+  const allLinkIds = new Set([
+    ...project.conduits.filter(c => allNodeIds.has(c.fromNode) && allNodeIds.has(c.toNode)).map(c => c.id),
+    ...project.pumps.filter(p => allNodeIds.has(p.fromNode) && allNodeIds.has(p.toNode)).map(p => p.id),
+    ...project.orifices.filter(o => allNodeIds.has(o.fromNode) && allNodeIds.has(o.toNode)).map(o => o.id),
+    ...project.weirs.filter(w => allNodeIds.has(w.fromNode) && allNodeIds.has(w.toNode)).map(w => w.id),
+    ...project.outlets.filter(o => allNodeIds.has(o.fromNode) && allNodeIds.has(o.toNode)).map(o => o.id),
+  ]);
+  const allTransectNames = new Set(project.transects.map(t => t.id).filter(n => n && n !== '0'));
+  const allLanduseNames = new Set(project.landuses.map(l => l.id));
+
   lines.push('[TITLE]');
   project.title.forEach(t => lines.push(t));
   lines.push('');
@@ -960,44 +977,94 @@ export function projectToInp(project: SwmmProject): string {
     lines.push('');
   }
 
-  if (project.conduits.length) {
+  if (project.dividers.length) {
+    lines.push('[DIVIDERS]');
+    for (const d of project.dividers) {
+      const parts = [padField(d.id, 16), padField(d.elevation, 10), padField(d.divertedLink, 16), padField(d.type, 10)];
+      if (d.type === 'CUTOFF') {
+        parts.push(padField(d.cutoffFlow ?? 0, 10));
+      } else if (d.type === 'TABULAR') {
+        parts.push(padField(d.curve || '', 16));
+      } else if (d.type === 'WEIR') {
+        parts.push(padField(d.cutoffFlow ?? 0, 10));
+        parts.push(padField(d.curve || '', 16));
+      }
+      parts.push(padField(d.maxDepth, 10), padField(d.initDepth, 10), padField(d.surDepth, 10), String(d.aponded));
+      lines.push(parts.join(' '));
+    }
+    lines.push('');
+  }
+
+  const validConduits = project.conduits.filter(c => allNodeIds.has(c.fromNode) && allNodeIds.has(c.toNode));
+  if (validConduits.length) {
     lines.push('[CONDUITS]');
-    for (const c of project.conduits) {
+    for (const c of validConduits) {
       lines.push(`${padField(c.id, 16)} ${padField(c.fromNode, 16)} ${padField(c.toNode, 16)} ${padField(c.length, 12)} ${padField(c.roughness, 12)} ${padField(c.inOffset, 10)} ${padField(c.outOffset, 10)} ${padField(c.initFlow, 10)} ${c.maxFlow}`);
     }
     lines.push('');
   }
 
-  if (project.pumps.length) {
+  const validPumps = project.pumps.filter(p => allNodeIds.has(p.fromNode) && allNodeIds.has(p.toNode));
+  if (validPumps.length) {
     lines.push('[PUMPS]');
-    for (const p of project.pumps) {
+    for (const p of validPumps) {
       lines.push(`${p.id.padEnd(16)} ${p.fromNode.padEnd(16)} ${p.toNode.padEnd(16)} ${p.pumpCurve}    ${p.status}`);
     }
     lines.push('');
   }
 
-  if (project.weirs.length) {
+  const validWeirs = project.weirs.filter(w => allNodeIds.has(w.fromNode) && allNodeIds.has(w.toNode));
+  if (validWeirs.length) {
     lines.push('[WEIRS]');
-    for (const w of project.weirs) {
+    for (const w of validWeirs) {
       lines.push(`${w.id.padEnd(16)} ${w.fromNode.padEnd(16)} ${w.toNode.padEnd(16)} ${w.type}    ${w.crestHeight}    ${w.cd}    ${w.gated}    ${w.ec}    ${w.cd2}    ${w.surcharge}`);
     }
     lines.push('');
   }
 
-  if (Object.keys(project.xsections).length) {
-    lines.push('[XSECTIONS]');
-    for (const [id, xs] of Object.entries(project.xsections)) {
-      lines.push(`${padField(id, 16)} ${padField(xs.shape, 12)} ${padField(xs.geom1, 10)} ${padField(xs.geom2, 10)} ${padField(xs.geom3, 10)} ${padField(xs.geom4, 10)} ${xs.barrels}`);
+  const validOrifices = project.orifices.filter(o => allNodeIds.has(o.fromNode) && allNodeIds.has(o.toNode));
+  if (validOrifices.length) {
+    lines.push('[ORIFICES]');
+    for (const o of validOrifices) {
+      lines.push(`${padField(o.id, 16)} ${padField(o.fromNode, 16)} ${padField(o.toNode, 16)} ${padField(o.type, 12)} ${padField(o.offset, 10)} ${padField(o.cd, 10)} ${padField(o.gated, 6)} ${o.closeTime}`);
     }
     lines.push('');
   }
 
-  if (Object.keys(project.losses).length) {
-    lines.push('[LOSSES]');
-    for (const [id, loss] of Object.entries(project.losses)) {
-      lines.push(`${padField(id, 16)} ${padField(loss.entryLoss, 10)} ${padField(loss.exitLoss, 10)} ${padField(loss.avgLoss, 10)} ${padField(loss.flapGate ? 'YES' : 'NO', 6)} ${loss.seepageRate}`);
+  const validOutlets = project.outlets.filter(o => allNodeIds.has(o.fromNode) && allNodeIds.has(o.toNode));
+  if (validOutlets.length) {
+    lines.push('[OUTLETS]');
+    for (const o of validOutlets) {
+      lines.push(`${padField(o.id, 16)} ${padField(o.fromNode, 16)} ${padField(o.toNode, 16)} ${padField(o.offset, 10)} ${padField(o.type, 16)} ${o.curveOrTable}`);
     }
     lines.push('');
+  }
+
+  if (Object.keys(project.xsections).length) {
+    const validXsections = Object.entries(project.xsections).filter(([id, xs]) => {
+      if (!allLinkIds.has(id)) return false;
+      if (xs.shape === 'IRREGULAR' && (!xs.geom1 || xs.geom1 === '0' || !allTransectNames.has(String(xs.geom1)))) return false;
+      return true;
+    });
+    if (validXsections.length) {
+      lines.push('[XSECTIONS]');
+      for (const [id, xs] of validXsections) {
+        lines.push(`${padField(id, 16)} ${padField(xs.shape, 12)} ${padField(xs.geom1, 10)} ${padField(xs.geom2, 10)} ${padField(xs.geom3, 10)} ${padField(xs.geom4, 10)} ${xs.barrels}`);
+      }
+      lines.push('');
+    }
+  }
+
+  if (Object.keys(project.losses).length) {
+    const validLosses = Object.entries(project.losses).filter(([id]) => allLinkIds.has(id));
+    if (validLosses.length) {
+      lines.push('[LOSSES]');
+      for (const [id, loss] of validLosses) {
+        const flapVal = (typeof loss.flapGate === 'string') ? loss.flapGate : (loss.flapGate ? 'YES' : 'NO');
+        lines.push(`${padField(id, 16)} ${padField(loss.entryLoss, 10)} ${padField(loss.exitLoss, 10)} ${padField(loss.avgLoss, 10)} ${padField(flapVal, 6)} ${loss.seepageRate}`);
+      }
+      lines.push('');
+    }
   }
 
   if (Object.keys(project.coordinates).length) {
@@ -1168,29 +1235,84 @@ export function projectToInp(project: SwmmProject): string {
     lines.push('');
   }
 
-  if (project.dwf.length) {
+  if (Object.keys(project.reportOptions).length) {
+    lines.push('[REPORT]');
+    for (const [key, val] of Object.entries(project.reportOptions)) {
+      lines.push(`${key.padEnd(20)} ${val}`);
+    }
+    lines.push('');
+  }
+
+  if (project.pollutants.length) {
+    lines.push('[POLLUTANTS]');
+    for (const p of project.pollutants) {
+      lines.push(`${padField(p.id, 16)} ${padField(p.units, 6)} ${padField(p.cRain, 10)} ${padField(p.cGW, 10)} ${padField(p.cRDII, 10)} ${padField(p.kDecay, 10)} ${padField(p.snowOnly, 6)} ${padField(p.coPollutant, 16)} ${padField(p.coFraction, 10)} ${padField(p.cDWF, 10)} ${p.cInit}`);
+    }
+    lines.push('');
+  }
+
+  if (project.landuses.length) {
+    lines.push('[LANDUSES]');
+    for (const l of project.landuses) {
+      lines.push(`${padField(l.id, 16)} ${padField(l.sweepInterval, 10)} ${padField(l.sweepAvail, 10)} ${l.sweepLast}`);
+    }
+    lines.push('');
+  }
+
+  const validDwf = project.dwf.filter(d => allNodeIds.has(d.nodeId));
+  if (validDwf.length) {
     lines.push('[DWF]');
-    for (const d of project.dwf) {
+    for (const d of validDwf) {
       lines.push(`${d.nodeId.padEnd(16)} ${d.constituent.padEnd(12)} ${d.baseline}    ${d.patterns.join('    ')}`);
     }
     lines.push('');
   }
 
-  const allNodeIds = new Set([
-    ...project.junctions.map(j => j.id),
-    ...project.outfalls.map(o => o.id),
-    ...project.storageUnits.map(s => s.id),
-    ...project.dividers.map(d => d.id),
-  ]);
+  if (project.labels.length) {
+    lines.push('[LABELS]');
+    for (const lbl of project.labels) {
+      const parts = [lbl.x.toFixed(3).padStart(18), lbl.y.toFixed(3).padStart(18), `"${lbl.text}"`];
+      if (lbl.anchorNode) parts.push(lbl.anchorNode);
+      if (lbl.font) parts.push(`"${lbl.font}"`);
+      if (lbl.size != null) parts.push(String(lbl.size));
+      if (lbl.bold != null) parts.push(lbl.bold ? '1' : '0');
+      if (lbl.italic != null) parts.push(lbl.italic ? '1' : '0');
+      lines.push(parts.join('    '));
+    }
+    lines.push('');
+  }
+
+  if (project.mapExtent) {
+    lines.push('[MAP]');
+    lines.push(`DIMENSIONS ${project.mapExtent.x1} ${project.mapExtent.y1} ${project.mapExtent.x2} ${project.mapExtent.y2}`);
+    lines.push('Units      None');
+    lines.push('');
+  }
+
   const nodeRefSections = new Set(['INFLOWS', 'TREATMENT', 'RDII']);
 
   for (const [section, sectionLines] of Object.entries(project.rawSections)) {
-    const filtered = nodeRefSections.has(section)
-      ? sectionLines.filter(l => {
-          const firstField = l.trim().split(/\s+/)[0];
-          return !firstField || firstField.startsWith(';') || allNodeIds.has(firstField);
-        })
-      : sectionLines;
+    let filtered: string[];
+    if (nodeRefSections.has(section)) {
+      filtered = sectionLines.filter(l => {
+        const firstField = l.trim().split(/\s+/)[0];
+        return !firstField || firstField.startsWith(';') || allNodeIds.has(firstField);
+      });
+    } else if (section === 'COVERAGES' || section === 'COVERAGE') {
+      filtered = sectionLines.filter(l => {
+        const parts = l.trim().split(/\s+/);
+        if (!parts[0] || parts[0].startsWith(';')) return true;
+        return parts.length >= 2 && allLanduseNames.has(parts[1]);
+      });
+    } else if (section === 'BUILDUP' || section === 'WASHOFF') {
+      filtered = sectionLines.filter(l => {
+        const firstField = l.trim().split(/\s+/);
+        if (!firstField[0] || firstField[0].startsWith(';')) return true;
+        return allLanduseNames.has(firstField[0]);
+      });
+    } else {
+      filtered = sectionLines;
+    }
     if (filtered.length > 0) {
       lines.push(`[${section}]`);
       filtered.forEach(l => lines.push(l));

@@ -140,7 +140,7 @@ export interface Outlet {
 export interface XSection {
   linkId: string;
   shape: string;
-  geom1: number;
+  geom1: number | string;
   geom2: number;
   geom3: number;
   geom4: number;

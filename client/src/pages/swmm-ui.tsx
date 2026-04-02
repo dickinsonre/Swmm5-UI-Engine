@@ -20,10 +20,10 @@ import {
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
-  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp,
+  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -98,7 +98,9 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | null>(null);
+  const [calibrationData, setCalibrationData] = useState<CalibrationDataSet[]>([]);
+  const calibFileRef = useRef<HTMLInputElement>(null);
   const [importTab, setImportTab] = useState<'csv-nodes' | 'csv-links' | 'dxf' | 'geojson'>('csv-nodes');
   const [importMode, setImportMode] = useState<'add' | 'modify'>('add');
   const [importPreviewText, setImportPreviewText] = useState('');
@@ -1308,6 +1310,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" onClick={() => { if (reportContent) setShowReportDialog(true); else toast({ title: 'No Report', description: 'Run a simulation first to generate a report' }); }} testId="btn-report" />
             <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Profile" onClick={() => setOpenDialog('profilePlot')} testId="btn-profile-plot" />
             <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (results) setOpenDialog('timeSeries'); else toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); }} testId="btn-graph" />
+            <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => setOpenDialog('calibration')} testId="btn-calibration" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <ToolbarButton
               icon={<Scissors className="w-4 h-4" />}
@@ -2564,6 +2567,23 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={openDialog === 'calibration'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-5xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="calibration-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <Target className="w-4 h-4" /> Calibration Analysis
+            </DialogTitle>
+            <DialogDescription>Compare observed measurements against simulation results at calibration locations.</DialogDescription>
+          </DialogHeader>
+          <CalibrationContent
+            project={project}
+            results={results}
+            calibrationData={calibrationData}
+            onLoadData={(ds) => setCalibrationData(prev => [...prev, ds])}
+          />
+        </DialogContent>
+      </Dialog>
+
       {contextMenu && (
         <div
           className="fixed z-50 min-w-[140px] py-1 rounded shadow-xl"
@@ -2707,6 +2727,77 @@ function StatusItem({ text, color, bold, icon, onClick }: { text: string; color?
     </div>
   );
 }
+
+interface CalibrationPoint {
+  nodeId: string;
+  dateTime: string;
+  value: number;
+}
+
+interface CalibrationDataSet {
+  variable: string;
+  category: 'node' | 'link' | 'subcatch';
+  points: CalibrationPoint[];
+}
+
+function parseCalibrationFile(text: string): CalibrationDataSet {
+  const lines = text.split(/\r?\n/);
+  let variable = 'Head';
+  let category: 'node' | 'link' | 'subcatch' = 'node';
+  const points: CalibrationPoint[] = [];
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith(';')) {
+      const varMatch = line.match(/(?:variable|parameter)\s*[:\-=]\s*(\w+)/i);
+      if (varMatch) {
+        variable = varMatch[1];
+        const vl = variable.toLowerCase();
+        if (['flow', 'velocity', 'capacity'].includes(vl)) category = 'link';
+        else if (['runoff', 'rainfall', 'gwoutflow', 'snowdepth', 'evap', 'infiltration', 'moisture'].includes(vl)) category = 'subcatch';
+        else category = 'node';
+      }
+      const catMatch = line.match(/(?:category|type)\s*[:\-=]\s*(node|link|subcatch)/i);
+      if (catMatch) {
+        category = catMatch[1].toLowerCase() as 'node' | 'link' | 'subcatch';
+      }
+      continue;
+    }
+    const parts = line.split(/\s+/);
+    if (parts.length >= 4) {
+      const nodeId = parts[0];
+      const dateStr = parts[1];
+      const timeStr = parts[2];
+      const value = parseFloat(parts[3]);
+      if (!isNaN(value)) {
+        points.push({ nodeId, dateTime: `${dateStr} ${timeStr}`, value });
+      }
+    } else if (parts.length === 3) {
+      const nodeId = parts[0];
+      const dateTimeOrIdx = parts[1];
+      const value = parseFloat(parts[2]);
+      if (!isNaN(value)) {
+        points.push({ nodeId, dateTime: dateTimeOrIdx, value });
+      }
+    }
+  }
+
+  return { variable, category, points };
+}
+
+function normalizeDateTime(s: string): number {
+  const m = s.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)(?::(\d+))?/);
+  if (m) return new Date(+m[3], +m[1] - 1, +m[2], +m[4], +m[5], +(m[6] || 0)).getTime();
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? NaN : d.getTime();
+}
+
+const CALIB_COLORS = [
+  '#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2',
+  '#be185d', '#65a30d', '#0d9488', '#6366f1', '#ea580c', '#4f46e5',
+  '#059669', '#e11d48', '#84cc16', '#f59e0b', '#8b5cf6', '#06b6d4',
+  '#334155', '#9333ea', '#f43f5e', '#14b8a6', '#a855f7', '#eab308',
+];
 
 const TS_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
 const NODE_VARS: { key: string; label: string; unit: string }[] = [
@@ -2998,6 +3089,489 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
   );
 }
 
+function CalibrationContent({ project, results, calibrationData, onLoadData }: {
+  project: SwmmProject;
+  results: SimulationResults | null;
+  calibrationData: CalibrationDataSet[];
+  onLoadData: (ds: CalibrationDataSet) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<'data' | 'timeseries' | 'correlation' | 'statistics'>('correlation');
+  const [activeDataset, setActiveDataset] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      if (text) {
+        const ds = parseCalibrationFile(text);
+        onLoadData(ds);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const ds = calibrationData[activeDataset] || null;
+
+  const nodeIds = useMemo(() => {
+    if (!ds) return [];
+    return [...new Set(ds.points.map(p => p.nodeId))];
+  }, [ds]);
+
+  const nodeColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    nodeIds.forEach((id, i) => { map[id] = CALIB_COLORS[i % CALIB_COLORS.length]; });
+    return map;
+  }, [nodeIds]);
+
+  const tsIndex = useMemo(() => {
+    if (!results) return { byString: new Map<string, number>(), epochs: [] as number[] };
+    const byString = new Map<string, number>();
+    const epochs: number[] = [];
+    for (let i = 0; i < results.timeSteps.length; i++) {
+      byString.set(results.timeSteps[i].dateTime, i);
+      epochs.push(normalizeDateTime(results.timeSteps[i].dateTime));
+    }
+    return { byString, epochs };
+  }, [results]);
+
+  const correlationData = useMemo(() => {
+    if (!ds || !results) return [];
+    const points: { observed: number; computed: number; nodeId: string; dateTime: string }[] = [];
+    const varKey = ds.variable.toLowerCase();
+
+    const getComputed = (ts: typeof results.timeSteps[0], id: string): number | null => {
+      if (ds.category === 'node' && ts.nodes[id]) return (ts.nodes[id] as Record<string, number>)[varKey] ?? null;
+      if (ds.category === 'link' && ts.links[id]) return (ts.links[id] as Record<string, number>)[varKey] ?? null;
+      if (ds.category === 'subcatch' && ts.subcatchments[id]) return (ts.subcatchments[id] as Record<string, number>)[varKey] ?? null;
+      return null;
+    };
+
+    for (const pt of ds.points) {
+      let computed: number | null = null;
+
+      const exactIdx = tsIndex.byString.get(pt.dateTime);
+      if (exactIdx !== undefined) {
+        computed = getComputed(results.timeSteps[exactIdx], pt.nodeId);
+      }
+
+      if (computed === null) {
+        const ptTime = normalizeDateTime(pt.dateTime);
+        if (!isNaN(ptTime) && tsIndex.epochs.length > 0) {
+          let closestIdx = 0;
+          let closestDiff = Infinity;
+          for (let i = 0; i < tsIndex.epochs.length; i++) {
+            if (isNaN(tsIndex.epochs[i])) continue;
+            const diff = Math.abs(tsIndex.epochs[i] - ptTime);
+            if (diff < closestDiff) { closestDiff = diff; closestIdx = i; }
+          }
+          computed = getComputed(results.timeSteps[closestIdx], pt.nodeId);
+        }
+      }
+
+      if (computed !== null) {
+        points.push({ observed: pt.value, computed, nodeId: pt.nodeId, dateTime: pt.dateTime });
+      }
+    }
+    return points;
+  }, [ds, results, tsIndex]);
+
+  const correlationCoeff = useMemo(() => {
+    if (correlationData.length < 2) return null;
+    const n = correlationData.length;
+    const sumX = correlationData.reduce((s, p) => s + p.observed, 0);
+    const sumY = correlationData.reduce((s, p) => s + p.computed, 0);
+    const sumXY = correlationData.reduce((s, p) => s + p.observed * p.computed, 0);
+    const sumX2 = correlationData.reduce((s, p) => s + p.observed ** 2, 0);
+    const sumY2 = correlationData.reduce((s, p) => s + p.computed ** 2, 0);
+    const num = n * sumXY - sumX * sumY;
+    const den = Math.sqrt((n * sumX2 - sumX ** 2) * (n * sumY2 - sumY ** 2));
+    return den === 0 ? null : num / den;
+  }, [correlationData]);
+
+  const errorStats = useMemo(() => {
+    if (correlationData.length === 0) return null;
+    const errors = correlationData.map(p => p.computed - p.observed);
+    const absErrors = errors.map(e => Math.abs(e));
+    const sqErrors = errors.map(e => e ** 2);
+    const mean = errors.reduce((s, e) => s + e, 0) / errors.length;
+    const mae = absErrors.reduce((s, e) => s + e, 0) / absErrors.length;
+    const rmse = Math.sqrt(sqErrors.reduce((s, e) => s + e, 0) / sqErrors.length);
+    const meanObs = correlationData.reduce((s, p) => s + p.observed, 0) / correlationData.length;
+    const ssTot = correlationData.reduce((s, p) => s + (p.observed - meanObs) ** 2, 0);
+    const ssRes = sqErrors.reduce((s, e) => s + e, 0);
+    const nse = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
+    const pbias = meanObs === 0 ? 0 : (errors.reduce((s, e) => s + e, 0) / correlationData.reduce((s, p) => s + p.observed, 0)) * 100;
+
+    const perNode: Record<string, { observedMean: number; computedMean: number; mae: number; rmse: number; count: number; bias: number; sumObs: number; sumComp: number }> = {};
+    for (const p of correlationData) {
+      if (!perNode[p.nodeId]) perNode[p.nodeId] = { observedMean: 0, computedMean: 0, mae: 0, rmse: 0, count: 0, bias: 0, sumObs: 0, sumComp: 0 };
+      const err = p.computed - p.observed;
+      perNode[p.nodeId].mae += Math.abs(err);
+      perNode[p.nodeId].rmse += err ** 2;
+      perNode[p.nodeId].bias += err;
+      perNode[p.nodeId].sumObs += p.observed;
+      perNode[p.nodeId].sumComp += p.computed;
+      perNode[p.nodeId].count++;
+    }
+    for (const id of Object.keys(perNode)) {
+      const s = perNode[id];
+      s.observedMean = s.sumObs / s.count;
+      s.computedMean = s.sumComp / s.count;
+      s.mae /= s.count;
+      s.rmse = Math.sqrt(s.rmse / s.count);
+      s.bias /= s.count;
+    }
+
+    return { mean, mae, rmse, nse, pbias, n: correlationData.length, r: correlationCoeff, perNode };
+  }, [correlationData, correlationCoeff]);
+
+  const axisRange = useMemo(() => {
+    if (correlationData.length === 0) return { min: 0, max: 100 };
+    const allVals = [...correlationData.map(p => p.observed), ...correlationData.map(p => p.computed)];
+    const min = Math.min(...allVals);
+    const max = Math.max(...allVals);
+    const pad = (max - min) * 0.05 || 1;
+    return { min: min - pad, max: max + pad };
+  }, [correlationData]);
+
+  const correlationLookup = useMemo(() => {
+    const map = new Map<string, { computed: number }>();
+    for (const c of correlationData) {
+      map.set(`${c.nodeId}|${c.dateTime}`, { computed: c.computed });
+    }
+    return map;
+  }, [correlationData]);
+
+  const scatterDataByNode = useMemo(() => {
+    const map: Record<string, { observed: number; computed: number; nodeId: string; dateTime: string }[]> = {};
+    for (const pt of correlationData) {
+      if (!map[pt.nodeId]) map[pt.nodeId] = [];
+      map[pt.nodeId].push(pt);
+    }
+    return map;
+  }, [correlationData]);
+
+  const tsCompareData = useMemo(() => {
+    if (!ds || !results) return [];
+    return results.timeSteps.map(ts => {
+      const row: Record<string, number | string> = { time: ts.dateTime };
+      for (const nId of nodeIds) {
+        const varKey = ds.variable.toLowerCase();
+        if (ds.category === 'node' && ts.nodes[nId]) {
+          row[`${nId}_computed`] = (ts.nodes[nId] as Record<string, number>)[varKey] ?? 0;
+        } else if (ds.category === 'link' && ts.links[nId]) {
+          row[`${nId}_computed`] = (ts.links[nId] as Record<string, number>)[varKey] ?? 0;
+        } else if (ds.category === 'subcatch' && ts.subcatchments[nId]) {
+          row[`${nId}_computed`] = (ts.subcatchments[nId] as Record<string, number>)[varKey] ?? 0;
+        }
+      }
+      return row;
+    });
+  }, [ds, results, nodeIds]);
+
+  const tabs = [
+    { key: 'data' as const, label: 'Calibration Data' },
+    { key: 'timeseries' as const, label: 'Time Series Plot' },
+    { key: 'correlation' as const, label: 'Correlation Plot' },
+    { key: 'statistics' as const, label: 'Error Statistics' },
+  ];
+
+  return (
+    <div className="flex flex-col" style={{ minHeight: 480 }} data-testid="calibration-content">
+      <input ref={fileInputRef} type="file" accept=".dat,.txt,.csv" className="hidden" onChange={handleFileLoad} />
+
+      <div className="flex items-center gap-2 mb-3">
+        <div className="flex border border-[#d0d0d8] rounded overflow-hidden">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`px-3 py-1.5 text-[11px] font-medium transition-colors border-r last:border-r-0 border-[#d0d0d8] ${
+                activeTab === t.key ? 'bg-[#2c6eb5] text-white' : 'bg-[#f0f0f4] text-[#4a4a5a] hover:bg-[#e0e0e8]'
+              }`}
+              data-testid={`calib-tab-${t.key}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px] border-[#d0d0d8]"
+          onClick={() => fileInputRef.current?.click()}
+          data-testid="calib-load-file"
+        >
+          <Upload className="w-3 h-3 mr-1" /> Load Calibration File
+        </Button>
+        {calibrationData.length > 1 && (
+          <select
+            className="h-7 text-[11px] border border-[#d0d0d8] rounded px-2 bg-white"
+            value={activeDataset}
+            onChange={e => setActiveDataset(+e.target.value)}
+            data-testid="calib-dataset-select"
+          >
+            {calibrationData.map((d, i) => (
+              <option key={i} value={i}>{d.variable} ({d.points.length} pts)</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {!ds ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-[#9090a0] gap-3 py-10">
+          <Target className="w-10 h-10 text-[#c0c0cc]" />
+          <div className="text-sm">No calibration data loaded</div>
+          <div className="text-xs max-w-sm text-center">
+            Load a calibration file (SWMM .dat format) with observed measurements to compare against simulation results.
+          </div>
+          <div className="text-[10px] text-[#b0b0bc] max-w-sm text-center mt-1 font-mono">
+            Format: NodeID  MM/DD/YYYY  HH:MM  Value
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2 border-[#d0d0d8]"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="w-3.5 h-3.5 mr-1.5" /> Browse Files
+          </Button>
+        </div>
+      ) : activeTab === 'data' ? (
+        <div className="flex-1 overflow-auto border border-[#d0d0d8] rounded" style={{ maxHeight: 400 }}>
+          <table className="w-full text-[11px]" data-testid="calib-data-table">
+            <thead className="sticky top-0 bg-[#f0f0f4]">
+              <tr>
+                <th className="text-left px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Location</th>
+                <th className="text-left px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Date/Time</th>
+                <th className="text-right px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Observed</th>
+                <th className="text-right px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Computed</th>
+                <th className="text-right px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ds.points.map((pt, i) => {
+                const match = correlationLookup.get(`${pt.nodeId}|${pt.dateTime}`);
+                return (
+                  <tr key={i} className="hover:bg-[#f8f8fa] border-b border-[#e8e8ee]">
+                    <td className="px-3 py-1 font-mono">
+                      <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: nodeColorMap[pt.nodeId] || '#888' }} />
+                      {pt.nodeId}
+                    </td>
+                    <td className="px-3 py-1 text-[#6b6b7b]">{pt.dateTime}</td>
+                    <td className="px-3 py-1 text-right font-mono">{pt.value.toFixed(2)}</td>
+                    <td className="px-3 py-1 text-right font-mono">{match ? match.computed.toFixed(2) : '—'}</td>
+                    <td className="px-3 py-1 text-right font-mono" style={{ color: match ? (Math.abs(match.computed - pt.value) < 0.1 ? '#16a34a' : '#dc2626') : '#9090a0' }}>
+                      {match ? (match.computed - pt.value).toFixed(3) : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : activeTab === 'correlation' ? (
+        <div className="flex-1 flex flex-col">
+          <div className="text-center text-xs font-semibold text-[#2c6eb5] mb-1" data-testid="calib-corr-title">
+            Correlation Plot for {ds.variable}
+          </div>
+          {correlationData.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-[#9090a0] text-sm">
+              No matching observed/computed pairs found. Run a simulation first, then ensure timestamps match.
+            </div>
+          ) : (
+            <>
+              <div className="flex-1" style={{ minHeight: 340 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 10, right: 20, bottom: 40, left: 55 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                    <XAxis
+                      type="number"
+                      dataKey="observed"
+                      name="Observed"
+                      domain={[axisRange.min, axisRange.max]}
+                      tick={{ fontSize: 9, fill: '#6b6b7b' }}
+                      label={{ value: 'Observed', position: 'insideBottom', offset: -5, style: { fontSize: 11, fill: '#2a2a3e', fontWeight: 600 } }}
+                    />
+                    <YAxis
+                      type="number"
+                      dataKey="computed"
+                      name="Computed"
+                      domain={[axisRange.min, axisRange.max]}
+                      tick={{ fontSize: 9, fill: '#6b6b7b' }}
+                      label={{ value: 'Computed', angle: -90, position: 'insideLeft', offset: -5, style: { fontSize: 11, fill: '#2a2a3e', fontWeight: 600 } }}
+                      width={50}
+                    />
+                    <Tooltip
+                      contentStyle={{ fontSize: 11, backgroundColor: '#fff', border: '1px solid #d0d0d8', borderRadius: 6 }}
+                      formatter={(val: number, name: string) => [val.toFixed(3), name]}
+                      labelFormatter={(_, payload) => {
+                        const p = payload?.[0]?.payload;
+                        return p ? `${p.nodeId} — ${p.dateTime}` : '';
+                      }}
+                    />
+                    <ReferenceLine
+                      segment={[
+                        { x: axisRange.min, y: axisRange.min },
+                        { x: axisRange.max, y: axisRange.max }
+                      ]}
+                      stroke="#1a1a2e"
+                      strokeWidth={1}
+                      strokeDasharray="none"
+                    />
+                    {nodeIds.map((nId, idx) => (
+                      <Scatter
+                        key={nId}
+                        name={nId}
+                        data={scatterDataByNode[nId] || []}
+                        fill={nodeColorMap[nId]}
+                        shape="cross"
+                        legendType="cross"
+                      />
+                    ))}
+                    <Legend
+                      wrapperStyle={{ fontSize: 10 }}
+                      iconSize={10}
+                    />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+              {correlationCoeff !== null && (
+                <div className="text-right text-xs font-medium mt-1 pr-4" style={{ color: '#2c6eb5' }} data-testid="calib-corr-coeff">
+                  Correlation Coeff. = {correlationCoeff.toFixed(2)}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : activeTab === 'timeseries' ? (
+        <div className="flex-1 flex flex-col">
+          <div className="text-center text-xs font-semibold text-[#2c6eb5] mb-1">
+            Time Series Comparison — {ds.variable}
+          </div>
+          {nodeIds.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-[#9090a0] text-sm">No data to display</div>
+          ) : (
+            <div className="flex-1" style={{ minHeight: 340 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={tsCompareData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#6b6b7b' }} interval="preserveStartEnd" minTickGap={50} />
+                  <YAxis tick={{ fontSize: 9, fill: '#6b6b7b' }} width={55} />
+                  <Tooltip contentStyle={{ fontSize: 11, backgroundColor: '#fff', border: '1px solid #d0d0d8', borderRadius: 6 }} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  {nodeIds.map((nId, idx) => (
+                    <Line
+                      key={nId}
+                      type="monotone"
+                      dataKey={`${nId}_computed`}
+                      name={`${nId} (computed)`}
+                      stroke={nodeColorMap[nId]}
+                      strokeWidth={1.5}
+                      dot={false}
+                    />
+                  ))}
+                  {nodeIds.map(nId => {
+                    const pts = ds.points.filter(p => p.nodeId === nId);
+                    return pts.map((pt, pi) => (
+                      <ReferenceLine
+                        key={`obs-${nId}-${pi}`}
+                        x={pt.dateTime}
+                        stroke={nodeColorMap[nId]}
+                        strokeDasharray="4 2"
+                        strokeOpacity={0.4}
+                      />
+                    ));
+                  })}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      ) : activeTab === 'statistics' ? (
+        <div className="flex-1 overflow-auto">
+          {!errorStats ? (
+            <div className="flex-1 flex items-center justify-center text-[#9090a0] text-sm py-10">
+              No calibration data with matching simulation results
+            </div>
+          ) : (
+            <div className="space-y-4" data-testid="calib-error-stats">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Mean Error', value: errorStats.mean.toFixed(4) },
+                  { label: 'MAE', value: errorStats.mae.toFixed(4) },
+                  { label: 'RMSE', value: errorStats.rmse.toFixed(4) },
+                  { label: 'Correlation (R)', value: errorStats.r?.toFixed(4) ?? '—' },
+                  { label: 'NSE', value: errorStats.nse.toFixed(4) },
+                  { label: 'Percent Bias', value: `${errorStats.pbias.toFixed(2)}%` },
+                  { label: 'Sample Count', value: String(errorStats.n) },
+                  { label: 'Locations', value: String(Object.keys(errorStats.perNode).length) },
+                ].map(s => (
+                  <div key={s.label} className="bg-[#f8f8fa] border border-[#e0e0e8] rounded-lg p-3 text-center">
+                    <div className="text-[10px] text-[#6b6b7b] mb-1">{s.label}</div>
+                    <div className="text-sm font-mono font-semibold text-[#2a2a3e]">{s.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-xs font-semibold text-[#2c3e6b] mt-2">
+                Calibration Report for {ds?.variable || 'Head'}
+              </div>
+              <div className="overflow-auto border border-[#d0d0d8] rounded" style={{ maxHeight: 300 }}>
+                <table className="w-full text-[11px] font-mono" data-testid="calib-per-node-stats">
+                  <thead className="sticky top-0 bg-[#f0f0f4]">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]" rowSpan={2}>Location</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]" rowSpan={2}>Num<br/>Obs</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Observed</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Computed</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Mean</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">RMS</th>
+                    </tr>
+                    <tr>
+                      <th className="text-right px-3 py-1 font-medium text-[#6b6b7b] border-b border-[#d0d0d8] text-[10px]">Mean</th>
+                      <th className="text-right px-3 py-1 font-medium text-[#6b6b7b] border-b border-[#d0d0d8] text-[10px]">Mean</th>
+                      <th className="text-right px-3 py-1 font-medium text-[#6b6b7b] border-b border-[#d0d0d8] text-[10px]">Error</th>
+                      <th className="text-right px-3 py-1 font-medium text-[#6b6b7b] border-b border-[#d0d0d8] text-[10px]">Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-[#d0d0d8] bg-[#f8f8fa]">
+                      <td colSpan={6} className="px-3 py-0.5 text-[9px] text-[#9090a0]">
+                        {'—'.repeat(60)}
+                      </td>
+                    </tr>
+                    {Object.entries(errorStats.perNode).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })).map(([nId, s]) => (
+                      <tr key={nId} className="hover:bg-[#f8f8fa] border-b border-[#e8e8ee]">
+                        <td className="px-3 py-1">
+                          <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: nodeColorMap[nId] || '#888' }} />
+                          {nId}
+                        </td>
+                        <td className="px-3 py-1 text-right">{s.count}</td>
+                        <td className="px-3 py-1 text-right">{s.observedMean.toFixed(2)}</td>
+                        <td className="px-3 py-1 text-right">{s.computedMean.toFixed(2)}</td>
+                        <td className="px-3 py-1 text-right">{s.mae.toFixed(3)}</td>
+                        <td className="px-3 py-1 text-right">{s.rmse.toFixed(3)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-2 text-[10px] text-[#6b6b7b] font-mono" data-testid="calib-report-correlation">
+                Correlation: {errorStats.r !== null ? errorStats.r.toFixed(4) : '—'}  |  NSE: {errorStats.nse.toFixed(4)}  |  PBIAS: {errorStats.pbias.toFixed(2)}%
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ProfilePlotContent({ project, results, timeStep }: {
   project: SwmmProject;
   results: SimulationResults | null;
@@ -3052,7 +3626,7 @@ function ProfilePlotContent({ project, results, timeStep }: {
       const fromElev = fromJunction.elevation ?? 0;
       const toElev = toJunction.elevation ?? 0;
       const xs = project.xsections[conduit.id];
-      const geom1 = xs?.geom1 ?? 1;
+      const geom1 = xs ? (typeof xs.geom1 === 'number' ? xs.geom1 : 1) : 1;
       const conduitLength = conduit.length ?? 100;
       const inOff = conduit.inOffset ?? 0;
       const outOff = conduit.outOffset ?? 0;

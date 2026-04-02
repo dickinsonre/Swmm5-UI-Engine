@@ -41,8 +41,10 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - **Timeseries**: `Record<string, TimeSeriesPoint[]>` with dateTime+value
 - **Outfalls**: FREE/NORMAL types have no stageData field; FIXED/TIDAL/TIMESERIES types do
 - **Storage**: TABULAR shape takes 1 curveParam (name); FUNCTIONAL takes 3 (A, B, C)
+- **XSection geom1**: `number | string` — string for IRREGULAR shape (transect name reference)
 - **rawSections**: Unrecognized sections preserved verbatim for fidelity
-- `projectToInp()` outputs all sections including TIMESERIES, CURVES, PATTERNS, CONTROLS, DWF
+- `projectToInp()` outputs all structured sections: TITLE, OPTIONS, REPORT, RAINGAGES, SUBCATCHMENTS, SUBAREAS, INFILTRATION, JUNCTIONS, OUTFALLS, DIVIDERS, STORAGE, CONDUITS, PUMPS, WEIRS, ORIFICES, OUTLETS, XSECTIONS, LOSSES, COORDINATES, POLYGONS, SYMBOLS, VERTICES, LID_CONTROLS, LID_USAGE, AQUIFERS, GROUNDWATER, SNOWPACKS, TRANSECTS, STREETS, INLETS, INLET_USAGE, TIMESERIES, CURVES, PATTERNS, CONTROLS, POLLUTANTS, LANDUSES, DWF, LABELS, MAP
+- **Node/link validation**: conduits, pumps, weirs, orifices, outlets filtered by valid node IDs; xsections filtered by valid link IDs; DWF filtered by valid nodes; COVERAGES/BUILDUP/WASHOFF in rawSections filtered by valid landuse names
 
 ## Design Theme
 - Title bar: `#2c3e6b`, Menu bar: `#3a5070`, Toolbar/status: `#f0f0f4`, Panels: `#f8f8fa`

@@ -88,7 +88,7 @@ export function computeCflAnalysis(project: SwmmProject): CflAnalysisResult {
 
   for (const conduit of project.conduits) {
     const xs = project.xsections[conduit.id];
-    const diameter = xs ? xs.geom1 : 1;
+    const diameter = xs ? (typeof xs.geom1 === 'number' ? xs.geom1 : 1) : 1;
     const shape = xs ? xs.shape : 'CIRCULAR';
 
     if (shape.toUpperCase() === 'DUMMY' || shape.toUpperCase() === 'IRREGULAR') {
@@ -177,7 +177,7 @@ export function discretizeProject(
   if (settings.lengtheningEnabled && settings.lengtheningStep > 0) {
     for (const c of workingConduits) {
       const xs = project.xsections[c.id];
-      const diameter = xs ? xs.geom1 : 1;
+      const diameter = xs ? (typeof xs.geom1 === 'number' ? xs.geom1 : 1) : 1;
       const celerity = Math.sqrt(g * diameter);
       const minLength = +(celerity * settings.lengtheningStep).toFixed(2);
       if (c.length < minLength) {
@@ -206,7 +206,7 @@ export function discretizeProject(
 
   for (const conduit of workingConduits) {
     const xs = project.xsections[conduit.id];
-    const diameter = xs ? xs.geom1 : 1;
+    const diameter = xs ? (typeof xs.geom1 === 'number' ? xs.geom1 : 1) : 1;
     const shape = xs ? xs.shape.toUpperCase() : 'CIRCULAR';
 
     const shouldSplit = !flaggedIds || flaggedIds.has(conduit.id);

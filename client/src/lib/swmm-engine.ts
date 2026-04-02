@@ -606,7 +606,7 @@ function generateMockResults(project: SwmmProject): SimulationResults {
       const lag = i * 1.5;
       const intensity = Math.max(0, Math.exp(-decayRate * Math.abs(t - peakTime - lag)) * Math.sin(Math.PI * Math.min(Math.max(0, t - lag) / peakTime, 1)));
       const xs = project.xsections[l.id];
-      const maxDia = xs ? xs.geom1 : 2;
+      const maxDia = xs ? (typeof xs.geom1 === 'number' ? xs.geom1 : 2) : 2;
       const flow = intensity * maxDia * 3;
       const depth = intensity * maxDia * 0.6;
       links[l.id] = {
