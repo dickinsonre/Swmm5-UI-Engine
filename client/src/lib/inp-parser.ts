@@ -161,11 +161,22 @@ function parseJunctions(lines: string[]): Junction[] {
 function parseOutfalls(lines: string[]): Outfall[] {
   return lines.map(line => {
     const p = splitFields(line);
+    const type = p[2] || 'FREE';
+    if (type === 'FREE' || type === 'NORMAL') {
+      return {
+        id: p[0],
+        elevation: parseFloat2(p[1]),
+        type,
+        stageData: '',
+        gated: p[3] || 'NO',
+        routeTo: p[4],
+      };
+    }
     return {
       id: p[0],
       elevation: parseFloat2(p[1]),
-      type: p[2] || 'FREE',
-      stageData: p[3],
+      type,
+      stageData: p[3] || '',
       gated: p[4] || 'NO',
       routeTo: p[5],
     };
@@ -193,18 +204,31 @@ function parseDividers(lines: string[]): Divider[] {
 function parseStorage(lines: string[]): StorageUnit[] {
   return lines.map(line => {
     const p = splitFields(line);
+    const shape = p[4] || 'TABULAR';
+    let curveParams: string[];
+    let restIdx: number;
+    if (shape === 'TABULAR') {
+      curveParams = [p[5] || ''];
+      restIdx = 6;
+    } else if (shape === 'FUNCTIONAL') {
+      curveParams = p.slice(5, 8);
+      restIdx = 8;
+    } else {
+      curveParams = p.slice(5, 8);
+      restIdx = 8;
+    }
     return {
       id: p[0],
       elevation: parseFloat2(p[1]),
       maxDepth: parseFloat2(p[2]),
       initDepth: parseFloat2(p[3]),
-      shape: p[4] || 'TABULAR',
-      curveParams: p.slice(5, 8),
-      surDepth: parseFloat2(p[8]),
-      fevap: parseFloat2(p[9]),
-      psi: p[10] ? parseFloat2(p[10]) : undefined,
-      ksat: p[11] ? parseFloat2(p[11]) : undefined,
-      imd: p[12] ? parseFloat2(p[12]) : undefined,
+      shape,
+      curveParams,
+      surDepth: parseFloat2(p[restIdx]),
+      fevap: parseFloat2(p[restIdx + 1]),
+      psi: p[restIdx + 2] ? parseFloat2(p[restIdx + 2]) : undefined,
+      ksat: p[restIdx + 3] ? parseFloat2(p[restIdx + 3]) : undefined,
+      imd: p[restIdx + 4] ? parseFloat2(p[restIdx + 4]) : undefined,
     };
   }).filter(s => s.id);
 }
@@ -330,12 +354,20 @@ function parseLosses(lines: string[]): Record<string, LossData> {
 
 function parseCurves(lines: string[]): Record<string, CurvePoint[]> {
   const result: Record<string, CurvePoint[]> = {};
+  const curveTypes: Record<string, string> = {};
   for (const line of lines) {
     const p = splitFields(line);
+    if (p.length < 2) continue;
+    const name = p[0];
+    if (p.length === 2 && isNaN(parseFloat(p[1]))) {
+      curveTypes[name] = p[1];
+      if (!result[name]) result[name] = [];
+      continue;
+    }
     if (p.length >= 3) {
-      const name = p[0];
       let xIdx = 1;
       if (isNaN(parseFloat(p[1]))) {
+        curveTypes[name] = p[1];
         xIdx = 2;
       }
       if (!result[name]) result[name] = [];
@@ -343,6 +375,11 @@ function parseCurves(lines: string[]): Record<string, CurvePoint[]> {
         x: parseFloat2(p[xIdx]),
         y: parseFloat2(p[xIdx + 1]),
       });
+    }
+  }
+  for (const [name, points] of Object.entries(result)) {
+    if (curveTypes[name] && points.length > 0) {
+      points[0].type = curveTypes[name];
     }
   }
   return result;
@@ -901,7 +938,11 @@ export function projectToInp(project: SwmmProject): string {
   if (project.outfalls.length) {
     lines.push('[OUTFALLS]');
     for (const o of project.outfalls) {
-      lines.push(`${o.id.padEnd(16)} ${o.elevation}    ${o.type}    ${o.stageData || ''}    ${o.gated}`);
+      if (o.type === 'FREE' || o.type === 'NORMAL') {
+        lines.push(`${o.id.padEnd(16)} ${padField(o.elevation, 10)} ${o.type.padEnd(12)} ${o.gated || 'NO'}    ${o.routeTo || ''}`);
+      } else {
+        lines.push(`${o.id.padEnd(16)} ${padField(o.elevation, 10)} ${o.type.padEnd(12)} ${o.stageData || ''}    ${o.gated || 'NO'}    ${o.routeTo || ''}`);
+      }
     }
     lines.push('');
   }
@@ -1069,6 +1110,63 @@ export function projectToInp(project: SwmmProject): string {
     lines.push('[INLET_USAGE]');
     for (const iu of project.inletUsage) {
       lines.push(`${iu.linkId.padEnd(16)} ${iu.inletId.padEnd(16)} ${iu.nodeId.padEnd(16)} ${iu.number}    ${iu.pctClogged}    ${iu.maxFlow}    ${iu.params.join('    ')}`);
+    }
+    lines.push('');
+  }
+
+  if (Object.keys(project.timeseries).length) {
+    lines.push('[TIMESERIES]');
+    for (const [name, points] of Object.entries(project.timeseries)) {
+      for (const pt of points) {
+        lines.push(`${name.padEnd(16)} ${pt.dateTime.padEnd(10)} ${pt.value}`);
+      }
+    }
+    lines.push('');
+  }
+
+  if (Object.keys(project.curves).length) {
+    lines.push('[CURVES]');
+    for (const [name, points] of Object.entries(project.curves)) {
+      for (let i = 0; i < points.length; i++) {
+        const pt = points[i];
+        if (pt.type) {
+          lines.push(`${name.padEnd(16)} ${pt.type.padEnd(12)} ${pt.x}    ${pt.y}`);
+        } else {
+          lines.push(`${name.padEnd(16)} ${pt.x}    ${pt.y}`);
+        }
+      }
+    }
+    lines.push('');
+  }
+
+  if (Object.keys(project.patterns).length) {
+    lines.push('[PATTERNS]');
+    for (const [name, pat] of Object.entries(project.patterns)) {
+      const mults = pat.multipliers;
+      for (let i = 0; i < mults.length; i += 6) {
+        const chunk = mults.slice(i, i + 6);
+        if (i === 0) {
+          lines.push(`${name.padEnd(16)} ${pat.type.padEnd(12)} ${chunk.join('    ')}`);
+        } else {
+          lines.push(`${name.padEnd(16)}              ${chunk.join('    ')}`);
+        }
+      }
+    }
+    lines.push('');
+  }
+
+  if (project.controls.length) {
+    lines.push('[CONTROLS]');
+    for (const ctrl of project.controls) {
+      lines.push(ctrl);
+    }
+    lines.push('');
+  }
+
+  if (project.dwf.length) {
+    lines.push('[DWF]');
+    for (const d of project.dwf) {
+      lines.push(`${d.nodeId.padEnd(16)} ${d.constituent.padEnd(12)} ${d.baseline}    ${d.patterns.join('    ')}`);
     }
     lines.push('');
   }

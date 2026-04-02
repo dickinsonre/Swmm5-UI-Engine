@@ -11,7 +11,7 @@ import { parseSwmmOut } from './swmm-out-parser';
 
 export interface SwmmEngine {
   isLoaded: boolean;
-  mode: 'mock' | 'remote' | 'local';
+  mode: 'mock' | 'remote' | 'local' | 'wasm';
   run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults>;
   getStatus(): string;
 }
@@ -38,6 +38,147 @@ export async function checkLocalEngine(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+let wasmModule: any = null;
+let wasmLoading: Promise<any> | null = null;
+
+async function loadWasmModule(onProgress?: (pct: number, msg: string) => void): Promise<any> {
+  if (wasmModule) return wasmModule;
+  if (wasmLoading) return wasmLoading;
+
+  wasmLoading = (async () => {
+    if (onProgress) onProgress(5, 'Downloading SWMM 5.2.4 WASM engine...');
+
+    const [wasmResp, dataResp] = await Promise.all([
+      fetch('/js.wasm'),
+      fetch('/js.data'),
+    ]);
+    if (!wasmResp.ok) throw new Error('Failed to download js.wasm: HTTP ' + wasmResp.status);
+    if (!dataResp.ok) throw new Error('Failed to download js.data: HTTP ' + dataResp.status);
+
+    const [wasmBinary, dataBuffer] = await Promise.all([
+      wasmResp.arrayBuffer(),
+      dataResp.arrayBuffer(),
+    ]);
+
+    if (onProgress) onProgress(20, 'Initializing SWMM WASM module...');
+
+    const mod = await new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('SWMM WASM init timeout (45s)')), 45000);
+
+      (window as any).Module = {
+        wasmBinary,
+        noInitialRun: true,
+        print: (t: string) => console.log('[SWMM WASM]', t),
+        printErr: (t: string) => console.warn('[SWMM WASM]', t),
+        locateFile: (path: string) => {
+          if (path.endsWith('.data')) return URL.createObjectURL(new Blob([dataBuffer]));
+          return '/' + path;
+        },
+        onRuntimeInitialized: () => {
+          clearTimeout(timeout);
+          resolve((window as any).Module);
+        },
+        onAbort: (what: any) => {
+          clearTimeout(timeout);
+          reject(new Error('SWMM WASM aborted: ' + what));
+        },
+      };
+
+      const script = document.createElement('script');
+      script.src = '/swmm_engine.js';
+      script.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error('Failed to load swmm_engine.js'));
+      };
+      document.head.appendChild(script);
+    });
+
+    wasmModule = mod;
+    return mod;
+  })();
+
+  try {
+    return await wasmLoading;
+  } catch (e) {
+    wasmLoading = null;
+    throw e;
+  }
+}
+
+export async function checkWasmEngine(): Promise<boolean> {
+  try {
+    const resp = await fetch('/swmm_engine.js', { method: 'HEAD' });
+    if (!resp.ok) return false;
+    const ct = resp.headers.get('content-type') || '';
+    return ct.includes('javascript');
+  } catch {
+    return false;
+  }
+}
+
+export function createWasmEngine(): SwmmEngine {
+  return {
+    isLoaded: true,
+    mode: 'wasm' as const,
+    async run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults> {
+      const inpText = projectToInp(project);
+
+      const mod = await loadWasmModule(onProgress);
+
+      if (onProgress) onProgress(30, 'Writing model to WASM filesystem...');
+
+      mod.FS.writeFile('model.inp', inpText);
+      try { mod.FS.writeFile('model.rpt', ''); } catch {}
+      try { mod.FS.writeFile('model.out', ''); } catch {}
+
+      if (onProgress) onProgress(35, 'Running SWMM 5.2.4 (WASM)...');
+
+      const swmm_run = mod.cwrap('swmm_run', 'number', ['string', 'string', 'string']);
+      const errCode = swmm_run('model.inp', 'model.rpt', 'model.out');
+
+      let rptText = '';
+      try {
+        const rptData = mod.FS.readFile('model.rpt');
+        rptText = new TextDecoder().decode(rptData);
+      } catch {}
+
+      if (errCode !== 0) {
+        const errLines = rptText.split('\n').filter((l: string) => /ERROR|WARNING/i.test(l)).slice(0, 5).join('; ');
+        const err = new Error(`SWMM error code ${errCode}. ${errLines || 'Check report for details.'}`) as any;
+        err.reportContent = rptText;
+        throw err;
+      }
+
+      if (onProgress) onProgress(80, 'Parsing simulation results...');
+
+      let parsed: SimulationResults;
+      try {
+        const outData = mod.FS.readFile('model.out');
+        if (outData && outData.length > 100) {
+          parsed = parseSwmmOut(outData.buffer, project);
+          parsed.reportContent = rptText;
+        } else {
+          parsed = parseRptToResults(rptText, project);
+        }
+      } catch (outErr) {
+        console.warn('Failed to parse WASM .out binary, falling back to .rpt:', outErr);
+        parsed = parseRptToResults(rptText, project);
+      }
+
+      try { mod.FS.unlink('model.inp'); } catch {}
+      try { mod.FS.unlink('model.rpt'); } catch {}
+      try { mod.FS.unlink('model.out'); } catch {}
+
+      if (onProgress) onProgress(100, 'Simulation complete');
+
+      return parsed;
+    },
+    getStatus() {
+      return 'EPA SWMM 5.2.4 (WASM In-Browser)';
+    },
+  };
 }
 
 export function createLocalEngine(): SwmmEngine {

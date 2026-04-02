@@ -149,6 +149,7 @@ export interface XSection {
 }
 
 export interface CurvePoint {
+  type?: string;
   x: number;
   y: number;
 }
