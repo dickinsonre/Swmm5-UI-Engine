@@ -938,10 +938,15 @@ export function projectToInp(project: SwmmProject): string {
   if (project.outfalls.length) {
     lines.push('[OUTFALLS]');
     for (const o of project.outfalls) {
+      const routeTo = (o.routeTo && o.routeTo !== 'NO' && o.routeTo !== 'YES') ? o.routeTo : '';
       if (o.type === 'FREE' || o.type === 'NORMAL') {
-        lines.push(`${o.id.padEnd(16)} ${padField(o.elevation, 10)} ${o.type.padEnd(12)} ${o.gated || 'NO'}    ${o.routeTo || ''}`);
+        const parts = [o.id.padEnd(16), padField(o.elevation, 10), o.type.padEnd(12), o.gated || 'NO'];
+        if (routeTo) parts.push(routeTo);
+        lines.push(parts.join('    '));
       } else {
-        lines.push(`${o.id.padEnd(16)} ${padField(o.elevation, 10)} ${o.type.padEnd(12)} ${o.stageData || ''}    ${o.gated || 'NO'}    ${o.routeTo || ''}`);
+        const parts = [o.id.padEnd(16), padField(o.elevation, 10), o.type.padEnd(12), o.stageData || '', o.gated || 'NO'];
+        if (routeTo) parts.push(routeTo);
+        lines.push(parts.join('    '));
       }
     }
     lines.push('');
@@ -1171,10 +1176,26 @@ export function projectToInp(project: SwmmProject): string {
     lines.push('');
   }
 
+  const allNodeIds = new Set([
+    ...project.junctions.map(j => j.id),
+    ...project.outfalls.map(o => o.id),
+    ...project.storageUnits.map(s => s.id),
+    ...project.dividers.map(d => d.id),
+  ]);
+  const nodeRefSections = new Set(['INFLOWS', 'TREATMENT', 'RDII']);
+
   for (const [section, sectionLines] of Object.entries(project.rawSections)) {
-    lines.push(`[${section}]`);
-    sectionLines.forEach(l => lines.push(l));
-    lines.push('');
+    const filtered = nodeRefSections.has(section)
+      ? sectionLines.filter(l => {
+          const firstField = l.trim().split(/\s+/)[0];
+          return !firstField || firstField.startsWith(';') || allNodeIds.has(firstField);
+        })
+      : sectionLines;
+    if (filtered.length > 0) {
+      lines.push(`[${section}]`);
+      filtered.forEach(l => lines.push(l));
+      lines.push('');
+    }
   }
 
   return lines.join('\n');
