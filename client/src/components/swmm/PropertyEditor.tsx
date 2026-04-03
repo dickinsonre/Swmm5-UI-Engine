@@ -8,13 +8,18 @@ import type { XSection } from '@/lib/swmm-types';
 type FieldDef = {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'boolean' | 'readonly';
+  type: 'text' | 'number' | 'select' | 'boolean' | 'readonly' | 'subdialog';
   unit?: string;
   options?: string[];
   section: string;
   precision?: number;
   min?: number;
+  max?: number;
   step?: number;
+  required?: boolean;
+  visibleWhen?: { field: string; values: string[] };
+  subdialogType?: string;
+  helpText?: string;
 };
 
 function getJunctionFields(): FieldDef[] {
@@ -22,11 +27,15 @@ function getJunctionFields(): FieldDef[] {
     { key: 'id', label: 'Name', type: 'readonly', section: 'General' },
     { key: '_x', label: 'X-Coordinate', type: 'number', section: 'General', precision: 2 },
     { key: '_y', label: 'Y-Coordinate', type: 'number', section: 'General', precision: 2 },
-    { key: 'elevation', label: 'Invert Elevation', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2 },
-    { key: 'maxDepth', label: 'Max Depth', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, min: 0 },
+    { key: 'elevation', label: 'Invert Elevation', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, required: true, helpText: 'Invert elevation of the junction' },
+    { key: 'maxDepth', label: 'Max Depth', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, min: 0, helpText: '0 = uses distance to ground' },
     { key: 'initDepth', label: 'Initial Depth', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, min: 0 },
     { key: 'surDepth', label: 'Surcharge Depth', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, min: 0 },
     { key: 'aponded', label: 'Ponded Area', type: 'number', unit: 'ft²', section: 'Hydraulic', precision: 0, min: 0 },
+    { key: '_directInflows', label: 'Direct Inflows', type: 'subdialog', section: 'Inflows', subdialogType: 'directInflow' },
+    { key: '_dwfInflows', label: 'Dry Weather', type: 'subdialog', section: 'Inflows', subdialogType: 'dwfInflow' },
+    { key: '_rdiiInflows', label: 'RDII', type: 'subdialog', section: 'Inflows', subdialogType: 'rdiiInflow' },
+    { key: '_treatment', label: 'Treatment', type: 'subdialog', section: 'Treatment', subdialogType: 'treatment' },
   ];
 }
 
@@ -35,9 +44,11 @@ function getOutfallFields(): FieldDef[] {
     { key: 'id', label: 'Name', type: 'readonly', section: 'General' },
     { key: '_x', label: 'X-Coordinate', type: 'number', section: 'General', precision: 2 },
     { key: '_y', label: 'Y-Coordinate', type: 'number', section: 'General', precision: 2 },
-    { key: 'elevation', label: 'Invert Elevation', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2 },
+    { key: 'elevation', label: 'Invert Elevation', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, required: true },
     { key: 'type', label: 'Type', type: 'select', section: 'Hydraulic', options: ['FREE', 'NORMAL', 'FIXED', 'TIDAL', 'TIMESERIES'] },
-    { key: 'stageData', label: 'Stage Data', type: 'text', section: 'Hydraulic' },
+    { key: 'stageData', label: 'Fixed Stage', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, visibleWhen: { field: 'type', values: ['FIXED'] } },
+    { key: 'stageData', label: 'Tidal Curve', type: 'text', section: 'Hydraulic', visibleWhen: { field: 'type', values: ['TIDAL'] } },
+    { key: 'stageData', label: 'Time Series', type: 'text', section: 'Hydraulic', visibleWhen: { field: 'type', values: ['TIMESERIES'] } },
     { key: 'gated', label: 'Tide Gate', type: 'select', section: 'Hydraulic', options: ['YES', 'NO'] },
     { key: 'routeTo', label: 'Route To', type: 'text', section: 'Hydraulic' },
   ];
@@ -76,20 +87,26 @@ function getDividerFields(): FieldDef[] {
 function getConduitFields(): FieldDef[] {
   return [
     { key: 'id', label: 'Name', type: 'readonly', section: 'General' },
-    { key: 'fromNode', label: 'From Node', type: 'text', section: 'General' },
-    { key: 'toNode', label: 'To Node', type: 'text', section: 'General' },
-    { key: 'length', label: 'Length', type: 'number', unit: 'ft', section: 'Geometry', precision: 2, min: 0 },
-    { key: 'roughness', label: "Manning's N", type: 'number', section: 'Geometry', precision: 4, step: 0.001 },
+    { key: 'fromNode', label: 'From Node', type: 'text', section: 'General', required: true },
+    { key: 'toNode', label: 'To Node', type: 'text', section: 'General', required: true },
+    { key: 'length', label: 'Length', type: 'number', unit: 'ft', section: 'Geometry', precision: 2, min: 0.01, required: true },
+    { key: 'roughness', label: "Manning's N", type: 'number', section: 'Geometry', precision: 4, step: 0.001, min: 0.001, max: 1, required: true },
     { key: 'inOffset', label: 'Inlet Offset', type: 'number', unit: 'ft', section: 'Geometry', precision: 2, min: 0 },
     { key: 'outOffset', label: 'Outlet Offset', type: 'number', unit: 'ft', section: 'Geometry', precision: 2, min: 0 },
-    { key: '_xsShape', label: 'Shape', type: 'select', section: 'Cross-Section', options: ['CIRCULAR', 'RECT_OPEN', 'RECT_CLOSED', 'TRAPEZOIDAL', 'TRIANGULAR', 'HORIZ_ELLIPSE', 'VERT_ELLIPSE', 'ARCH', 'PARABOLIC', 'POWER', 'RECT_TRIANGULAR', 'RECT_ROUND', 'MOD_BASKETHANDLE', 'EGG', 'HORSESHOE', 'GOTHIC', 'CATENARY', 'SEMI_ELLIPTICAL', 'BASKETHANDLE', 'SEMI_CIRCULAR', 'IRREGULAR', 'CUSTOM', 'FORCE_MAIN'] },
-    { key: '_xsGeom1', label: 'Max Depth', type: 'number', unit: 'ft', section: 'Cross-Section', precision: 2 },
+    { key: '_xsShape', label: 'Shape', type: 'select', section: 'Cross-Section', options: ['CIRCULAR', 'FORCE_MAIN', 'FILLED_CIRCULAR', 'RECT_CLOSED', 'RECT_OPEN', 'TRAPEZOIDAL', 'TRIANGULAR', 'HORIZ_ELLIPSE', 'VERT_ELLIPSE', 'ARCH', 'PARABOLIC', 'POWER', 'RECT_TRIANGULAR', 'RECT_ROUND', 'MOD_BASKETHANDLE', 'EGG', 'HORSESHOE', 'GOTHIC', 'CATENARY', 'SEMI_ELLIPTICAL', 'BASKETHANDLE', 'SEMI_CIRCULAR', 'IRREGULAR', 'CUSTOM', 'STREET'], required: true },
+    { key: '_xsGeom1', label: 'Max Depth (Geom1)', type: 'number', unit: 'ft', section: 'Cross-Section', precision: 2, min: 0, required: true },
     { key: '_xsGeom2', label: 'Geom2', type: 'number', section: 'Cross-Section', precision: 2 },
     { key: '_xsGeom3', label: 'Geom3', type: 'number', section: 'Cross-Section', precision: 2 },
     { key: '_xsGeom4', label: 'Geom4', type: 'number', section: 'Cross-Section', precision: 2 },
     { key: '_xsBarrels', label: 'Barrels', type: 'number', section: 'Cross-Section', precision: 0, min: 1 },
+    { key: '_xsTransect', label: 'Transect', type: 'text', section: 'Cross-Section', visibleWhen: { field: '_xsShape', values: ['IRREGULAR'] } },
     { key: 'initFlow', label: 'Initial Flow', type: 'number', unit: 'CFS', section: 'Flow', precision: 2, min: 0 },
     { key: 'maxFlow', label: 'Max Flow', type: 'number', unit: 'CFS', section: 'Flow', precision: 2, min: 0 },
+    { key: '_lossEntry', label: 'Entry Loss Coeff', type: 'number', section: 'Losses', precision: 3, min: 0 },
+    { key: '_lossExit', label: 'Exit Loss Coeff', type: 'number', section: 'Losses', precision: 3, min: 0 },
+    { key: '_lossAvg', label: 'Avg Loss Coeff', type: 'number', section: 'Losses', precision: 3, min: 0 },
+    { key: '_lossFlapGate', label: 'Flap Gate', type: 'select', section: 'Losses', options: ['YES', 'NO'] },
+    { key: '_lossSeepage', label: 'Seepage Rate', type: 'number', unit: 'in/hr', section: 'Losses', precision: 3, min: 0 },
   ];
 }
 
@@ -145,23 +162,51 @@ function getOutletFields(): FieldDef[] {
   ];
 }
 
-function getSubcatchmentFields(): FieldDef[] {
+function getInfiltrationFields(method: string): FieldDef[] {
+  const m = (method || '').toUpperCase();
+  if (m === 'HORTON' || m === 'MODIFIED_HORTON') {
+    return [
+      { key: '_infiltVal0', label: 'Max Infil Rate', type: 'number', unit: 'in/hr', section: 'Infiltration', precision: 4, min: 0, helpText: 'Horton max infiltration rate' },
+      { key: '_infiltVal1', label: 'Min Infil Rate', type: 'number', unit: 'in/hr', section: 'Infiltration', precision: 4, min: 0, helpText: 'Horton min infiltration rate' },
+      { key: '_infiltVal2', label: 'Decay Constant', type: 'number', unit: '1/hr', section: 'Infiltration', precision: 4, min: 0, helpText: 'Horton decay constant' },
+    ];
+  }
+  if (m === 'CURVE_NUMBER') {
+    return [
+      { key: '_infiltVal0', label: 'Curve Number', type: 'number', section: 'Infiltration', precision: 1, min: 0, max: 100, helpText: 'SCS curve number' },
+      { key: '_infiltVal1', label: 'Conductivity', type: 'number', unit: 'in/hr', section: 'Infiltration', precision: 4, min: 0, helpText: 'Hydraulic conductivity (optional)' },
+      { key: '_infiltVal2', label: 'Drying Time', type: 'number', unit: 'days', section: 'Infiltration', precision: 1, min: 0, helpText: 'Time for fully saturated soil to dry' },
+    ];
+  }
+  return [
+    { key: '_infiltVal0', label: 'Suction Head', type: 'number', unit: 'in', section: 'Infiltration', precision: 2, min: 0, helpText: 'Green-Ampt suction head' },
+    { key: '_infiltVal1', label: 'Conductivity', type: 'number', unit: 'in/hr', section: 'Infiltration', precision: 4, min: 0, helpText: 'Green-Ampt hydraulic conductivity' },
+    { key: '_infiltVal2', label: 'Initial Deficit', type: 'number', section: 'Infiltration', precision: 3, min: 0, max: 1, helpText: 'Green-Ampt initial moisture deficit' },
+  ];
+}
+
+function getSubcatchmentFields(infiltMethod?: string): FieldDef[] {
   return [
     { key: 'id', label: 'Name', type: 'readonly', section: 'General' },
-    { key: 'rainGage', label: 'Rain Gage', type: 'text', section: 'General' },
-    { key: 'outlet', label: 'Outlet', type: 'text', section: 'General' },
-    { key: 'area', label: 'Area', type: 'number', unit: 'ac', section: 'Area', precision: 2, min: 0 },
-    { key: 'width', label: 'Width', type: 'number', unit: 'ft', section: 'Area', precision: 2, min: 0 },
-    { key: 'slope', label: '% Slope', type: 'number', unit: '%', section: 'Area', precision: 2, min: 0 },
-    { key: 'curbLen', label: 'Curb Length', type: 'number', unit: 'ft', section: 'Area', precision: 0, min: 0 },
-    { key: 'pctImperv', label: '% Impervious', type: 'number', unit: '%', section: 'Imperviousness', precision: 1, min: 0 },
-    { key: '_nImperv', label: 'N-Imperv', type: 'number', section: 'Imperviousness', precision: 4 },
-    { key: '_nPerv', label: 'N-Perv', type: 'number', section: 'Imperviousness', precision: 4 },
-    { key: '_sImperv', label: 'Dstore-Imperv', type: 'number', unit: 'in', section: 'Imperviousness', precision: 3 },
-    { key: '_sPerv', label: 'Dstore-Perv', type: 'number', unit: 'in', section: 'Imperviousness', precision: 3 },
-    { key: '_pctZero', label: '%Zero-Imperv', type: 'number', unit: '%', section: 'Imperviousness', precision: 1, min: 0 },
-    { key: '_routeTo', label: 'Subarea Routing', type: 'select', section: 'Imperviousness', options: ['OUTLET', 'IMPERV', 'PERV'] },
+    { key: 'rainGage', label: 'Rain Gage', type: 'text', section: 'General', required: true },
+    { key: 'outlet', label: 'Outlet', type: 'text', section: 'General', required: true },
+    { key: 'area', label: 'Area', type: 'number', unit: 'ac', section: 'Area/Geometry', precision: 2, min: 0, required: true },
+    { key: 'width', label: 'Width', type: 'number', unit: 'ft', section: 'Area/Geometry', precision: 2, min: 0, required: true },
+    { key: 'slope', label: '% Slope', type: 'number', unit: '%', section: 'Area/Geometry', precision: 2, min: 0, required: true },
+    { key: 'curbLen', label: 'Curb Length', type: 'number', unit: 'ft', section: 'Area/Geometry', precision: 0, min: 0 },
+    { key: 'pctImperv', label: '% Impervious', type: 'number', unit: '%', section: 'Imperviousness', precision: 1, min: 0, max: 100, required: true },
+    { key: '_nImperv', label: 'N-Imperv (Manning)', type: 'number', section: 'Imperviousness', precision: 4, min: 0, step: 0.001 },
+    { key: '_nPerv', label: 'N-Perv (Manning)', type: 'number', section: 'Imperviousness', precision: 4, min: 0, step: 0.001 },
+    { key: '_sImperv', label: 'Dstore-Imperv', type: 'number', unit: 'in', section: 'Imperviousness', precision: 3, min: 0 },
+    { key: '_sPerv', label: 'Dstore-Perv', type: 'number', unit: 'in', section: 'Imperviousness', precision: 3, min: 0 },
+    { key: '_pctZero', label: '%Zero-Imperv', type: 'number', unit: '%', section: 'Imperviousness', precision: 1, min: 0, max: 100 },
+    { key: '_routeTo', label: 'Subarea Routing', type: 'select', section: 'Subarea Routing', options: ['OUTLET', 'IMPERV', 'PERV'] },
+    { key: '_pctRouted', label: '% Routed', type: 'number', unit: '%', section: 'Subarea Routing', precision: 1, min: 0, max: 100 },
+    ...getInfiltrationFields(infiltMethod || 'GREEN_AMPT'),
     { key: 'snowPack', label: 'Snow Pack', type: 'text', section: 'Snow' },
+    { key: '_groundwater', label: 'Groundwater', type: 'subdialog', section: 'Groundwater', subdialogType: 'groundwater' },
+    { key: '_lidControls', label: 'LID Controls', type: 'subdialog', section: 'LID Controls', subdialogType: 'lidUsage' },
+    { key: '_landUses', label: 'Land Uses', type: 'subdialog', section: 'Land Uses', subdialogType: 'landUse' },
   ];
 }
 
@@ -192,7 +237,7 @@ function getLabelFields(): FieldDef[] {
   ];
 }
 
-function getFieldsForType(objType: string): FieldDef[] {
+function getFieldsForType(objType: string, opts?: Record<string, string>): FieldDef[] {
   switch (objType) {
     case 'junction': return getJunctionFields();
     case 'outfall': return getOutfallFields();
@@ -203,7 +248,7 @@ function getFieldsForType(objType: string): FieldDef[] {
     case 'orifice': return getOrificeFields();
     case 'weir': return getWeirFields();
     case 'outlet': return getOutletFields();
-    case 'subcatchment': return getSubcatchmentFields();
+    case 'subcatchment': return getSubcatchmentFields(opts?.['INFILTRATION'] || opts?.infiltration);
     case 'raingage': return getRaingageFields();
     case 'label': return getLabelFields();
     default: return [];
@@ -234,7 +279,10 @@ function getObjectData(project: SwmmProject, objType: string, id: string): Recor
     }
     case 'conduit': {
       const obj = project.conduits.find(c => c.id === id);
-      const xs = project.xsections.find(x => x.linkId === id);
+      const xs = Array.isArray(project.xsections)
+        ? project.xsections.find((x: any) => x.linkId === id)
+        : project.xsections[id];
+      const loss = project.losses[id];
       return obj ? {
         ...obj,
         _xsShape: xs?.shape || 'CIRCULAR',
@@ -243,6 +291,12 @@ function getObjectData(project: SwmmProject, objType: string, id: string): Recor
         _xsGeom3: xs?.geom3 || 0,
         _xsGeom4: xs?.geom4 || 0,
         _xsBarrels: xs?.barrels || 1,
+        _xsTransect: (xs as any)?.transect || '',
+        _lossEntry: loss?.entryLoss ?? 0,
+        _lossExit: loss?.exitLoss ?? 0,
+        _lossAvg: loss?.avgLoss ?? 0,
+        _lossFlapGate: loss?.flapGate ?? 'NO',
+        _lossSeepage: loss?.seepageRate ?? 0,
       } : null;
     }
     case 'pump': {
@@ -264,6 +318,7 @@ function getObjectData(project: SwmmProject, objType: string, id: string): Recor
     case 'subcatchment': {
       const obj = project.subcatchments.find(s => s.id === id);
       const sa = project.subareas[id];
+      const inf = project.infiltration[id];
       return obj ? {
         ...obj,
         _nImperv: sa?.nImperv ?? 0.01,
@@ -272,6 +327,10 @@ function getObjectData(project: SwmmProject, objType: string, id: string): Recor
         _sPerv: sa?.sPerv ?? 0.05,
         _pctZero: sa?.pctZero ?? 25,
         _routeTo: sa?.routeTo ?? 'OUTLET',
+        _pctRouted: sa?.pctRouted ?? 100,
+        _infiltVal0: inf?.values?.[0] ?? 0,
+        _infiltVal1: inf?.values?.[1] ?? 0,
+        _infiltVal2: inf?.values?.[2] ?? 0,
       } : null;
     }
     case 'raingage': {
@@ -331,7 +390,7 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
   const objType = selectedObj?.objType || '';
   const objId = selectedObj?.id || '';
 
-  const fields = useMemo(() => getFieldsForType(objType), [objType]);
+  const fields = useMemo(() => getFieldsForType(objType, project.options), [objType, project.options]);
   const data = useMemo(() => getObjectData(project, objType, objId), [project, objType, objId]);
 
   const sections = useMemo(() => {
@@ -366,15 +425,42 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
       if (key.startsWith('_xs')) {
         const xsKey = key.replace('_xs', '').replace(/^(.)/, (_, c) => c.toLowerCase()) as string;
         const realKey = xsKey === 'shape' ? 'shape' : xsKey;
-        next.xsections = next.xsections.map(xs =>
-          xs.linkId === objId ? { ...xs, [realKey]: value } : xs
-        );
+        if (Array.isArray(next.xsections)) {
+          next.xsections = (next.xsections as any).map((xs: any) =>
+            xs.linkId === objId ? { ...xs, [realKey]: value } : xs
+          );
+        } else {
+          const existing = next.xsections[objId] || { linkId: objId, shape: 'CIRCULAR', geom1: 0, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+          next.xsections = { ...next.xsections, [objId]: { ...existing, [realKey]: value } };
+        }
+        return next;
+      }
+
+      if (key.startsWith('_loss') && (objType === 'conduit' || objType === 'pump' || objType === 'orifice' || objType === 'weir')) {
+        const lossMap: Record<string, string> = {
+          _lossEntry: 'entryLoss', _lossExit: 'exitLoss', _lossAvg: 'avgLoss',
+          _lossFlapGate: 'flapGate', _lossSeepage: 'seepageRate',
+        };
+        const lossField = lossMap[key];
+        if (lossField) {
+          const existing = next.losses[objId] || { linkId: objId, entryLoss: 0, exitLoss: 0, avgLoss: 0, flapGate: 'NO', seepageRate: 0 };
+          next.losses = { ...next.losses, [objId]: { ...existing, [lossField]: value } };
+        }
+        return next;
+      }
+
+      if (key.startsWith('_infil') && objType === 'subcatchment') {
+        const idx = parseInt(key.replace('_infiltVal', ''));
+        const existing = next.infiltration[objId] || { values: [0, 0, 0] };
+        const vals = [...(existing.values || [0, 0, 0])];
+        vals[idx] = value;
+        next.infiltration = { ...next.infiltration, [objId]: { ...existing, values: vals } };
         return next;
       }
 
       if (key.startsWith('_') && objType === 'subcatchment') {
         const saKey = key.slice(1);
-        const sa = next.subareas[objId] || { nImperv: 0.01, nPerv: 0.1, sImperv: 0.05, sPerv: 0.05, pctZero: 25, routeTo: 'OUTLET' };
+        const sa = next.subareas[objId] || { nImperv: 0.01, nPerv: 0.1, sImperv: 0.05, sPerv: 0.05, pctZero: 25, routeTo: 'OUTLET', pctRouted: 100 };
         next.subareas = { ...next.subareas, [objId]: { ...sa, [saKey]: value } };
         return next;
       }
@@ -404,7 +490,10 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
 
   const xsData = useMemo((): XSection | null => {
     if (objType === 'conduit') {
-      return project.xsections.find(x => x.linkId === objId) || null;
+      if (Array.isArray(project.xsections)) {
+        return (project.xsections as any).find((x: any) => x.linkId === objId) || null;
+      }
+      return project.xsections[objId] || null;
     }
     return null;
   }, [project, objType, objId]);
@@ -499,6 +588,12 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
 
           {sections.map(sec => {
             const sFields = fields.filter(f => f.section === sec);
+            const visibleFields = sFields.filter(f => {
+              if (!f.visibleWhen) return true;
+              const depVal = data[f.visibleWhen.field];
+              return f.visibleWhen.values.includes(String(depVal ?? ''));
+            });
+            if (visibleFields.length === 0) return null;
             const isCollapsed = collapsedSections.has(sec);
             return (
               <div key={sec} className="border-b border-[#e8e8f0]">
@@ -512,9 +607,9 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
                     : <ChevronDown className="w-3 h-3 text-[#6b6b7b]" />}
                   <span className="text-[10px] font-semibold text-[#4a4a5a]">{sec}</span>
                 </div>
-                {!isCollapsed && sFields.map(field => (
+                {!isCollapsed && visibleFields.map(field => (
                   <PropertyRow
-                    key={field.key}
+                    key={`${field.key}-${field.label}`}
                     field={field}
                     value={data[field.key]}
                     onChange={(val) => handleFieldChange(field.key, val)}
@@ -550,8 +645,19 @@ function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; 
     return String(value);
   }, [value, field]);
 
+  const validationError = useMemo(() => {
+    if (field.required && (value === undefined || value === null || value === '')) return 'Required';
+    if (field.type === 'number' && value !== undefined && value !== null && value !== '') {
+      const n = typeof value === 'number' ? value : parseFloat(String(value));
+      if (isNaN(n)) return 'Must be a number';
+      if (field.min !== undefined && n < field.min) return `Min: ${field.min}`;
+      if (field.max !== undefined && n > field.max) return `Max: ${field.max}`;
+    }
+    return null;
+  }, [value, field]);
+
   const handleStartEdit = () => {
-    if (field.type === 'readonly') return;
+    if (field.type === 'readonly' || field.type === 'subdialog') return;
     setEditVal(displayVal);
     setEditing(true);
   };
@@ -560,7 +666,11 @@ function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; 
     setEditing(false);
     if (field.type === 'number') {
       const num = parseFloat(editVal);
-      if (!isNaN(num)) onChange(num);
+      if (!isNaN(num)) {
+        const clamped = field.min !== undefined && num < field.min ? field.min
+          : field.max !== undefined && num > field.max ? field.max : num;
+        onChange(clamped);
+      }
     } else if (field.type === 'boolean') {
       onChange(editVal.toUpperCase() === 'YES' || editVal === 'true');
     } else {
@@ -573,10 +683,35 @@ function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; 
     if (e.key === 'Escape') setEditing(false);
   };
 
-  if (field.type === 'select') {
+  const labelEl = (
+    <span className="text-[9px] text-[#6b6b7b] w-[100px] truncate flex items-center gap-0.5" title={field.helpText || field.label}>
+      {field.label}
+      {field.required && <span className="text-red-500 text-[8px]">*</span>}
+    </span>
+  );
+
+  const errorIndicator = validationError ? (
+    <span className="text-[7px] text-red-500 ml-1 shrink-0" title={validationError}>!</span>
+  ) : null;
+
+  if (field.type === 'subdialog') {
     return (
       <div className="flex items-center px-2.5 py-[3px] hover:bg-[#f0f4ff] transition-colors group" data-testid={`prop-${field.key}`}>
-        <span className="text-[9px] text-[#6b6b7b] w-[100px] truncate" title={field.label}>{field.label}</span>
+        {labelEl}
+        <button
+          className="flex-1 text-[9px] text-left font-mono text-[#2c6eb5] bg-[#f0f4ff] hover:bg-[#e0ecff] border border-[#d0d8e8] rounded px-1.5 py-0 h-[18px] cursor-pointer transition-colors"
+          data-testid={`prop-subdialog-${field.key}`}
+        >
+          [...]
+        </button>
+      </div>
+    );
+  }
+
+  if (field.type === 'select') {
+    return (
+      <div className={`flex items-center px-2.5 py-[3px] hover:bg-[#f0f4ff] transition-colors group ${validationError ? 'bg-red-50/50' : ''}`} data-testid={`prop-${field.key}`}>
+        {labelEl}
         <select
           className="flex-1 text-[9px] bg-transparent border-0 outline-none text-[#2a2a3e] cursor-pointer p-0 h-[18px] group-hover:bg-white/60 rounded px-0.5"
           value={value ?? ''}
@@ -586,6 +721,7 @@ function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; 
           {field.options?.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
         {field.unit && <span className="text-[8px] text-[#9090a0] ml-1 shrink-0">{field.unit}</span>}
+        {errorIndicator}
       </div>
     );
   }
@@ -593,7 +729,7 @@ function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; 
   if (field.type === 'boolean') {
     return (
       <div className="flex items-center px-2.5 py-[3px] hover:bg-[#f0f4ff] transition-colors" data-testid={`prop-${field.key}`}>
-        <span className="text-[9px] text-[#6b6b7b] w-[100px] truncate" title={field.label}>{field.label}</span>
+        {labelEl}
         <select
           className="flex-1 text-[9px] bg-transparent border-0 outline-none text-[#2a2a3e] cursor-pointer p-0 h-[18px]"
           value={value ? 'YES' : 'NO'}
@@ -609,20 +745,20 @@ function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; 
 
   return (
     <div
-      className={`flex items-center px-2.5 py-[3px] transition-colors ${field.type === 'readonly' ? 'bg-[#fafafa]' : 'hover:bg-[#f0f4ff] cursor-text'}`}
+      className={`flex items-center px-2.5 py-[3px] transition-colors ${field.type === 'readonly' ? 'bg-[#fafafa]' : 'hover:bg-[#f0f4ff] cursor-text'} ${validationError ? 'bg-red-50/50' : ''}`}
       onClick={handleStartEdit}
       data-testid={`prop-${field.key}`}
     >
-      <span className="text-[9px] text-[#6b6b7b] w-[100px] truncate" title={field.label}>{field.label}</span>
+      {labelEl}
       {editing ? (
         <input
           autoFocus
-          className="flex-1 text-[9px] font-mono bg-white border border-[#2c6eb5] rounded px-1 py-0 outline-none text-[#2a2a3e] h-[18px]"
+          className={`flex-1 text-[9px] font-mono bg-white border rounded px-1 py-0 outline-none text-[#2a2a3e] h-[18px] ${validationError ? 'border-red-400' : 'border-[#2c6eb5]'}`}
           value={editVal}
           onChange={e => setEditVal(e.target.value)}
           onBlur={handleCommit}
           onKeyDown={handleKeyDown}
-          type={field.type === 'number' ? 'text' : 'text'}
+          type="text"
           data-testid={`prop-input-${field.key}`}
         />
       ) : (
@@ -631,6 +767,7 @@ function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; 
         </span>
       )}
       {field.unit && !editing && <span className="text-[8px] text-[#9090a0] ml-1 shrink-0">{field.unit}</span>}
+      {errorIndicator}
     </div>
   );
 }

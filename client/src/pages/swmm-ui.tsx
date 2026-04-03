@@ -17,6 +17,7 @@ import AboutDialog from '@/components/swmm/AboutDialog';
 import ProjectDefaultsDialog from '@/components/swmm/ProjectDefaultsDialog';
 import TableViewDialog from '@/components/swmm/TableViewDialog';
 import PropertyEditor from '@/components/swmm/PropertyEditor';
+import AIAssistPanel from '@/components/swmm/AIAssistPanel';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
@@ -26,7 +27,7 @@ import {
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
-  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator,
+  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
@@ -189,6 +190,7 @@ export default function SwmmUI() {
   });
   const [exportIncludeLegend, setExportIncludeLegend] = useState(true);
   const [showCflPanel, setShowCflPanel] = useState(false);
+  const [showAIAssist, setShowAIAssist] = useState(false);
   const [cflAnalysis, setCflAnalysis] = useState<CflAnalysisResult | null>(null);
   const [cflShowFlagged, setCflShowFlagged] = useState(true);
   const [discretizationResult, setDiscretizationResult] = useState<DiscretizationResult | null>(null);
@@ -1579,6 +1581,12 @@ export default function SwmmUI() {
                 {cflAnalysis.flaggedCount}
               </span>
             )}
+            <ToolbarButton
+              icon={<Zap className="w-4 h-4" />}
+              label="AI Assist"
+              onClick={() => setShowAIAssist(!showAIAssist)}
+              testId="btn-ai-assist"
+            />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <button
               onClick={() => {
@@ -2167,6 +2175,16 @@ export default function SwmmUI() {
             </div>
           )}
         </div>
+        {showAIAssist && !isMobile && (
+          <div className="w-[260px] shrink-0 overflow-hidden flex flex-col" style={{ borderLeft: '1px solid #d0d0d8' }} data-testid="ai-assist-sidebar">
+            <AIAssistPanel
+              project={project}
+              results={results}
+              onSelectObject={(objType, id) => handleSelectObj({ objType, id })}
+              onUpdateProject={handleUpdateProject}
+            />
+          </div>
+        )}
       </div>
 
       <div className="h-6 sm:h-7 flex items-center px-1 md:px-2 shrink-0 overflow-x-auto gap-0.5" style={{ backgroundColor: '#f0f0f4', borderTop: '1px solid #d0d0d8' }} data-testid="status-bar">

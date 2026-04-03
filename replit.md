@@ -63,7 +63,8 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - Right-click context menu on map objects: Properties, Copy ID, Copy, Paste, Reverse (links), Find Connected, Delete
 - Right-click on empty canvas area: Find Object...
 - Find Object dialog (Ctrl+F or toolbar "Find" button): search by ID across all object types, click result to pan/select
-- `client/src/components/swmm/PropertyEditor.tsx` — Docked property grid with schemas for all 12 SWMM object types, collapsible sections, inline editing, cross-section SVG preview for conduits, results panel
+- `client/src/components/swmm/PropertyEditor.tsx` — Enhanced docked property grid with schemas for all 12 SWMM object types, collapsible sections, inline editing, cross-section SVG preview for conduits, results panel. Features: required field indicators (*), min/max validation with clamping and error indicators, conditional field visibility (visibleWhen), subdialog buttons ([...]) for complex fields (inflows, treatment, groundwater, LID, land uses), conduit loss coefficients (entry/exit/avg, flap gate, seepage), subcatchment infiltration parameters (method-adaptive: Green-Ampt, Horton, Curve Number), subarea routing with pctRouted
+- `client/src/components/swmm/AIAssistPanel.tsx` — AI Assist sidebar panel with 4 tabs: Errors (25+ diagnostic rules covering network, connectivity, geometry, cross-section, subcatchment, options, duplicates with severity icons and click-to-select), Parameters (reference lookup tables: 11 soil types with Green-Ampt params, 14 pipe materials with Manning's N, 8 land use types with %imperv/Manning values), Insights (simulation results analysis: flooding count/severity, high velocity links, surcharged capacity, model statistics), Auto-Fix (automatic parameter estimation: conduit lengths from coordinates, subcatchment widths from area)
 
 ## External Dependencies
 - EPA SWMM 5.2.4 Binary (local dev only)
