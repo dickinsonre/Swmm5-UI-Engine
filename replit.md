@@ -23,7 +23,7 @@ Priority on startup: Local > WASM > Remote > Mock (first available wins).
 ## Key Files
 - `client/src/pages/swmm-ui.tsx` — Main UI component (~3100 lines), all state, toolbars, dialogs, canvas
 - `client/src/components/swmm/NetworkMap.tsx` — Canvas network map with pan/zoom, hit-testing, depth fill
-- `client/src/components/swmm/ProjectExplorer.tsx` — Tree navigation, property panel, data grid
+- `client/src/components/swmm/ProjectExplorer.tsx` — Tree navigation, property panel (inline edit), data grid (inline edit). Editable fields defined in `EDITABLE_FIELDS` (property panel) and `GRID_EDITABLE_COLS` (data grid) covering all object types. Supports both numeric and string fields with trim validation.
 - `client/src/components/swmm/Panels.tsx` — Legend/Layers, Object Locator, Map Query panels
 - `client/src/components/swmm/SpeedBar.tsx` — Vertical tool palette for drawing modes
 - `client/src/lib/swmm-types.ts` — All TypeScript interfaces (SwmmProject, SimulationResults, etc.)

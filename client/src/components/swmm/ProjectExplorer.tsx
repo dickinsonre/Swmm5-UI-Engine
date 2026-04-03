@@ -734,7 +734,9 @@ function DataGridOverlay({ project, nodeId, results, timeStep, onClose, onSelect
   );
 }
 
-const GRID_EDITABLE_COLS: Record<string, Record<string, { field: string; collection: string }>> = {
+interface EditableDef { field: string; collection: string; type?: 'string' }
+
+const GRID_EDITABLE_COLS: Record<string, Record<string, EditableDef>> = {
   junction: {
     elev: { field: 'elevation', collection: 'junctions' },
     maxDepth: { field: 'maxDepth', collection: 'junctions' },
@@ -744,28 +746,64 @@ const GRID_EDITABLE_COLS: Record<string, Record<string, { field: string; collect
   },
   outfall: {
     elev: { field: 'elevation', collection: 'outfalls' },
+    type: { field: 'type', collection: 'outfalls', type: 'string' },
+    gated: { field: 'gated', collection: 'outfalls', type: 'string' },
   },
   storage: {
     elev: { field: 'elevation', collection: 'storageUnits' },
     maxDepth: { field: 'maxDepth', collection: 'storageUnits' },
+    shape: { field: 'shape', collection: 'storageUnits', type: 'string' },
   },
   conduit: {
+    from: { field: 'fromNode', collection: 'conduits', type: 'string' },
+    to: { field: 'toNode', collection: 'conduits', type: 'string' },
     length: { field: 'length', collection: 'conduits' },
     roughness: { field: 'roughness', collection: 'conduits' },
   },
   subcatchment: {
+    raingage: { field: 'rainGage', collection: 'subcatchments', type: 'string' },
+    outlet: { field: 'outlet', collection: 'subcatchments', type: 'string' },
     area: { field: 'area', collection: 'subcatchments' },
     pctImperv: { field: 'pctImperv', collection: 'subcatchments' },
     width: { field: 'width', collection: 'subcatchments' },
     slope: { field: 'slope', collection: 'subcatchments' },
   },
+  pump: {
+    from: { field: 'fromNode', collection: 'pumps', type: 'string' },
+    to: { field: 'toNode', collection: 'pumps', type: 'string' },
+    curve: { field: 'pumpCurve', collection: 'pumps', type: 'string' },
+    status: { field: 'status', collection: 'pumps', type: 'string' },
+  },
   weir: {
+    from: { field: 'fromNode', collection: 'weirs', type: 'string' },
+    to: { field: 'toNode', collection: 'weirs', type: 'string' },
+    type: { field: 'type', collection: 'weirs', type: 'string' },
     crest: { field: 'crestHeight', collection: 'weirs' },
     cd: { field: 'cd', collection: 'weirs' },
   },
   orifice: {
+    from: { field: 'fromNode', collection: 'orifices', type: 'string' },
+    to: { field: 'toNode', collection: 'orifices', type: 'string' },
+    type: { field: 'type', collection: 'orifices', type: 'string' },
     offset: { field: 'offset', collection: 'orifices' },
     cd: { field: 'cd', collection: 'orifices' },
+  },
+  outlet: {
+    from: { field: 'fromNode', collection: 'outlets', type: 'string' },
+    to: { field: 'toNode', collection: 'outlets', type: 'string' },
+    offset: { field: 'offset', collection: 'outlets' },
+    type: { field: 'type', collection: 'outlets', type: 'string' },
+  },
+  divider: {
+    elev: { field: 'elevation', collection: 'dividers' },
+    divertedLink: { field: 'divertedLink', collection: 'dividers', type: 'string' },
+    type: { field: 'type', collection: 'dividers', type: 'string' },
+    maxDepth: { field: 'maxDepth', collection: 'dividers' },
+  },
+  raingage: {
+    format: { field: 'format', collection: 'raingages', type: 'string' },
+    interval: { field: 'interval', collection: 'raingages', type: 'string' },
+    scf: { field: 'scf', collection: 'raingages' },
   },
 };
 
@@ -790,14 +828,17 @@ function DataGridRow({ obj, idx, category, columns, project, results, timeStep, 
     if (!onUpdateProject) { setEditCell(null); return; }
     const editable = GRID_EDITABLE_COLS[category]?.[colKey];
     if (!editable) { setEditCell(null); return; }
-    const numVal = parseFloat(editValue);
-    if (isNaN(numVal)) { setEditCell(null); return; }
+    const isStr = editable.type === 'string';
+    const trimmed = editValue.trim();
+    const val = isStr ? trimmed : parseFloat(trimmed);
+    if (!isStr && isNaN(val as number)) { setEditCell(null); return; }
+    if (isStr && !trimmed) { setEditCell(null); return; }
     const { field, collection } = editable;
     onUpdateProject(prev => {
       const arr = (prev as any)[collection];
       if (!Array.isArray(arr)) return prev;
       const updated = arr.map((item: any) =>
-        item.id === obj.id ? { ...item, [field]: numVal } : item
+        item.id === obj.id ? { ...item, [field]: val } : item
       );
       return { ...prev, [collection]: updated };
     });
@@ -815,10 +856,11 @@ function DataGridRow({ obj, idx, category, columns, project, results, timeStep, 
         const displayVal = col.getValue(obj, project, results, timeStep);
 
         if (isEditing) {
+          const isStrField = GRID_EDITABLE_COLS[category]?.[col.key]?.type === 'string';
           return (
             <td key={col.key} className="px-1 py-0.5 border-b border-[#f0f0f4]">
               <input
-                type="number"
+                type={isStrField ? 'text' : 'number'}
                 value={editValue}
                 onChange={e => setEditValue(e.target.value)}
                 onBlur={() => commitEdit(col.key)}
@@ -948,6 +990,32 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'slope', label: 'Slope %', getValue: o => o.slope?.toFixed(2) ?? '' },
       );
       break;
+    case 'outlet':
+      base.push(
+        { key: 'from', label: 'From', getValue: o => o.fromNode ?? '' },
+        { key: 'to', label: 'To', getValue: o => o.toNode ?? '' },
+        { key: 'offset', label: 'Offset', getValue: o => o.offset?.toFixed(2) ?? '' },
+        { key: 'type', label: 'Type', getValue: o => o.type ?? '' },
+      );
+      if (results) {
+        base.push(
+          { key: 'r_flow', label: 'Flow*', getValue: (o, _p, r, ts) => r?.timeSteps[ts]?.links[o.id]?.flow?.toFixed(3) ?? '' },
+        );
+      }
+      break;
+    case 'divider':
+      base.push(
+        { key: 'elev', label: 'Elevation', getValue: o => o.elevation?.toFixed(2) ?? '' },
+        { key: 'divertedLink', label: 'Div. Link', getValue: o => o.divertedLink ?? '' },
+        { key: 'type', label: 'Type', getValue: o => o.type ?? '' },
+        { key: 'maxDepth', label: 'Max Depth', getValue: o => o.maxDepth?.toFixed(2) ?? '' },
+      );
+      if (results) {
+        base.push(
+          { key: 'r_depth', label: 'Depth*', getValue: (o, _p, r, ts) => r?.timeSteps[ts]?.nodes[o.id]?.depth?.toFixed(3) ?? '' },
+        );
+      }
+      break;
     case 'raingage':
       base.push(
         { key: 'format', label: 'Format', getValue: o => o.format ?? '' },
@@ -961,7 +1029,7 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
   return base;
 }
 
-const EDITABLE_FIELDS: Record<string, Record<string, { field: string; collection: string }>> = {
+const EDITABLE_FIELDS: Record<string, Record<string, EditableDef>> = {
   junction: {
     'Invert El.': { field: 'elevation', collection: 'junctions' },
     'Max. Depth': { field: 'maxDepth', collection: 'junctions' },
@@ -971,35 +1039,81 @@ const EDITABLE_FIELDS: Record<string, Record<string, { field: string; collection
   },
   outfall: {
     'Invert El.': { field: 'elevation', collection: 'outfalls' },
+    'Outfall Type': { field: 'type', collection: 'outfalls', type: 'string' },
+    'Gated': { field: 'gated', collection: 'outfalls', type: 'string' },
   },
   storage: {
     'Invert El.': { field: 'elevation', collection: 'storageUnits' },
     'Max. Depth': { field: 'maxDepth', collection: 'storageUnits' },
     'Init. Depth': { field: 'initDepth', collection: 'storageUnits' },
+    'Shape': { field: 'shape', collection: 'storageUnits', type: 'string' },
     'Evap. Factor': { field: 'fevap', collection: 'storageUnits' },
   },
   conduit: {
+    'From Node': { field: 'fromNode', collection: 'conduits', type: 'string' },
+    'To Node': { field: 'toNode', collection: 'conduits', type: 'string' },
     'Length (ft)': { field: 'length', collection: 'conduits' },
     'Roughness': { field: 'roughness', collection: 'conduits' },
     'In Offset': { field: 'inOffset', collection: 'conduits' },
     'Out Offset': { field: 'outOffset', collection: 'conduits' },
   },
   subcatchment: {
+    'Rain Gage': { field: 'rainGage', collection: 'subcatchments', type: 'string' },
+    'Outlet': { field: 'outlet', collection: 'subcatchments', type: 'string' },
     'Area (ac)': { field: 'area', collection: 'subcatchments' },
     '% Imperv': { field: 'pctImperv', collection: 'subcatchments' },
     'Width (ft)': { field: 'width', collection: 'subcatchments' },
     'Slope (%)': { field: 'slope', collection: 'subcatchments' },
+    'Curb Len.': { field: 'curbLen', collection: 'subcatchments' },
+  },
+  pump: {
+    'From Node': { field: 'fromNode', collection: 'pumps', type: 'string' },
+    'To Node': { field: 'toNode', collection: 'pumps', type: 'string' },
+    'Pump Curve': { field: 'pumpCurve', collection: 'pumps', type: 'string' },
+    'Status': { field: 'status', collection: 'pumps', type: 'string' },
+    'Startup Depth': { field: 'startupDepth', collection: 'pumps' },
+    'Shutoff Depth': { field: 'shutoffDepth', collection: 'pumps' },
   },
   weir: {
+    'From Node': { field: 'fromNode', collection: 'weirs', type: 'string' },
+    'To Node': { field: 'toNode', collection: 'weirs', type: 'string' },
+    'Weir Type': { field: 'type', collection: 'weirs', type: 'string' },
     'Crest Height': { field: 'crestHeight', collection: 'weirs' },
     'Disch. Coeff.': { field: 'cd', collection: 'weirs' },
+    'Gated': { field: 'gated', collection: 'weirs', type: 'string' },
+    'End Coeff.': { field: 'ec', collection: 'weirs' },
+    'Cd2': { field: 'cd2', collection: 'weirs' },
+    'Surcharge': { field: 'surcharge', collection: 'weirs', type: 'string' },
   },
   orifice: {
+    'From Node': { field: 'fromNode', collection: 'orifices', type: 'string' },
+    'To Node': { field: 'toNode', collection: 'orifices', type: 'string' },
+    'Orifice Type': { field: 'type', collection: 'orifices', type: 'string' },
     'Offset': { field: 'offset', collection: 'orifices' },
     'Disch. Coeff.': { field: 'cd', collection: 'orifices' },
+    'Gated': { field: 'gated', collection: 'orifices', type: 'string' },
+    'Close Time': { field: 'closeTime', collection: 'orifices' },
   },
   divider: {
     'Invert El.': { field: 'elevation', collection: 'dividers' },
+    'Diverted Link': { field: 'divertedLink', collection: 'dividers', type: 'string' },
+    'Divider Type': { field: 'type', collection: 'dividers', type: 'string' },
+    'Max. Depth': { field: 'maxDepth', collection: 'dividers' },
+    'Init. Depth': { field: 'initDepth', collection: 'dividers' },
+    'Surcharge Dp.': { field: 'surDepth', collection: 'dividers' },
+    'Ponded Area': { field: 'aponded', collection: 'dividers' },
+  },
+  outlet: {
+    'From Node': { field: 'fromNode', collection: 'outlets', type: 'string' },
+    'To Node': { field: 'toNode', collection: 'outlets', type: 'string' },
+    'Offset': { field: 'offset', collection: 'outlets' },
+    'Outlet Type': { field: 'type', collection: 'outlets', type: 'string' },
+    'Curve/Table': { field: 'curveOrTable', collection: 'outlets', type: 'string' },
+  },
+  raingage: {
+    'Format': { field: 'format', collection: 'raingages', type: 'string' },
+    'Interval': { field: 'interval', collection: 'raingages', type: 'string' },
+    'SCF': { field: 'scf', collection: 'raingages' },
   },
 };
 
@@ -1027,8 +1141,11 @@ function PropertyTable({ properties, selectedObj, project, onUpdateProject }: {
     const editable = EDITABLE_FIELDS[selectedObj.objType]?.[propName];
     if (!editable) { setEditingRow(null); return; }
 
-    const numVal = parseFloat(editValue);
-    if (isNaN(numVal)) { setEditingRow(null); return; }
+    const isStr = editable.type === 'string';
+    const trimmed = editValue.trim();
+    const val = isStr ? trimmed : parseFloat(trimmed);
+    if (!isStr && isNaN(val as number)) { setEditingRow(null); return; }
+    if (isStr && !trimmed) { setEditingRow(null); return; }
 
     const { field, collection } = editable;
     const id = selectedObj.id;
@@ -1037,7 +1154,7 @@ function PropertyTable({ properties, selectedObj, project, onUpdateProject }: {
       const arr = (prev as any)[collection];
       if (!Array.isArray(arr)) return prev;
       const updated = arr.map((item: any) =>
-        item.id === id ? { ...item, [field]: numVal } : item
+        item.id === id ? { ...item, [field]: val } : item
       );
       return { ...prev, [collection]: updated };
     });
@@ -1168,7 +1285,8 @@ function getProperties(
   if (objType === 'pump') {
     const p = project.pumps.find(l => l.id === id);
     if (!p) return [['ID', id]];
-    const props: [string, string][] = [['ID', p.id], ['Type', 'Pump'], ['From Node', p.fromNode], ['To Node', p.toNode], ['Pump Curve', p.pumpCurve], ['Status', p.status]];
+    const props: [string, string][] = [['ID', p.id], ['Type', 'Pump'], ['From Node', p.fromNode], ['To Node', p.toNode], ['Pump Curve', p.pumpCurve], ['Status', p.status],
+      ['Startup Depth', p.startupDepth?.toFixed(2) ?? ''], ['Shutoff Depth', p.shutoffDepth?.toFixed(2) ?? '']];
     if (results?.timeSteps[timeStep]?.links[id]) {
       const lr = results.timeSteps[timeStep].links[id];
       props.push(['--- Results ---', ''], ['Flow (CFS)', lr.flow.toFixed(4)]);
@@ -1179,7 +1297,8 @@ function getProperties(
     const w = project.weirs.find(l => l.id === id);
     if (!w) return [['ID', id]];
     const props: [string, string][] = [['ID', w.id], ['Type', 'Weir'], ['Weir Type', w.type], ['From Node', w.fromNode], ['To Node', w.toNode],
-      ['Crest Height', w.crestHeight.toFixed(2)], ['Disch. Coeff.', w.cd.toFixed(2)], ['Gated', w.gated]];
+      ['Crest Height', w.crestHeight.toFixed(2)], ['Disch. Coeff.', w.cd.toFixed(2)], ['Gated', w.gated],
+      ['End Coeff.', w.ec.toFixed(2)], ['Cd2', w.cd2.toFixed(2)], ['Surcharge', w.surcharge]];
     if (results?.timeSteps[timeStep]?.links[id]) {
       const lr = results.timeSteps[timeStep].links[id];
       props.push(['--- Results ---', ''], ['Flow (CFS)', lr.flow.toFixed(4)], ['Depth (ft)', lr.depth.toFixed(4)]);
@@ -1189,8 +1308,13 @@ function getProperties(
   if (objType === 'orifice') {
     const o = project.orifices.find(l => l.id === id);
     if (!o) return [['ID', id]];
-    return [['ID', o.id], ['Type', 'Orifice'], ['From Node', o.fromNode], ['To Node', o.toNode], ['Orifice Type', o.type],
-      ['Offset', o.offset.toFixed(2)], ['Disch. Coeff.', o.cd.toFixed(2)]];
+    const props: [string, string][] = [['ID', o.id], ['Type', 'Orifice'], ['From Node', o.fromNode], ['To Node', o.toNode], ['Orifice Type', o.type],
+      ['Offset', o.offset.toFixed(2)], ['Disch. Coeff.', o.cd.toFixed(2)], ['Gated', o.gated], ['Close Time', o.closeTime.toFixed(0)]];
+    if (results?.timeSteps[timeStep]?.links[id]) {
+      const lr = results.timeSteps[timeStep].links[id];
+      props.push(['--- Results ---', ''], ['Flow (CFS)', lr.flow.toFixed(4)], ['Depth (ft)', lr.depth.toFixed(4)]);
+    }
+    return props;
   }
   if (objType === 'raingage') {
     const rg = project.raingages.find(r => r.id === id);
@@ -1200,12 +1324,24 @@ function getProperties(
   if (objType === 'divider') {
     const d = project.dividers.find(n => n.id === id);
     if (!d) return [['ID', id]];
-    return [['ID', d.id], ['Type', 'Divider'], ['Invert El.', d.elevation.toFixed(2)], ['Diverted Link', d.divertedLink], ['Divider Type', d.type]];
+    const props: [string, string][] = [['ID', d.id], ['Type', 'Divider'], ['Invert El.', d.elevation.toFixed(2)], ['Diverted Link', d.divertedLink], ['Divider Type', d.type],
+      ['Max. Depth', d.maxDepth.toFixed(2)], ['Init. Depth', d.initDepth.toFixed(2)], ['Surcharge Dp.', d.surDepth.toFixed(2)], ['Ponded Area', d.aponded.toString()]];
+    if (results?.timeSteps[timeStep]?.nodes[id]) {
+      const nr = results.timeSteps[timeStep].nodes[id];
+      props.push(['--- Results ---', ''], ['Depth (ft)', nr.depth.toFixed(4)], ['Head (ft)', nr.head.toFixed(4)]);
+    }
+    return props;
   }
   if (objType === 'outlet') {
     const o = project.outlets.find(l => l.id === id);
     if (!o) return [['ID', id]];
-    return [['ID', o.id], ['Type', 'Outlet'], ['From Node', o.fromNode], ['To Node', o.toNode], ['Offset', o.offset.toFixed(2)]];
+    const props: [string, string][] = [['ID', o.id], ['Type', 'Outlet'], ['From Node', o.fromNode], ['To Node', o.toNode], ['Offset', o.offset.toFixed(2)],
+      ['Outlet Type', o.type], ['Curve/Table', o.curveOrTable]];
+    if (results?.timeSteps[timeStep]?.links[id]) {
+      const lr = results.timeSteps[timeStep].links[id];
+      props.push(['--- Results ---', ''], ['Flow (CFS)', lr.flow.toFixed(4)]);
+    }
+    return props;
   }
   return [['ID', id], ['Type', objType]];
 }
