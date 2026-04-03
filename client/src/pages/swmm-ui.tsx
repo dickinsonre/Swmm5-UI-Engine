@@ -25,10 +25,10 @@ import {
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
-  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2,
+  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine } from 'recharts';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -125,7 +125,7 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | null>(null);
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
   const [analysisOptionsTab, setAnalysisOptionsTab] = useState<string>('General');
@@ -1457,6 +1457,7 @@ export default function SwmmUI() {
               testId="btn-run"
             />
             <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" onClick={() => { if (reportContent) setShowReportDialog(true); else toast({ title: 'No Report', description: 'Run a simulation first to generate a report' }); }} testId="btn-report" />
+            <ToolbarButton icon={<Calculator className="w-4 h-4" />} label="Stats" onClick={() => { if (results) setOpenDialog('statisticsReport'); else toast({ title: 'No Results', description: 'Run a simulation first to view statistics' }); }} testId="btn-statistics" />
             <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Profile" onClick={() => setOpenDialog('profilePlot')} testId="btn-profile-plot" />
             <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (results) setOpenDialog('timeSeries'); else toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); }} testId="btn-graph" />
             <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => setOpenDialog('calibration')} testId="btn-calibration" />
@@ -2850,6 +2851,18 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={openDialog === 'statisticsReport'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-5xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="statistics-report-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <Calculator className="w-4 h-4" /> Statistics Report
+            </DialogTitle>
+            <DialogDescription>Define statistical analysis parameters for simulation results.</DialogDescription>
+          </DialogHeader>
+          {results && <StatisticsReportContent project={project} results={results} selectedObj={selectedObj} />}
+        </DialogContent>
+      </Dialog>
+
       <AnalysisOptionsDialog
         open={openDialog === 'analysisOptions'}
         onOpenChange={v => !v && setOpenDialog(null)}
@@ -3128,6 +3141,482 @@ const SUBCATCH_VARS: { key: string; label: string; unit: string }[] = [
   { key: 'gwOutflow', label: 'GW Outflow', unit: 'CFS' },
   { key: 'moisture', label: 'Soil Moisture', unit: '' },
 ];
+
+function StatisticsReportContent({ project, results, selectedObj }: {
+  project: SwmmProject;
+  results: SimulationResults;
+  selectedObj: SelectedObject;
+}) {
+  const [category, setCategory] = useState<'subcatchment' | 'node' | 'link' | 'system'>(
+    selectedObj?.objType === 'conduit' || selectedObj?.objType === 'pump' || selectedObj?.objType === 'orifice' || selectedObj?.objType === 'weir' || selectedObj?.objType === 'outlet' ? 'link'
+    : selectedObj?.objType === 'subcatchment' ? 'subcatchment'
+    : selectedObj?.objType === 'junction' || selectedObj?.objType === 'outfall' || selectedObj?.objType === 'storage' || selectedObj?.objType === 'divider' ? 'node'
+    : 'node'
+  );
+  const [objectName, setObjectName] = useState(selectedObj?.id || '');
+  const [variable, setVariable] = useState('');
+  const [eventPeriod, setEventPeriod] = useState<'daily' | 'monthly' | 'event'>('daily');
+  const [statistic, setStatistic] = useState('mean');
+  const [variableThreshold, setVariableThreshold] = useState('0');
+  const [volumeThreshold, setVolumeThreshold] = useState('0');
+  const [separationTime, setSeparationTime] = useState('6');
+  const [reportData, setReportData] = useState<{ events: { start: string; end: string; duration: number; value: number; volume: number }[]; summary: { count: number; mean: number; stdDev: number; min: number; max: number; skewness: number } } | null>(null);
+
+  const nodeIds = useMemo(() => [
+    ...project.junctions.map(j => j.id),
+    ...project.outfalls.map(o => o.id),
+    ...project.storageUnits.map(s => s.id),
+    ...project.dividers.map(d => d.id),
+  ], [project]);
+
+  const linkIds = useMemo(() => [
+    ...project.conduits.map(c => c.id),
+    ...project.pumps.map(p => p.id),
+    ...project.orifices.map(o => o.id),
+    ...project.weirs.map(w => w.id),
+    ...project.outlets.map(o => o.id),
+  ], [project]);
+
+  const subcatchIds = useMemo(() => project.subcatchments.map(s => s.id), [project]);
+
+  const objectIds = category === 'node' ? nodeIds : category === 'link' ? linkIds : category === 'subcatchment' ? subcatchIds : ['System'];
+
+  const variableOptions = useMemo(() => {
+    if (category === 'subcatchment') return [
+      { key: 'rainfall', label: 'Rainfall' },
+      { key: 'evap', label: 'Evaporation' },
+      { key: 'infiltration', label: 'Infiltration' },
+      { key: 'runoff', label: 'Runoff' },
+      { key: 'gwOutflow', label: 'GW Outflow' },
+    ];
+    if (category === 'node') return [
+      { key: 'depth', label: 'Depth' },
+      { key: 'head', label: 'Head' },
+      { key: 'volume', label: 'Volume' },
+      { key: 'lateralInflow', label: 'Lateral Inflow' },
+      { key: 'totalInflow', label: 'Total Inflow' },
+      { key: 'flooding', label: 'Flooding' },
+    ];
+    if (category === 'link') return [
+      { key: 'flow', label: 'Flow' },
+      { key: 'depth', label: 'Depth' },
+      { key: 'velocity', label: 'Velocity' },
+      { key: 'volume', label: 'Volume' },
+      { key: 'capacity', label: 'Capacity' },
+    ];
+    return [
+      { key: 'rainfall', label: 'Rainfall' },
+      { key: 'runoff', label: 'Total Runoff' },
+      { key: 'flooding', label: 'Total Flooding' },
+    ];
+  }, [category]);
+
+  const statisticOptions = useMemo(() => {
+    return [
+      { key: 'mean', label: 'Mean Value' },
+      { key: 'peak', label: 'Peak Value' },
+      { key: 'total', label: 'Event Total' },
+      { key: 'duration', label: 'Event Duration' },
+      { key: 'interEvent', label: 'Inter-Event Time' },
+    ];
+  }, []);
+
+  useEffect(() => {
+    if (variableOptions.length > 0 && !variableOptions.find(v => v.key === variable)) {
+      setVariable(variableOptions[0].key);
+    }
+  }, [variableOptions, variable]);
+
+  useEffect(() => {
+    if (objectIds.length > 0 && !objectIds.includes(objectName)) {
+      setObjectName(objectIds[0]);
+    }
+  }, [objectIds, objectName]);
+
+  const handleCompute = useCallback(() => {
+    if (!results || results.timeSteps.length === 0) return;
+    const varThresh = parseFloat(variableThreshold) || 0;
+    const volThresh = parseFloat(volumeThreshold) || 0;
+    const sepHours = parseFloat(separationTime) || 6;
+
+    const values: { time: number; dateTime: string; val: number }[] = [];
+    for (const ts of results.timeSteps) {
+      let val = 0;
+      if (category === 'node') {
+        const nr = ts.nodes[objectName];
+        if (nr) val = (nr as any)[variable] ?? 0;
+      } else if (category === 'link') {
+        const lr = ts.links[objectName];
+        if (lr) val = (lr as any)[variable] ?? 0;
+      } else if (category === 'subcatchment') {
+        const sr = ts.subcatchments[objectName];
+        if (sr) val = (sr as any)[variable] ?? 0;
+      } else {
+        let sum = 0; let cnt = 0;
+        if (variable === 'rainfall') {
+          for (const sr of Object.values(ts.subcatchments)) { sum += sr.rainfall; cnt++; }
+        } else if (variable === 'runoff') {
+          for (const sr of Object.values(ts.subcatchments)) { sum += sr.runoff; cnt++; }
+        } else if (variable === 'flooding') {
+          for (const nr of Object.values(ts.nodes)) { sum += nr.flooding; cnt++; }
+        }
+        val = cnt > 0 ? sum : 0;
+      }
+      values.push({ time: ts.time, dateTime: ts.dateTime, val });
+    }
+
+    if (values.length < 2) {
+      setReportData({ events: [], summary: { count: 0, mean: 0, stdDev: 0, min: 0, max: 0, skewness: 0 } });
+      return;
+    }
+
+    const dtHours = values.length > 1 ? (values[1].time - values[0].time) / 3600 : 1;
+
+    const events: { startIdx: number; endIdx: number; values: number[] }[] = [];
+
+    if (eventPeriod === 'daily' || eventPeriod === 'monthly') {
+      let currentKey = '';
+      let currentEvent: { startIdx: number; endIdx: number; values: number[] } | null = null;
+      for (let i = 0; i < values.length; i++) {
+        const d = new Date(values[i].dateTime);
+        const key = eventPeriod === 'daily'
+          ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+          : `${d.getFullYear()}-${d.getMonth()}`;
+        if (key !== currentKey) {
+          if (currentEvent) events.push(currentEvent);
+          currentEvent = { startIdx: i, endIdx: i, values: [values[i].val] };
+          currentKey = key;
+        } else if (currentEvent) {
+          currentEvent.endIdx = i;
+          currentEvent.values.push(values[i].val);
+        }
+      }
+      if (currentEvent) events.push(currentEvent);
+    } else {
+      let inEvent = false;
+      let currentEvent: { startIdx: number; endIdx: number; values: number[] } | null = null;
+      let gapSteps = 0;
+      const sepSteps = Math.max(1, Math.round(sepHours / dtHours));
+
+      for (let i = 0; i < values.length; i++) {
+        const aboveThresh = Math.abs(values[i].val) > varThresh;
+        if (aboveThresh) {
+          if (!inEvent) {
+            if (currentEvent && gapSteps < sepSteps) {
+              for (let g = currentEvent.endIdx + 1; g <= i; g++) currentEvent.values.push(values[g].val);
+              currentEvent.endIdx = i;
+            } else {
+              if (currentEvent) events.push(currentEvent);
+              currentEvent = { startIdx: i, endIdx: i, values: [values[i].val] };
+            }
+            inEvent = true;
+          } else if (currentEvent) {
+            currentEvent.endIdx = i;
+            currentEvent.values.push(values[i].val);
+          }
+          gapSteps = 0;
+        } else {
+          if (inEvent) {
+            inEvent = false;
+            gapSteps = 0;
+          }
+          gapSteps++;
+        }
+      }
+      if (currentEvent) events.push(currentEvent);
+    }
+
+    const filteredEvents = events.filter(e => {
+      const eventVol = e.values.reduce((s, v) => s + Math.abs(v), 0) * dtHours;
+      return eventVol >= volThresh;
+    });
+
+    const eventRows = filteredEvents.map(e => {
+      const peak = e.values.reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a, 0);
+      const mean = e.values.reduce((s, v) => s + v, 0) / e.values.length;
+      const total = e.values.reduce((s, v) => s + v, 0) * dtHours;
+      const duration = (e.endIdx - e.startIdx) * dtHours;
+      let statVal = 0;
+      if (statistic === 'mean') statVal = mean;
+      else if (statistic === 'peak') statVal = peak;
+      else if (statistic === 'total') statVal = total;
+      else if (statistic === 'duration') statVal = duration;
+      else statVal = mean;
+
+      return {
+        start: values[e.startIdx].dateTime,
+        end: values[e.endIdx].dateTime,
+        duration,
+        value: statVal,
+        volume: total,
+      };
+    });
+
+    if (statistic === 'interEvent') {
+      const interEvents: typeof eventRows = [];
+      for (let i = 1; i < filteredEvents.length; i++) {
+        const midPrev = (filteredEvents[i - 1].startIdx + filteredEvents[i - 1].endIdx) / 2;
+        const midCurr = (filteredEvents[i].startIdx + filteredEvents[i].endIdx) / 2;
+        const gap = (midCurr - midPrev) * dtHours;
+        interEvents.push({
+          start: values[filteredEvents[i - 1].endIdx].dateTime,
+          end: values[filteredEvents[i].startIdx].dateTime,
+          duration: gap,
+          value: gap,
+          volume: 0,
+        });
+      }
+      const vals = interEvents.map(e => e.value);
+      const n = vals.length;
+      const mn = n > 0 ? vals.reduce((s, v) => s + v, 0) / n : 0;
+      const variance = n > 1 ? vals.reduce((s, v) => s + (v - mn) ** 2, 0) / (n - 1) : 0;
+      const sd = Math.sqrt(variance);
+      const skew = n > 2 ? (vals.reduce((s, v) => s + ((v - mn) / (sd || 1)) ** 3, 0) * n) / ((n - 1) * (n - 2)) : 0;
+      setReportData({
+        events: interEvents,
+        summary: { count: n, mean: mn, stdDev: sd, min: n > 0 ? Math.min(...vals) : 0, max: n > 0 ? Math.max(...vals) : 0, skewness: skew },
+      });
+      return;
+    }
+
+    const vals = eventRows.map(e => e.value);
+    const n = vals.length;
+    const mn = n > 0 ? vals.reduce((s, v) => s + v, 0) / n : 0;
+    const variance = n > 1 ? vals.reduce((s, v) => s + (v - mn) ** 2, 0) / (n - 1) : 0;
+    const sd = Math.sqrt(variance);
+    const skew = n > 2 ? (vals.reduce((s, v) => s + ((v - mn) / (sd || 1)) ** 3, 0) * n) / ((n - 1) * (n - 2)) : 0;
+
+    setReportData({
+      events: eventRows,
+      summary: { count: n, mean: mn, stdDev: sd, min: n > 0 ? Math.min(...vals) : 0, max: n > 0 ? Math.max(...vals) : 0, skewness: skew },
+    });
+  }, [results, category, objectName, variable, eventPeriod, statistic, variableThreshold, volumeThreshold, separationTime]);
+
+  return (
+    <div className="space-y-4" data-testid="statistics-report-content">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] font-semibold text-[#4a4a5a] block mb-1">Object Category</label>
+            <select
+              className="w-full border border-[#d0d0d8] rounded px-2 py-1.5 text-[12px] bg-white"
+              value={category}
+              onChange={e => { setCategory(e.target.value as any); setReportData(null); }}
+              data-testid="stats-category"
+            >
+              <option value="subcatchment">Subcatchment</option>
+              <option value="node">Node</option>
+              <option value="link">Link</option>
+              <option value="system">System</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-[#4a4a5a] block mb-1">Object Name</label>
+            <select
+              className="w-full border border-[#d0d0d8] rounded px-2 py-1.5 text-[12px] bg-white"
+              value={objectName}
+              onChange={e => { setObjectName(e.target.value); setReportData(null); }}
+              data-testid="stats-object-name"
+              disabled={category === 'system'}
+            >
+              {objectIds.map(id => <option key={id} value={id}>{id}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-[#4a4a5a] block mb-1">Variable Analyzed</label>
+            <select
+              className="w-full border border-[#d0d0d8] rounded px-2 py-1.5 text-[12px] bg-white"
+              value={variable}
+              onChange={e => { setVariable(e.target.value); setReportData(null); }}
+              data-testid="stats-variable"
+            >
+              {variableOptions.map(v => <option key={v.key} value={v.key}>{v.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] font-semibold text-[#4a4a5a] block mb-1">Event Time Period</label>
+            <select
+              className="w-full border border-[#d0d0d8] rounded px-2 py-1.5 text-[12px] bg-white"
+              value={eventPeriod}
+              onChange={e => { setEventPeriod(e.target.value as any); setReportData(null); }}
+              data-testid="stats-event-period"
+            >
+              <option value="daily">Daily</option>
+              <option value="monthly">Monthly</option>
+              <option value="event">Event-Dependent</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-[#4a4a5a] block mb-1">Statistic</label>
+            <select
+              className="w-full border border-[#d0d0d8] rounded px-2 py-1.5 text-[12px] bg-white"
+              value={statistic}
+              onChange={e => { setStatistic(e.target.value); setReportData(null); }}
+              data-testid="stats-statistic"
+            >
+              {statisticOptions.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </div>
+
+          <div className="border border-[#d0d0d8] rounded p-2.5 space-y-2 bg-[#fafafa]">
+            <div className="text-[10px] font-semibold text-[#4a4a5a]">Event Thresholds</div>
+            <div>
+              <label className="text-[10px] text-[#6b6b7b] block mb-0.5">Analysis Variable</label>
+              <input
+                type="text"
+                className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px]"
+                value={variableThreshold}
+                onChange={e => setVariableThreshold(e.target.value)}
+                data-testid="stats-var-threshold"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-[#6b6b7b] block mb-0.5">Event Volume</label>
+              <input
+                type="text"
+                className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px]"
+                value={volumeThreshold}
+                onChange={e => setVolumeThreshold(e.target.value)}
+                data-testid="stats-vol-threshold"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-[#6b6b7b] block mb-0.5">Separation Time (hrs)</label>
+              <input
+                type="text"
+                className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px]"
+                value={separationTime}
+                onChange={e => setSeparationTime(e.target.value)}
+                disabled={eventPeriod !== 'event'}
+                data-testid="stats-separation"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <Button onClick={handleCompute} className="bg-[#2c6eb5] hover:bg-[#245a96] text-white text-[12px] px-4" data-testid="stats-compute-btn">
+          Compute
+        </Button>
+        {reportData && (
+          <Button
+            variant="outline"
+            className="text-[12px] px-4"
+            onClick={() => {
+              const lines = [
+                `Statistics Report`,
+                `Category: ${category}  Object: ${objectName}  Variable: ${variable}`,
+                `Event Period: ${eventPeriod}  Statistic: ${statistic}`,
+                ``,
+                `Summary Statistics`,
+                `  Count:    ${reportData.summary.count}`,
+                `  Mean:     ${reportData.summary.mean.toFixed(4)}`,
+                `  Std Dev:  ${reportData.summary.stdDev.toFixed(4)}`,
+                `  Min:      ${reportData.summary.min.toFixed(4)}`,
+                `  Max:      ${reportData.summary.max.toFixed(4)}`,
+                `  Skewness: ${reportData.summary.skewness.toFixed(4)}`,
+                ``,
+                `Events (${reportData.events.length}):`,
+                `Start                 End                   Duration(hr)  Value         Volume`,
+                ...reportData.events.map(e =>
+                  `${e.start.padEnd(22)}${e.end.padEnd(22)}${e.duration.toFixed(1).padStart(12)}  ${e.value.toFixed(4).padStart(12)}  ${e.volume.toFixed(4).padStart(12)}`
+                ),
+              ];
+              navigator.clipboard.writeText(lines.join('\n'));
+            }}
+            data-testid="stats-copy-btn"
+          >
+            Copy Report
+          </Button>
+        )}
+      </div>
+
+      {reportData && (
+        <div className="space-y-3" data-testid="stats-results">
+          <div className="border border-[#d0d0d8] rounded p-3 bg-[#f8f9fc]">
+            <div className="text-[11px] font-bold text-[#2c3e6b] mb-2">Summary Statistics</div>
+            <div className="grid grid-cols-3 gap-x-6 gap-y-1">
+              {[
+                ['Count', reportData.summary.count.toString()],
+                ['Mean', reportData.summary.mean.toFixed(4)],
+                ['Std Deviation', reportData.summary.stdDev.toFixed(4)],
+                ['Minimum', reportData.summary.min.toFixed(4)],
+                ['Maximum', reportData.summary.max.toFixed(4)],
+                ['Skewness', reportData.summary.skewness.toFixed(4)],
+              ].map(([label, val]) => (
+                <div key={label} className="flex justify-between">
+                  <span className="text-[10px] text-[#6b6b7b]">{label}:</span>
+                  <span className="text-[10px] font-mono text-[#2a2a3e]" data-testid={`stats-summary-${label?.toLowerCase().replace(/\s/g, '-')}`}>{val}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {reportData.events.length > 0 && (
+            <>
+              <div className="text-[11px] font-bold text-[#2c3e6b]">
+                {statistic === 'interEvent' ? 'Inter-Event Periods' : 'Event Details'} ({reportData.events.length})
+              </div>
+              <div className="max-h-[250px] overflow-auto border border-[#d0d0d8] rounded">
+                <table className="w-full text-[10px]">
+                  <thead className="bg-[#f0f0f4] sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1 font-semibold text-[#4a4a5a] border-b border-[#d0d0d8]">#</th>
+                      <th className="text-left px-2 py-1 font-semibold text-[#4a4a5a] border-b border-[#d0d0d8]">Start</th>
+                      <th className="text-left px-2 py-1 font-semibold text-[#4a4a5a] border-b border-[#d0d0d8]">End</th>
+                      <th className="text-right px-2 py-1 font-semibold text-[#4a4a5a] border-b border-[#d0d0d8]">Duration (hr)</th>
+                      <th className="text-right px-2 py-1 font-semibold text-[#4a4a5a] border-b border-[#d0d0d8]">
+                        {statisticOptions.find(s => s.key === statistic)?.label || 'Value'}
+                      </th>
+                      <th className="text-right px-2 py-1 font-semibold text-[#4a4a5a] border-b border-[#d0d0d8]">Volume</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportData.events.map((ev, i) => (
+                      <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-[#f8f9fc]'} data-testid={`stats-event-row-${i}`}>
+                        <td className="px-2 py-1 text-[#6b6b7b]">{i + 1}</td>
+                        <td className="px-2 py-1 font-mono">{ev.start}</td>
+                        <td className="px-2 py-1 font-mono">{ev.end}</td>
+                        <td className="px-2 py-1 text-right font-mono">{ev.duration.toFixed(1)}</td>
+                        <td className="px-2 py-1 text-right font-mono">{ev.value.toFixed(4)}</td>
+                        <td className="px-2 py-1 text-right font-mono">{ev.volume.toFixed(4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={reportData.events.map((e, i) => ({ idx: i + 1, value: e.value }))}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                    <XAxis dataKey="idx" tick={{ fontSize: 9 }} label={{ value: 'Event #', position: 'insideBottom', offset: -3, fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 9 }} label={{ value: statisticOptions.find(s => s.key === statistic)?.label || 'Value', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+                    <Tooltip contentStyle={{ fontSize: 10 }} />
+                    <Bar dataKey="value" fill="#2c6eb5" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+
+          {reportData.events.length === 0 && (
+            <div className="text-center py-8 text-[#8a8a9a] text-[12px]">
+              No events found matching the specified criteria.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
   project: SwmmProject;
