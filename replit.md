@@ -14,7 +14,7 @@ Client-server architecture with client-side SWMM data management.
 
 ## Simulation Engines (4 modes)
 - **Local** (green `#2a8a4a`): EPA SWMM 5.2.4 binary at `/home/runner/workspace/swmm-engine/runswmm`. Uses `/api/swmm/run-or-proxy` endpoint. Auto-falls back to Remote if binary missing (production).
-- **WASM** (orange `#e88a1a`): EPA SWMM 5.1 (Build 5.1.015) in-browser engine compiled via Emscripten. Files in `client/public/`: `swmm_engine.js`, `js.wasm`, `js.data`. No server round-trip needed. Module loaded lazily on first run, cached for subsequent runs.
+- **WASM** (orange `#e88a1a`): EPA SWMM 5.2.4 in-browser engine compiled via Emscripten from source. Files in `client/public/`: `swmm_engine.js`, `swmm_engine.wasm`. No server round-trip needed. Module loaded lazily on first run, cached for subsequent runs.
 - **Remote** (blue `#2c6eb5`): BatchSWMM cloud API at `https://batch-swmm-runner-robertdickinson.replit.app`. Upload → WebSocket progress → results.
 - **Mock** (gray): Synthetic results for testing, no engine needed.
 
@@ -39,7 +39,7 @@ Priority on startup: Local > WASM > Remote > Mock (first available wins).
 - `client/src/lib/import-export.ts` — CSV/DXF/GeoJSON import/export
 - Calibration File Creator — integrated in calibration dialog (Create File tab), supports variable selection (node depth/head/flooding, link flow/velocity/depth, subcatchment runoff/rainfall), template generation from simulation timesteps, CSV import, .dat file export
 - `server/routes.ts` — Express API routes (GitHub proxy, SWMM run, BatchSWMM proxy)
-- `client/public/swmm_engine.js`, `client/public/js.wasm`, `client/public/js.data` — WASM engine files
+- `client/public/swmm_engine.js`, `client/public/swmm_engine.wasm` — WASM engine files (compiled from SWMM 5.2.4 source)
 
 ## INP Parser (inp-parser.ts)
 Parses 30+ SWMM5 INP sections. Key data structures:
@@ -76,7 +76,7 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 
 ## External Dependencies
 - EPA SWMM 5.2.4 Binary (local dev only)
-- SWMM WASM Engine v5.1.015 (bundled in client/public/, from epanet-swmm-5-generate.replit.app)
+- SWMM WASM Engine v5.2.4 (compiled from source via Emscripten, bundled in client/public/)
 - BatchSWMM cloud API (remote fallback)
 - GitHub API (file fetching via proxy)
 - Recharts (time series graphs, profile plots)

@@ -117,7 +117,7 @@ const HELP_TOPICS: TopicSection[] = [
       },
       {
         title: 'Running a Simulation',
-        content: 'Click the Run button (or Project > Run) to execute the simulation. The engine processes the model and generates results. Four engine modes are available: Local (EPA SWMM 5.2.4 binary), WASM (EPA SWMM 5.1.015 in-browser engine), Remote (cloud API), and Mock (synthetic test results). The active engine is shown in the status bar.'
+        content: 'Click the Run button (or Project > Run) to execute the simulation. The engine processes the model and generates results. Four engine modes are available: Local (EPA SWMM 5.2.4 binary), WASM (EPA SWMM 5.2.4 in-browser engine), Remote (cloud API), and Mock (synthetic test results). The active engine is shown in the status bar.'
       },
       {
         title: 'Viewing Results',

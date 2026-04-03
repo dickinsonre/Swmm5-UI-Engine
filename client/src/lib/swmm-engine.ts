@@ -48,19 +48,11 @@ async function loadWasmModule(onProgress?: (pct: number, msg: string) => void): 
   if (wasmLoading) return wasmLoading;
 
   wasmLoading = (async () => {
-    if (onProgress) onProgress(5, 'Downloading SWMM 5.1.015 WASM engine...');
+    if (onProgress) onProgress(5, 'Downloading SWMM 5.2.4 WASM engine...');
 
-    const [wasmResp, dataResp] = await Promise.all([
-      fetch('/js.wasm'),
-      fetch('/js.data'),
-    ]);
-    if (!wasmResp.ok) throw new Error('Failed to download js.wasm: HTTP ' + wasmResp.status);
-    if (!dataResp.ok) throw new Error('Failed to download js.data: HTTP ' + dataResp.status);
-
-    const [wasmBinary, dataBuffer] = await Promise.all([
-      wasmResp.arrayBuffer(),
-      dataResp.arrayBuffer(),
-    ]);
+    const wasmResp = await fetch('/swmm_engine.wasm');
+    if (!wasmResp.ok) throw new Error('Failed to download swmm_engine.wasm: HTTP ' + wasmResp.status);
+    const wasmBinary = await wasmResp.arrayBuffer();
 
     if (onProgress) onProgress(20, 'Initializing SWMM WASM module...');
 
@@ -72,10 +64,7 @@ async function loadWasmModule(onProgress?: (pct: number, msg: string) => void): 
         noInitialRun: true,
         print: (t: string) => console.log('[SWMM WASM]', t),
         printErr: (t: string) => console.warn('[SWMM WASM]', t),
-        locateFile: (path: string) => {
-          if (path.endsWith('.data')) return URL.createObjectURL(new Blob([dataBuffer]));
-          return '/' + path;
-        },
+        locateFile: (path: string) => '/' + path,
         onRuntimeInitialized: () => {
           clearTimeout(timeout);
           resolve((window as any).Module);
@@ -133,7 +122,7 @@ export function createWasmEngine(): SwmmEngine {
       try { mod.FS.writeFile('model.rpt', ''); } catch {}
       try { mod.FS.writeFile('model.out', ''); } catch {}
 
-      if (onProgress) onProgress(35, 'Running SWMM 5.1.015 (WASM)...');
+      if (onProgress) onProgress(35, 'Running SWMM 5.2.4 (WASM)...');
 
       const swmm_run = mod.cwrap('swmm_run', 'number', ['string', 'string', 'string']);
       const errCode = swmm_run('model.inp', 'model.rpt', 'model.out');
@@ -177,7 +166,7 @@ export function createWasmEngine(): SwmmEngine {
       return parsed;
     },
     getStatus() {
-      return 'EPA SWMM 5.1.015 (WASM In-Browser)';
+      return 'EPA SWMM 5.2.4 (WASM In-Browser)';
     },
   };
 }

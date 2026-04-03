@@ -34,12 +34,11 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
   }
 
   const magic1 = readInt32();
-  const magic2 = readInt32();
-  if (magic1 !== 516114522 || magic2 !== 0) {
-    throw new Error(`Invalid SWMM .out file (magic: ${magic1}, ${magic2})`);
+  const version = readInt32();
+  if (magic1 !== 516114522) {
+    throw new Error(`Invalid SWMM .out file (magic: ${magic1})`);
   }
 
-  const version = readInt32();
   const flowUnits = readInt32();
   const nSubcatch = readInt32();
   const nNodes = readInt32();
@@ -101,7 +100,7 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
   const nSubcatchVars = 8 + nPollutants;
   const nNodeVars = 6 + nPollutants;
   const nLinkVars = 5 + nPollutants;
-  const nSysVars = 14;
+  const nSysVars = version >= 52000 ? 15 : 14;
 
   const bytesPerStep = 8 +
     (nSubcatch * nSubcatchVars * 4) +
@@ -109,8 +108,7 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
     (nLinks * nLinkVars * 4) +
     (nSysVars * 4);
 
-  const endOffset = view.getInt32(buffer.byteLength - 6 * 4, true);
-  const nPeriods = view.getInt32(buffer.byteLength - 5 * 4, true);
+  const nPeriods = view.getInt32(buffer.byteLength - 3 * 4, true);
 
   let actualPeriods = nPeriods;
   if (actualPeriods <= 0 || actualPeriods > 100000) {
@@ -184,14 +182,8 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
     });
   }
 
-  let runoffCE = 0, flowCE = 0;
-  const errOffset = buffer.byteLength - 6 * 4;
-  if (errOffset > 0) {
-    const startIdx = view.getInt32(errOffset, true);
-    const np = view.getInt32(errOffset + 4, true);
-    runoffCE = view.getFloat32(errOffset + 8, true) || 0;
-    flowCE = view.getFloat32(errOffset + 12, true) || 0;
-  }
+  const runoffCE = 0;
+  const flowCE = 0;
 
   return {
     timeSteps,
