@@ -1,0 +1,749 @@
+# Deep Analysis: What You Can See in a SWMM5 Output File
+
+Your code is an extraordinary reference — it catalogs **every variable the SWMM5 engine can produce**, far beyond what the standard EPA binary .out file contains. Let me break down exactly what's available at each level and what this means for the Replit app.
+
+---
+
+## The Three Tiers of SWMM5 Output Data
+
+### Tier 1: Standard EPA Binary .out File (What most users see)
+
+The standard .out file written by`swmm_end()` contains only a **small subset** of what the engine actually computes:
+
+```
+NODES (6 variables per node per timestep):
+  0: Depth           ← NODE_DEPTH
+  1: Head            ← NODE_HEAD  
+  2: Volume          ← NODE_VOLUME
+  3: Lateral Inflow  ← NODE_LATFLOW
+  4: Total Inflow    ← NODE_INFLOW
+  5: Flooding        ← NODE_OVERFLOW
+
+LINKS (5 variables per link per timestep):
+  0: Flow            ← LINK_FLOW
+  1: Depth           ← LINK_DEPTH
+  2: Velocity        ← LINK_VELOCITY
+  3: Volume          ← LINK_VOLUME
+  4: Capacity (d/D)  ← LINK_CAPACITY
+
+SUBCATCHMENTS (8 + nPollutants variables):
+  0: Rainfall        ← SUBCATCH_RAINFALL
+  1: Snow Depth      ← SUBCATCH_SNOWDEPTH
+  2: Evaporation     ← SUBCATCH_EVAP
+  3: Infiltration    ← SUBCATCH_INFIL
+  4: Runoff          ← SUBCATCH_RUNOFF
+  5: GW Flow         ← SUBCATCH_GW_FLOW
+  6: GW Elevation    ← SUBCATCH_GW_ELEV
+  7: Soil Moisture   ← SUBCATCH_SOIL_MOIST
+
+SYSTEM (15 variables per timestep):
+  0: Air Temperature
+  1: Rainfall
+  2: Snow Depth
+  3: Evaporation Loss
+  4: Runoff
+  5: DW Inflow
+  6: GW Inflow
+  7: RDII Inflow
+  8: Direct Inflow
+  9: Total Lateral Inflow
+  10: Flooding
+  11: Outflow
+  12: Storage Volume
+  13: Evaporation
+  14: Seepage Loss
+```
+
+**That's 6 + 5 + 8 + 15 = 34 variables.** Your code catalogs **~190 variables.** The gap is enormous.
+
+---
+
+### Tier 2: Extended Output (RED/Innovyze Build)
+
+Your enum list reveals that the Innovyze RED build expanded`MAX_NODE_RESULTS`,`MAX_LINK_RESULTS`, and`MAX_SUBCATCH_RESULTS` to **100 slots each**, exposing solver internals that EPA SWMM never writes to the .out file. These are the variables that reveal **how the engine actually works**:
+
+#### Node Solver Internals (Tier 2)
+
+```
+What the Newton-Raphson solver computes at EVERY node, EVERY iteration:
+
+NODE_DQDH (idx 15)     — The Jacobian: ∂Q/∂H
+  └→ This is the SENSITIVITY of total flow to head change
+  └→ Feeds directly into the NR update: ΔH = -F/denom
+  └→ When dQ/dH → 0, the system is STIFF and convergence fails
+
+NODE_F (idx 17)         — The RESIDUAL: F(H) = ΣQ_in - ΣQ_out - dV/dt
+  └→ When F(H) = 0, continuity is satisfied
+  └→ The solver iterates to make this zero
+  └→ Non-zero at end of iterations = unconverged
+
+NODE_CORRECTION (idx 20) — ΔH = -F(H) / denominator
+  └→ The actual HEAD CHANGE applied each iteration
+  └→ max|ΔH| < HEAD_TOLERANCE = convergence achieved
+  └→ Tracking this shows WHERE convergence is slowest
+
+NODE_DENOM (idx 16)     — dQ/dH + SurfArea/Δt
+  └→ The denominator in Newton-Raphson
+  └→ When → 0, the solver DIVIDES BY ZERO → instability
+  └→ SurfArea/Δt term is the STABILIZER
+
+NODE_ITERATIONS (idx 21) — How many NR iterations this step
+  └→ 2-3 = healthy system
+  └→ = MAX_TRIALS (8 default) = DID NOT CONVERGE
+  └→ This is the #1 diagnostic for model problems
+
+NODE_CONVERGENCE (idx 23) — Binary: converged (1) or not (0)
+  └→ Map this at each timestep to see WHERE trouble is
+
+NODE_CE (idx 14)        — Per-node continuity error
+  └→ Unlike the .rpt summary, this is PER NODE PER STEP
+  └→ Shows exactly which nodes are losing/gaining mass
+```
+
+#### Link Momentum Equation Terms (Tier 2 — THE inner workings)
+
+This is where your code really shines. The **six DQ terms** are the actual terms in the St. Venant momentum equation:
+
+```
+The FULL finite-difference momentum equation:
+
+Q_new = [DQ1 + DQ2 + DQ5] / [1 + DQ3_denom + DQ4_denom + DQ6_denom]
+
+Where:
+
+DQ1 (idx 10) — INERTIA: σ · Q_old
+  └→ σ = inertial damping factor (0 to 1)
+  └→ σ = 1: full inertia (free surface flow)
+  └→ σ → 0: inertia removed (surcharged/pressure flow)
+  └→ This is HOW SWMM transitions from open channel to pipe flow
+  └→ INERTIAL_DAMPING option controls the σ curve
+
+DQ2 (idx 11) — PRESSURE GRADIENT: σ · Δt · g · Ā · (H₁-H₂) / L
+  └→ THE DRIVING FORCE of flow
+  └→ Head difference / pipe length = hydraulic gradient
+  └→ × gravity × area × timestep
+  └→ This is the term that MOVES WATER through the system
+  └→ When H₁ > H₂: positive flow (downstream)
+  └→ When H₁ < H₂: REVERSE FLOW (backwater)
+
+DQ3 (idx 12) — FRICTION: Δt · g · Ā · Sf
+  └→ Manning friction: Sf = (n·|Q| / (κ·A·R^⅔))²
+  └→ Always OPPOSES flow direction
+  └→ This is where Manning's n has its effect
+  └→ THE dominant loss in most pipes
+  └→ κ = 1.49 (US) or 1.0 (SI)
+
+DQ4 (idx 13) — MINOR LOSSES: K_entry·V²/2g + K_exit·V²/2g + K_avg·V²/2g
+  └→ From [LOSSES] section
+  └→ Entry losses at pipe inlet
+  └→ Exit losses at pipe outlet
+  └→ Average losses along pipe (bends, fittings)
+
+DQ5 (idx 14) — LATERAL MOMENTUM: from side inflows
+  └→ When subcatchment runoff enters a node, it carries momentum
+  └→ Usually small compared to DQ2 and DQ3
+  └→ But can matter at nodes with large lateral inflow
+
+DQ6 (idx 15) — CONVECTIVE ACCELERATION: σ · ∂(βQ²/A)/∂x
+  └→ Spatial change in momentum flux
+  └→ Important at expansions/contractions
+  └→ Can DESTABILIZE the solver
+  └→ Set to 0 when INERTIAL_DAMPING = FULL (diffusion wave)
+  └→ The "noisy" term that causes oscillations
+```
+
+#### Link Energy / Bernoulli Balance (Tier 2)
+
+```
+The Bernoulli energy equation check — does energy balance?
+
+LINK_BE_LHS (idx 61) — Left side:  H₁ + V₁²/(2g) + K_entry·V₁²/(2g)
+LINK_BE_RHS (idx 62) — Right side: H₂ + V₂²/(2g) + K_exit·V₂²/(2g) + h_f
+
+If LHS ≈ RHS: energy is conserved (good!)
+If LHS ≠ RHS: energy balance error → numerical issues
+
+Components:
+  LINK_VHUP  (idx 57) — V₁²/(2g)  upstream velocity head
+  LINK_VHMID (idx 58) — V_mid²/(2g) midpoint velocity head
+  LINK_VHDN  (idx 59) — V₂²/(2g)  downstream velocity head
+  LINK_VHHF  (idx 60) — Sf × L    friction head loss
+
+LINK_SIGMA (idx 64) — σ inertial damping factor (0 to 1)
+  └→ THE transition control between open channel and pressure flow
+  └→ σ = 1: free surface (momentum equation uses all terms)
+  └→ σ = 0: fully surcharged (reduces to diffusion equation)
+  └→ Transition zone is where instability lives
+```
+
+#### Link Geometry at Both Ends (Tier 2)
+
+```
+Cross-section properties computed at BOTH ends of every pipe:
+
+LINK_A1, LINK_A2     — Flow area upstream/downstream
+LINK_R1, LINK_R2     — Hydraulic radius upstream/downstream
+LINK_W1, LINK_W2     — Top width upstream/downstream
+LINK_Y1, LINK_Y2     — Water depth upstream/downstream
+LINK_V1, LINK_V2     — Velocity upstream/downstream
+LINK_F1, LINK_F2     — Area function for momentum equation
+
+LINK_AMID            — Midpoint area = (A1+A2)/2
+LINK_RMID            — Midpoint hydraulic radius
+
+Why this matters:
+  - A1 ≠ A2 means non-uniform flow (gradually/rapidly varied)
+  - V1 >> V2 means flow is decelerating (energy converting to pressure)
+  - V1 << V2 means flow is accelerating (pressure converting to velocity)
+  - When A1 → 0 or A2 → 0, the pipe is partially dry → instability risk
+```
+
+---
+
+### Tier 3: Subcatchment Deep Internals
+
+Your code exposes the **infiltration state machine** for all three methods simultaneously:
+
+```
+GREEN-AMPT (the most physically-based):
+  GA_IMD (idx 72)  — Current moisture deficit (drives capacity)
+  GA_F   (idx 73)  — Cumulative infiltration F
+                      f = Ks × (1 + ψ·Δθ/F)  ← as F↑, f→Ks
+  GA_FU  (idx 74)  — Upper zone infiltration
+  GA_Lu  (idx 75)  — Wetting front depth = F/Δθ
+  GA_T   (idx 76)  — Elapsed infiltration time
+  GA_Sat (idx 77)  — Saturated flag (0/1)
+
+HORTON (time-based decay):
+  HORTON_TP (idx 70) — Ponding time (when f drops below rainfall)
+  HORTON_Fe (idx 71) — Cumulative F = fc·t + (f0-fc)/k·(1-e^(-kt))
+
+CURVE NUMBER (event-based):
+  CN_S    (idx 78) — Max retention = (1000/CN) - 10
+  CN_F    (idx 79) — Cumulative infiltration
+  CN_P    (idx 80) — Cumulative precipitation
+  CN_Se   (idx 82) — Effective S (antecedent-adjusted)
+  CN_f    (idx 83) — Current infiltration rate
+  CN_Smax (idx 84) — Maximum possible S
+  CN_Regen(idx 86) — Retention recovered during dry period
+  CN_CN   (idx 87) — Current effective CN value
+
+SUBCATCHMENT RUNOFF BREAKDOWN:
+  RUNOFF_IMPERV0 — Directly-connected impervious (no depression storage)
+  RUNOFF_IMPERV1 — Impervious WITH depression storage
+  RUNOFF_PERV    — Pervious area runoff
+
+  DEPTH_IMPERV0  — Surface depth on IMPERV0
+  DEPTH_IMPERV1  — Surface depth on IMPERV1 (must exceed Dstore to runoff)
+  DEPTH_PERV     — Surface depth on pervious
+
+LID LAYER-BY-LAYER:
+  LID_SURF_INFLOW   — Rain + runon entering LID surface
+  LID_SURF_INFIL    — Surface → soil infiltration
+  LID_PAVE_PERC     — Through pavement voids
+  LID_SOIL_PERC     — Soil → storage percolation
+  LID_STOR_EXFIL    — Storage → native soil exfiltration
+  LID_SURF_OUTFLOW  — Surface overflow (becomes runoff)
+  LID_STOR_DRAIN    — Underdrain pipe flow
+  LID_SURF_DEPTH    — Water depth on surface
+  LID_PAVE_DEPTH    — Water in pavement voids
+  LID_SOIL_MOIST    — Soil moisture fraction
+  LID_STOR_DEPTH    — Water in gravel storage
+```
+
+---
+
+## What This Means for the SWMM5-UI Replit App
+
+### Current State: The app only reads Tier 1 (34 variables)
+
+The`SWMMOutputReader.js` I built earlier only parses the standard EPA .out file format, which gives you the basic 6+5+8+15 variables. This is what every SWMM5 GUI shows.
+
+### Opportunity: Expose Tier 2 & 3 for Advanced Diagnostics
+
+Your variable catalog enables building **diagnostic tools that don't exist in any current SWMM GUI**:
+
+#### 1. Solver Convergence Dashboard
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 🔍 Solver Diagnostics — Timestep 03:45:00                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ CONVERGENCE MAP:                                            │
+│ ┌─────────────────────────────────────────────────────┐    │
+│ │  ●=converged  ○=not converged  size=iterations       │    │
+│ │                                                      │    │
+│ │    ●──────●──────●──────○──────●──────●              │    │
+│ │    J1     J2     J3    J4↑    J5     OF1             │    │
+│ │                       trouble!                        │    │
+│ └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│ WORST NODES THIS STEP:                                      │
+│ J-42: iterations=8/8 ΔH=0.15ft F(H)=2.3CFS CE=4.2%       │
+│ J-55: iterations=6/8 ΔH=0.03ft F(H)=0.5CFS CE=0.8%       │
+│ J-12: iterations=3/8 ΔH=0.001ft ✅                         │
+│                                                             │
+│ SYSTEM: Avg iterations=3.2  Max=8  Timestep=15.3s          │
+│         Continuity Error: 0.34% (cumulative)                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 2. Momentum Equation Visualizer
+
+```
+For any selected conduit, show the force balance:
+
+┌─────────────────────────────────────────────────────────────┐
+│ ⚡ Momentum Balance — Conduit C-15                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ DRIVING FORCES (+Q):           RESISTING FORCES (-Q):       │
+│                                                             │
+│ DQ1 Inertia:    ████████ 3.2   DQ3 Friction: ████████ 2.8  │
+│ DQ2 Pressure:   ████████████ 5.1  DQ4 Minor: ██ 0.4        │
+│ DQ5 Lateral:    █ 0.1          DQ6 Convect: ███ 0.7        │
+│ ─────────────────────────────────────────────────           │
+│ Total Drive: 8.4               Total Resist: 3.9            │
+│                                                             │
+│ NET → Q_new = 4.5 CFS (was 4.2 CFS)                       │
+│                                                             │
+│ σ (damping) = 0.85   Fr = 0.73 (subcritical)               │
+│ Sf = 0.0023          Qnorm = 6.1 CFS                       │
+│                                                             │
+│ BERNOULLI CHECK:                                            │
+│ LHS = 125.3 + 0.12 + 0.02 = 125.44 ft                     │
+│ RHS = 124.8 + 0.15 + 0.08 + 0.38 = 125.41 ft              │
+│ Balance Error = 0.03 ft (0.02%) ✅                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 3. Infiltration State Tracker
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 🌍 Infiltration — Subcatchment S-12 (Green-Ampt)           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Current State:                                              │
+│   Moisture Deficit (IMD): 0.18 (was 0.33 at start)         │
+│   Cumulative Infil (F):   2.4 in                            │
+│   Wetting Front (Lu):     13.3 in                           │
+│   Saturated: NO                                             │
+│                                                             │
+│ Infiltration Rate:                                          │
+│   f = Ks × (1 + ψ·Δθ/F) = 0.43 × (1 + 4.33×0.18/2.4)    │
+│   f = 0.43 × 1.32 = 0.57 in/hr                            │
+│                                                             │
+│ Rainfall: 1.2 in/hr  >  f: 0.57 in/hr → PONDING           │
+│ Excess = 0.63 in/hr → generates runoff                     │
+│                                                             │
+│ ┌──────────────────────────────────────────────────┐       │
+│ │ 2.0 ┤ ╱╲                                         │       │
+│ │     │╱  ╲ rainfall                                │       │
+│ │ 1.0 ┤    ╲───                                     │       │
+│ │     │─────╲── f (infiltration capacity)           │       │
+│ │ 0.5 ┤      ╲───────── → approaching Ks           │       │
+│ │     │ ░░░░░░░░░ (excess = runoff)                 │       │
+│ │ 0.0 └────────────────────────────────             │       │
+│ └──────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 4. LID Performance Dashboard
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 🌿 LID Performance — Bio-Retention Cell on S-03            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ LAYER STATUS:                                               │
+│ ┌─────────────────────────────────────────────────────┐    │
+│ │  SURFACE   ░░░░░░░░░░░░░░░░░    2.1 in (berm=6in)  │    │
+│ │  ─────── infiltrating at 1.8 in/hr ──────────────── │    │
+│ │  SOIL      ████████████░░░░░░░  θ = 0.31 (cap=0.45)│    │
+│ │  ─────── percolating at 0.5 in/hr ────────────────  │    │
+│ │  STORAGE   ██████████████████░  8.2 in (cap=12in)   │    │
+│ │  ─────── drain: 0.3 in/hr  exfil: 0.2 in/hr ─────  │    │
+│ └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│ WATER BALANCE:                                              │
+│   In:  Rainfall 1.2 + Runon 0.8 = 2.0 in/hr              │
+│   ET:  0.01 in/hr                                          │
+│   Out: Surface overflow 0.0 + Drain 0.3 + Exfil 0.2       │
+│   ΔStorage: +1.5 in/hr (filling)                           │
+│                                                             │
+│   Capture efficiency: 100% (no overflow yet)                │
+│   Time to overflow: ~2.6 hours at current rate              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## How to Access Tier 2/3 Variables
+
+The standard EPA SWMM5 engine does **NOT** write these to the .out file. There are three approaches:
+
+### Approach A: Custom Engine Build (How RED does it)
+
+```c
+// In output.c, expand the reporting arrays:
+#define MAX_NODE_RESULTS 100  // was 7
+#define MAX_LINK_RESULTS 100  // was 6
+#define MAX_SUBCATCH_RESULTS 100  // was 9
+
+// In output_saveNodeResults():
+SubcatchResults[SUBCATCH_RAINFALL] = ...;  // standard
+SubcatchResults[SUBCATCH_RUNOFF_IMPERV0] = ...; // extended!
+SubcatchResults[SUBCATCH_GA_F] = ...;  // infiltration state!
+SubcatchResults[SUBCATCH_LID_SURF_DEPTH] = ...; // LID layer!
+```
+
+### Approach B: Callback API (swmm_step + swmm_getValue)
+
+```javascript
+// Use the SWMM5 toolkit API to query variables during simulation
+// This works with the standard engine!
+
+// Run step-by-step:
+while (!done) {
+  swmm_step(&elapsedTime);
+  
+  // Query any internal variable at this timestep:
+  swmm_getNodeResult(nodeIdx, NODE_DEPTH, &value);
+  swmm_getNodeResult(nodeIdx, NODE_LATFLOW, &value);
+  
+  // For extended variables, use swmm_getValue():
+  // (requires engine modification or toolkit extension)
+  swmm_getValue(NODE, nodeIdx, NODE_DQDH, &jacobian);
+  swmm_getValue(LINK, linkIdx, LINK_DQ2, &pressureGradient);
+}
+```
+
+### Approach C: Parse .rpt File for Summary Statistics
+
+```
+The .rpt file contains SUMMARY tables that aggregate Tier 2 data:
+
+Node Surcharge Summary:
+  ──────────────────────────────────────────────────
+                         Max     Hours       Max
+  Node         Type     HGL      Surcharged  Depth
+  ──────────────────────────────────────────────────
+  J-42         Junc     128.5    1.23        3.5
+  
+Link Flow Summary:
+  ──────────────────────────────────────────────────
+                Max       Max      Max     Time of
+  Link         |Flow|     Veloc    d/D     Max Flow
+  ──────────────────────────────────────────────────
+  C-15         8.45       5.2      0.87    03:45
+
+Routing Time Step Summary:
+  Minimum Time Step: 0.50 sec
+  Average Time Step: 12.30 sec  
+  Maximum Time Step: 30.00 sec
+  % Time at Minimum: 3.4%      ← HIGH = trouble
+```
+
+---
+
+## Implementation Plan for the Replit App
+
+### Phase A: Enhanced .rpt Parser (4-6 hours)
+
+Extract everything the .rpt file contains that the .out file doesn't:
+
+```javascript
+class SWMMReportParser {
+  parse(rptText) {
+    return {
+      // Continuity
+      runoffContinuity: { /* precip, evap, infil, runoff, error% */ },
+      routingContinuity: { /* inflow, outflow, storage, error% */ },
+      
+      // Summaries
+      nodeDepthSummary: [ /* maxDepth, maxHGL, timeOfMax, hoursFlooded */ ],
+      nodeInflowSummary: [ /* maxLatInflow, maxTotalInflow, totalVol */ ],
+      nodeFloodingSummary: [ /* hoursFld, maxRate, totalVol */ ],
+      nodeSurchargeSummary: [ /* hoursSurcharged, maxDepth */ ],
+      
+      linkFlowSummary: [ /* maxFlow, maxVelocity, maxDoverD, timeOfMax */ ],
+      linkSurchargeSummary: [ /* hoursSurcharged, upstreamHrs, dnstreamHrs */ ],
+      
+      pumpingSummary: [ /* utilized%, starts, minFlow, avgFlow, maxFlow */ ],
+      outfallLoadingSummary: [ /* avgFlow, maxFlow, totalVolume */ ],
+      
+      subcatchRunoffSummary: [ /* precip, runon, evap, infil, runoff, coeff */ ],
+      
+      // Timestep QA
+      timestepSummary: { min, avg, max, pctAtMin },
+      
+      // Highest flow instabilities
+      flowInstabilities: [ /* link, count */ ],
+    };
+  }
+}
+```
+
+### Phase B: Diagnostic Overlay on Existing Results (8-12 hours)
+
+Use the standard .out data to COMPUTE derived diagnostics:
+
+```javascript
+class SWMMDiagnostics {
+  constructor(results, model) {
+    this.results = results;
+    this.model = model;
+  }
+
+  // Compute Froude number from standard output
+  getFroude(linkId, timestep) {
+    const flow = this.results.getLinkResult(linkId, 'flow', timestep);
+    const depth = this.results.getLinkResult(linkId, 'depth', timestep);
+    const cond = this.model.conduits.get(linkId);
+    if (!cond || depth <= 0) return 0;
+    
+    const area = this.getArea(cond.xsecShape, cond.xsecGeom1, depth);
+    const topWidth = this.getTopWidth(cond.xsecShape, cond.xsecGeom1, depth);
+    const velocity = flow / area;
+    const celerity = Math.sqrt(32.174 * area / topWidth);
+    return Math.abs(velocity) / celerity;
+  }
+
+  // Compute pipe slope from node elevations
+  getSlope(linkId) {
+    const cond = this.model.conduits.get(linkId);
+    if (!cond) return 0;
+    const fromNode = this.model.getObject('junction', cond.fromNode) || 
+                     this.model.getObject('storage', cond.fromNode);
+    const toNode = this.model.getObject('junction', cond.toNode) ||
+                   this.model.getObject('outfall', cond.toNode);
+    if (!fromNode || !toNode || !cond.length) return 0;
+    return (fromNode.invertElev + (cond.inletOffset || 0) - 
+            toNode.invertElev - (cond.outletOffset || 0)) / cond.length;
+  }
+
+  // Compute normal flow capacity
+  getQnormal(linkId) {
+    const cond = this.model.conduits.get(linkId);
+    if (!cond) return 0;
+    const slope = Math.abs(this.getSlope(linkId));
+    const n = cond.roughness || 0.013;
+    const aFull = this.getFullArea(cond.xsecShape, cond.xsecGeom1, cond.xsecGeom2);
+    const rFull = this.getFullHydRadius(cond.xsecShape, cond.xsecGeom1, cond.xsecGeom2);
+    return (1.49 / n) * aFull * Math.pow(rFull, 2/3) * Math.sqrt(slope);
+  }
+
+  // Estimate friction slope from Manning's equation
+  getFrictionSlope(linkId, timestep) {
+    const flow = Math.abs(this.results.getLinkResult(linkId, 'flow', timestep));
+    const depth = this.results.getLinkResult(linkId, 'depth', timestep);
+    const cond = this.model.conduits.get(linkId);
+    if (!cond || depth <= 0) return 0;
+    
+    const area = this.getArea(cond.xsecShape, cond.xsecGeom1, depth);
+    const hydRadius = this.getHydRadius(cond.xsecShape, cond.xsecGeom1, depth);
+    const n = cond.roughness || 0.013;
+    
+    // Sf = (n*Q / (1.49*A*R^(2/3)))^2
+    const denom = 1.49 * area * Math.pow(hydRadius, 2/3);
+    if (denom === 0) return 0;
+    return Math.pow(n * flow / denom, 2);
+  }
+
+  // Estimate head loss per pipe
+  getHeadLoss(linkId, timestep) {
+    const sf = this.getFrictionSlope(linkId, timestep);
+    const cond = this.model.conduits.get(linkId);
+    return sf * (cond?.length || 0);
+  }
+
+  // Flow classification
+  getFlowClass(linkId, timestep) {
+    const depth = this.results.getLinkResult(linkId, 'depth', timestep);
+    const cond = this.model.conduits.get(linkId);
+    if (!cond) return 'UNKNOWN';
+    
+    if (depth <= 0.001) return 'DRY';
+    if (depth >= cond.xsecGeom1 * 0.97) return 'FULL';
+    
+    const fr = this.getFroude(linkId, timestep);
+    if (fr < 0.01) return 'STAGNANT';
+    if (fr < 1.0) return 'SUBCRITICAL';
+    if (fr > 1.0) return 'SUPERCRITICAL';
+    return 'CRITICAL';
+  }
+
+  // Energy grade line
+  getEGL(linkId, timestep) {
+    const flow = this.results.getLinkResult(linkId, 'flow', timestep);
+    const depth = this.results.getLinkResult(linkId, 'depth', timestep);
+    const cond = this.model.conduits.get(linkId);
+    if (!cond || depth <= 0) return { up: 0, dn: 0 };
+
+    const fromNode = this.model.getObject('junction', cond.fromNode) ||
+                     this.model.getObject('storage', cond.fromNode);
+    const toNode = this.model.getObject('junction', cond.toNode) ||
+                   this.model.getObject('outfall', cond.toNode);
+    
+    const h1 = this.results.getNodeResult(cond.fromNode, 'head', timestep);
+    const h2 = this.results.getNodeResult(cond.toNode, 'head', timestep);
+    
+    const area = this.getArea(cond.xsecShape, cond.xsecGeom1, depth);
+    const v = area > 0 ? flow / area : 0;
+    const vh = v * v / (2 * 32.174);
+    
+    return {
+      hglUp: h1,
+      hglDn: h2,
+      eglUp: h1 + vh,
+      eglDn: h2 + vh,
+      velocityHead: vh,
+      frictionLoss: this.getHeadLoss(linkId, timestep),
+    };
+  }
+
+  // Cross-section geometry functions
+  getArea(shape, geom1, depth) {
+    const d = Math.max(0, Math.min(depth, geom1));
+    switch (shape?.toUpperCase()) {
+      case 'CIRCULAR': {
+        const D = geom1;
+        const r = D / 2;
+        const theta = 2 * Math.acos(1 - d / r);
+        return r * r / 2 * (theta - Math.sin(theta));
+      }
+      case 'RECT_CLOSED':
+      case 'RECT_OPEN':
+        return d * (geom1 || d); // width × depth
+      case 'TRAPEZOIDAL':
+        return d * (geom1 + d * (geom1 || 0)); // approximate
+      default:
+        // Approximate as circular
+        const D2 = geom1 || 1;
+        const r2 = D2 / 2;
+        const theta2 = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - d / r2)));
+        return r2 * r2 / 2 * (theta2 - Math.sin(theta2));
+    }
+  }
+
+  getFullArea(shape, geom1, geom2) {
+    switch (shape?.toUpperCase()) {
+      case 'CIRCULAR': return Math.PI * geom1 * geom1 / 4;
+      case 'RECT_CLOSED':
+      case 'RECT_OPEN': return geom1 * (geom2 || geom1);
+      default: return Math.PI * geom1 * geom1 / 4;
+    }
+  }
+
+  getTopWidth(shape, geom1, depth) {
+    const d = Math.max(0, Math.min(depth, geom1));
+    switch (shape?.toUpperCase()) {
+      case 'CIRCULAR': {
+        const r = geom1 / 2;
+        return 2 * Math.sqrt(Math.max(0, r * r - (r - d) * (r - d)));
+      }
+      case 'RECT_CLOSED':
+      case 'RECT_OPEN':
+        return geom1 || d;
+      default: {
+        const r = geom1 / 2;
+        return 2 * Math.sqrt(Math.max(0, r * r - (r - d) * (r - d)));
+      }
+    }
+  }
+
+  getHydRadius(shape, geom1, depth) {
+    const area = this.getArea(shape, geom1, depth);
+    // Approximate wetted perimeter
+    const d = Math.max(0.001, Math.min(depth, geom1));
+    switch (shape?.toUpperCase()) {
+      case 'CIRCULAR': {
+        const r = geom1 / 2;
+        const theta = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - d / r)));
+        const P = r * theta;
+        return P > 0 ? area / P : 0;
+      }
+      default: {
+        const r = geom1 / 2;
+        const theta = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - d / r)));
+        const P = r * theta;
+        return P > 0 ? area / P : 0;
+      }
+    }
+  }
+
+  getFullHydRadius(shape, geom1, geom2) {
+    switch (shape?.toUpperCase()) {
+      case 'CIRCULAR': return geom1 / 4;
+      case 'RECT_CLOSED': return (geom1 * (geom2 || geom1)) / (2 * geom1 + 2 * (geom2 || geom1));
+      default: return geom1 / 4;
+    }
+  }
+}
+```
+
+### Phase C: Diagnostic UI Components (12-16 hours)
+
+```
+NEW PANELS FOR THE APP:
+
+1. Solver Health Panel (under 🤖 AI)
+   - Per-timestep system iterations
+   - Per-timestep continuity error
+   - Timestep used vs. max allowed
+   - "Trouble spots" — nodes that would have high iterations
+
+2. Momentum Balance Panel (click any conduit)
+   - Estimated DQ2 (pressure) from H1-H2
+   - Estimated DQ3 (friction) from Manning
+   - Froude number
+   - Flow classification
+   - Normal flow capacity comparison
+
+3. Energy Profile on Profile Plot
+   - HGL (already shown)
+   - EGL = HGL + velocity head
+   - Friction loss per pipe
+   - Entry/exit losses at nodes
+
+4. Infiltration Tracker (click any subcatchment)
+   - Current rate vs. capacity
+   - Cumulative infiltration
+   - Time to saturation estimate
+   - Recovery during dry periods
+
+5. LID Layer Dashboard (click subcatchment with LIDs)
+   - Surface/Soil/Storage depths as stacked bars
+   - Flow rates between layers
+   - Capture efficiency over time
+```
+
+---
+
+## Summary: Your Variable Catalog Unlocks Three Levels of Insight
+
+```
+LEVEL 1 — Standard Output (what we have now):
+  "Node J-42 has depth 3.2 ft and is flooding at 0.15 CFS"
+  → WHAT is happening
+
+LEVEL 2 — Solver Diagnostics (computed from standard output):
+  "The Froude number is 1.3 (supercritical), friction slope
+   is 0.008, and normal capacity is 6.1 CFS vs current 4.5 CFS"
+  → WHY it's happening
+
+LEVEL 3 — Engine Internals (requires extended output):
+  "The Newton-Raphson residual F(H)=2.3 CFS at node J-42,
+   Jacobian dQ/dH=0.02 (nearly singular), σ=0.45 (transitioning
+   to pressure flow), DQ2 pressure gradient is 5.1 CFS but
+   DQ6 convective acceleration is -3.2 CFS causing oscillation"
+  → HOW to fix it
+
+Your catalog makes all three levels possible.
+The Replit app should implement Levels 1+2 immediately (from 
+standard .out) and Level 3 when a custom engine build is available.
+```
+
+The **~190 variables** in your code represent the complete state of the SWMM5 computational engine at every timestep. No other SWMM GUI exposes this level of detail. Building diagnostic dashboards around these variables would make the Replit app not just match EPA SWMM5 desktop, but **fundamentally surpass** every existing SWMM interface.

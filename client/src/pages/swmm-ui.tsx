@@ -3949,7 +3949,8 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
     ? (nodeIds.includes(selectedObj.id) ? 'node' : linkIds.includes(selectedObj.id) ? 'link' : subcatchIds.includes(selectedObj.id) ? 'subcatch' : 'node')
     : 'node';
 
-  const [category, setCategory] = useState<'node' | 'link' | 'subcatch'>(initCategory);
+  type TsCat = 'node' | 'link' | 'subcatch' | 'system';
+  const [category, setCategory] = useState<TsCat>(initCategory);
   const [elementIds, setElementIds] = useState<string[]>(selectedObj ? [selectedObj.id] : []);
   const [activeVars, setActiveVars] = useState<string[]>(() => {
     if (initCategory === 'node') return ['depth'];
@@ -3958,53 +3959,103 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
   });
   const [searchText, setSearchText] = useState('');
   const [showCompare, setShowCompare] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
-  const varDefs = category === 'node' ? CHART_NODE_VARS : category === 'link' ? CHART_LINK_VARS : CHART_SUBCATCH_VARS;
-  const allIds = category === 'node' ? nodeIds : category === 'link' ? linkIds : subcatchIds;
+  const toggleGroup = (label: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      return next;
+    });
+  };
+
+  const varGroups = useMemo(() => {
+    type VarDef = { key: string; label: string; unit: string };
+    type VarGroup = { groupLabel: string; vars: VarDef[] };
+    if (category === 'system') {
+      return getSystemCategories().map(g => ({
+        groupLabel: g.label,
+        vars: g.vars.map(v => ({ key: v.key, label: v.name, unit: v.units })),
+      })) as VarGroup[];
+    }
+    const getCats = category === 'node' ? getNodeCategories : category === 'link' ? getLinkCategories : getSubCategories;
+    const groups: VarGroup[] = [];
+    const catGroups = getCats();
+    for (const g of catGroups) {
+      const isStd = g.label === 'Standard (EPA)';
+      const vars = g.vars.filter(v => !v.isInput).map(v => ({ key: v.key, label: v.name, unit: v.units }));
+      if (vars.length > 0) {
+        groups.push({ groupLabel: isStd ? 'Standard' : g.label, vars });
+      }
+    }
+    return groups;
+  }, [category]);
+
+  const allVarDefs = useMemo(() => varGroups.flatMap(g => g.vars), [varGroups]);
+
+  const allIds = category === 'node' ? nodeIds : category === 'link' ? linkIds : category === 'subcatch' ? subcatchIds : [];
 
   const filteredIds = useMemo(() => {
+    if (category === 'system') return [];
     if (!searchText) return allIds.slice(0, 100);
     const lower = searchText.toLowerCase();
     return allIds.filter(id => id.toLowerCase().includes(lower)).slice(0, 100);
-  }, [allIds, searchText]);
+  }, [allIds, searchText, category]);
+
+  const isSystem = category === 'system';
 
   const chartData = useMemo(() => {
-    if (elementIds.length === 0 || activeVars.length === 0) return [];
+    if (activeVars.length === 0) return [];
+    if (!isSystem && elementIds.length === 0) return [];
     return results.timeSteps.map((ts, i) => {
       const row: Record<string, number | string> = { time: ts.dateTime, idx: i };
-      for (const elId of elementIds) {
+      if (isSystem) {
         for (const v of activeVars) {
-          const key = elementIds.length > 1 ? `${elId}_${v}` : v;
-          if (category === 'node') {
-            const nr = ts.nodes[elId];
-            row[key] = nr ? (nr as Record<string, number>)[v] ?? 0 : 0;
-          } else if (category === 'link') {
-            const lr = ts.links[elId];
-            row[key] = lr ? (lr as Record<string, number>)[v] ?? 0 : 0;
-          } else {
-            const sr = ts.subcatchments[elId];
-            row[key] = sr ? (sr as Record<string, number>)[v] ?? 0 : 0;
+          row[v] = ts.system?.extended?.[v] ?? 0;
+        }
+      } else {
+        for (const elId of elementIds) {
+          for (const v of activeVars) {
+            const key = elementIds.length > 1 ? `${elId}_${v}` : v;
+            if (category === 'node') {
+              const nr = ts.nodes[elId];
+              row[key] = nr ? ((nr as Record<string, number>)[v] ?? nr.extended?.[v] ?? 0) : 0;
+            } else if (category === 'link') {
+              const lr = ts.links[elId];
+              row[key] = lr ? ((lr as Record<string, number>)[v] ?? lr.extended?.[v] ?? 0) : 0;
+            } else {
+              const sr = ts.subcatchments[elId];
+              row[key] = sr ? ((sr as Record<string, number>)[v] ?? sr.extended?.[v] ?? 0) : 0;
+            }
           }
         }
       }
       return row;
     });
-  }, [results, elementIds, activeVars, category]);
+  }, [results, elementIds, activeVars, category, isSystem]);
 
   const lineKeys = useMemo(() => {
     const keys: { key: string; label: string; color: string }[] = [];
     let ci = 0;
-    for (const elId of elementIds) {
+    if (isSystem) {
       for (const v of activeVars) {
-        const varDef = varDefs.find(vd => vd.key === v);
-        const key = elementIds.length > 1 ? `${elId}_${v}` : v;
-        const label = elementIds.length > 1 ? `${elId} — ${varDef?.label || v}` : (varDef?.label || v);
-        keys.push({ key, label, color: TS_COLORS[ci % TS_COLORS.length] });
+        const varDef = allVarDefs.find(vd => vd.key === v);
+        keys.push({ key: v, label: varDef?.label || v, color: TS_COLORS[ci % TS_COLORS.length] });
         ci++;
+      }
+    } else {
+      for (const elId of elementIds) {
+        for (const v of activeVars) {
+          const varDef = allVarDefs.find(vd => vd.key === v);
+          const key = elementIds.length > 1 ? `${elId}_${v}` : v;
+          const label = elementIds.length > 1 ? `${elId} — ${varDef?.label || v}` : (varDef?.label || v);
+          keys.push({ key, label, color: TS_COLORS[ci % TS_COLORS.length] });
+          ci++;
+        }
       }
     }
     return keys;
-  }, [elementIds, activeVars, varDefs]);
+  }, [elementIds, activeVars, allVarDefs, isSystem]);
 
   const peakValues = useMemo(() => {
     if (chartData.length === 0 || lineKeys.length === 0) return {};
@@ -4021,13 +4072,15 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
     return peaks;
   }, [chartData, lineKeys]);
 
-  const handleCategoryChange = (cat: 'node' | 'link' | 'subcatch') => {
+  const handleCategoryChange = (cat: TsCat) => {
     setCategory(cat);
     setElementIds([]);
     setSearchText('');
+    setCollapsedGroups(new Set());
     if (cat === 'node') setActiveVars(['depth']);
     else if (cat === 'link') setActiveVars(['flow']);
-    else setActiveVars(['runoff']);
+    else if (cat === 'subcatch') setActiveVars(['runoff']);
+    else setActiveVars(['sysRainfall']);
   };
 
   const toggleElement = (id: string) => {
@@ -4042,11 +4095,16 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
     setActiveVars(prev => prev.includes(key) ? prev.filter(v => v !== key) : [...prev, key]);
   };
 
+  const canChart = isSystem ? activeVars.length > 0 : (elementIds.length > 0 && activeVars.length > 0);
+  const chartTitle = isSystem
+    ? 'System'
+    : (elementIds.length === 1 ? elementIds[0] : `${elementIds.length} elements`);
+
   return (
     <div className="flex gap-3" style={{ minHeight: 420 }} data-testid="time-series-content">
-      <div className="w-44 shrink-0 flex flex-col gap-2 border-r border-[#d0d0d8] pr-3">
+      <div className="w-48 shrink-0 flex flex-col gap-2 border-r border-[#d0d0d8] pr-3">
         <div className="flex gap-1">
-          {(['node', 'link', 'subcatch'] as const).map(cat => (
+          {(['node', 'link', 'subcatch', 'system'] as const).map(cat => (
             <button
               key={cat}
               onClick={() => handleCategoryChange(cat)}
@@ -4055,59 +4113,77 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
               }`}
               data-testid={`ts-cat-${cat}`}
             >
-              {cat === 'node' ? 'Nodes' : cat === 'link' ? 'Links' : 'Subcatch'}
+              {cat === 'node' ? 'Nodes' : cat === 'link' ? 'Links' : cat === 'subcatch' ? 'Subcatch' : 'System'}
             </button>
           ))}
         </div>
 
-        <Input
-          placeholder="Search..."
-          value={searchText}
-          onChange={e => setSearchText(e.target.value)}
-          className="h-6 text-[10px] bg-white border-[#d0d0d8]"
-          data-testid="ts-search"
-        />
+        {!isSystem && (
+          <>
+            <Input
+              placeholder="Search..."
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              className="h-6 text-[10px] bg-white border-[#d0d0d8]"
+              data-testid="ts-search"
+            />
 
-        <label className="flex items-center gap-1.5 text-[9px] text-[#6b6b7b] cursor-pointer">
-          <input type="checkbox" checked={showCompare} onChange={() => setShowCompare(!showCompare)} className="w-3 h-3 accent-[#2c6eb5]" />
-          Compare (multi-select)
-        </label>
+            <label className="flex items-center gap-1.5 text-[9px] text-[#6b6b7b] cursor-pointer">
+              <input type="checkbox" checked={showCompare} onChange={() => setShowCompare(!showCompare)} className="w-3 h-3 accent-[#2c6eb5]" />
+              Compare (multi-select)
+            </label>
 
-        <div className="flex-1 overflow-y-auto border border-[#d0d0d8] rounded" style={{ maxHeight: 220 }}>
-          {filteredIds.map(id => (
-            <div
-              key={id}
-              onClick={() => toggleElement(id)}
-              className={`px-2 py-[3px] text-[10px] font-mono cursor-pointer transition-colors truncate ${
-                elementIds.includes(id) ? 'bg-[#2c6eb5] text-white' : 'text-[#2a2a3e] hover:bg-[#e8edf2]'
-              }`}
-              data-testid={`ts-el-${id}`}
-            >
-              {id}
+            <div className="flex-1 overflow-y-auto border border-[#d0d0d8] rounded" style={{ maxHeight: 180 }}>
+              {filteredIds.map(id => (
+                <div
+                  key={id}
+                  onClick={() => toggleElement(id)}
+                  className={`px-2 py-[3px] text-[10px] font-mono cursor-pointer transition-colors truncate ${
+                    elementIds.includes(id) ? 'bg-[#2c6eb5] text-white' : 'text-[#2a2a3e] hover:bg-[#e8edf2]'
+                  }`}
+                  data-testid={`ts-el-${id}`}
+                >
+                  {id}
+                </div>
+              ))}
+              {filteredIds.length === 0 && <div className="px-2 py-2 text-[9px] text-[#9090a0] text-center">No results</div>}
+            </div>
+          </>
+        )}
+
+        <div className="overflow-y-auto" style={{ maxHeight: isSystem ? 360 : 180 }}>
+          {varGroups.map(group => (
+            <div key={group.groupLabel}>
+              <button
+                onClick={() => toggleGroup(group.groupLabel)}
+                className="w-full flex items-center gap-1 text-[9px] font-semibold text-[#4a4a5a] mt-1 mb-0.5 px-1 hover:bg-[#f0f0f4] rounded cursor-pointer"
+                data-testid={`ts-group-${group.groupLabel}`}
+              >
+                <span className="text-[8px]">{collapsedGroups.has(group.groupLabel) ? '▶' : '▼'}</span>
+                {group.groupLabel}
+                <span className="text-[8px] text-[#9090a0] ml-auto">{group.vars.length}</span>
+              </button>
+              {!collapsedGroups.has(group.groupLabel) && group.vars.map(v => (
+                <label key={v.key} className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-[#f0f0f4] rounded px-1 py-px" data-testid={`ts-var-${v.key}`}>
+                  <input
+                    type="checkbox"
+                    checked={activeVars.includes(v.key)}
+                    onChange={() => toggleVar(v.key)}
+                    className="w-3 h-3 accent-[#2c6eb5]"
+                  />
+                  <span className={`truncate ${activeVars.includes(v.key) ? 'text-[#2a2a3e] font-medium' : 'text-[#6b6b7b]'}`}>{v.label}</span>
+                  {v.unit && <span className="text-[8px] text-[#9090a0] ml-auto shrink-0">{v.unit}</span>}
+                </label>
+              ))}
             </div>
           ))}
-          {filteredIds.length === 0 && <div className="px-2 py-2 text-[9px] text-[#9090a0] text-center">No results</div>}
         </div>
-
-        <div className="text-[9px] font-semibold text-[#4a4a5a] mt-1">Variables</div>
-        {varDefs.map(v => (
-          <label key={v.key} className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-[#f0f0f4] rounded px-1 py-px" data-testid={`ts-var-${v.key}`}>
-            <input
-              type="checkbox"
-              checked={activeVars.includes(v.key)}
-              onChange={() => toggleVar(v.key)}
-              className="w-3 h-3 accent-[#2c6eb5]"
-            />
-            <span className={activeVars.includes(v.key) ? 'text-[#2a2a3e] font-medium' : 'text-[#6b6b7b]'}>{v.label}</span>
-            {v.unit && <span className="text-[8px] text-[#9090a0] ml-auto">{v.unit}</span>}
-          </label>
-        ))}
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
-        {elementIds.length === 0 ? (
+        {!canChart ? (
           <div className="flex-1 flex items-center justify-center text-[#9090a0] text-sm">
-            Select a {category === 'node' ? 'node' : category === 'link' ? 'link' : 'subcatchment'} to view its time series
+            {isSystem ? 'Select a system variable to view its time series' : `Select a ${category === 'node' ? 'node' : category === 'link' ? 'link' : 'subcatchment'} to view its time series`}
           </div>
         ) : chartData.length === 0 ? (
           <div className="flex-1 flex items-center justify-center text-[#9090a0] text-sm">No data available</div>
@@ -4115,8 +4191,8 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
           <>
             <div className="flex items-center justify-between mb-2">
               <div className="text-[11px] font-semibold text-[#2c3e6b]">
-                {elementIds.length === 1 ? elementIds[0] : `${elementIds.length} elements`}
-                {activeVars.length === 1 && ` — ${varDefs.find(v => v.key === activeVars[0])?.label}`}
+                {chartTitle}
+                {activeVars.length === 1 && ` — ${allVarDefs.find(v => v.key === activeVars[0])?.label}`}
               </div>
               {Object.keys(peakValues).length > 0 && (
                 <div className="flex gap-3">
@@ -4173,11 +4249,11 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
               <span>{results.timeSteps.length} time steps</span>
               <span>·</span>
               <span>Duration: {results.timeSteps.length > 0 ? results.timeSteps[results.timeSteps.length - 1].dateTime : '—'}</span>
-              {elementIds.length === 1 && activeVars.length === 1 && peakValues[activeVars[0]] && (
+              {((isSystem && activeVars.length === 1) || (!isSystem && elementIds.length === 1 && activeVars.length === 1)) && peakValues[activeVars[0]] && (
                 <>
                   <span>·</span>
                   <span className="font-medium text-[#2c6eb5]">
-                    Peak {varDefs.find(v => v.key === activeVars[0])?.label}: {peakValues[activeVars[0]].max.toFixed(3)} {varDefs.find(v => v.key === activeVars[0])?.unit} at {peakValues[activeVars[0]].time}
+                    Peak {allVarDefs.find(v => v.key === activeVars[0])?.label}: {peakValues[activeVars[0]].max.toFixed(3)} {allVarDefs.find(v => v.key === activeVars[0])?.unit} at {peakValues[activeVars[0]].time}
                   </span>
                 </>
               )}
