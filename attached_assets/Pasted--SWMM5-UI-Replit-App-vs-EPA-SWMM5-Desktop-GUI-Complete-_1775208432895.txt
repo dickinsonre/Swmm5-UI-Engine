@@ -1,0 +1,771 @@
+# SWMM5-UI Replit App vs. EPA SWMM5 Desktop GUI: Complete Gap Analysis & Improvement Plan
+
+## Current State Assessment
+
+Based on the live app at **swmm-ui-engine.replit.app**, here's what exists and what's missing compared to the EPA SWMM5 desktop application (originally built in Delphi/Object Pascal).
+
+---
+
+## WHAT'S ALREADY WORKING ✅
+
+| Feature | Details |
+|---|---|
+| **Project Explorer tree** | Title/Notes, Options, Climatology, Subcatchments(30), Junctions(149), Outfalls(5), Dividers(1), Storage(17), Conduits(223), Pumps(5), Orifices(2), Weirs(4), Outlets(1), Cross-Sections(229), Losses(223), DWF, Inflows, WQ, Controls, Map/GIS, Tags/Profiles |
+| **Map display** | Subcatchments, junctions, storage, outfalls, conduits, pumps, weirs rendered on canvas |
+| **Layer toggles** | Subcatchments, Junctions, Storage, Outfalls, Conduits, Pumps, Weirs, Labels |
+| **Legends** | % Imperv (5 ranges), Depth ft (5 ranges), Flow CFS (5 ranges) |
+| **Toolbar** | Setup, Locate, Summary, Details, Run, Report, Profile, Graph, Calibrate |
+| **Object tools** | Sel, Junc, Out, Stor, Cond, Pump, Label, Grp, Del, Run, Fit |
+| **Menu bar** | File, Edit, View, Map, Project, Help |
+| **Engine** | Local SWMM 5.2.4 engine integration |
+| **Status bar** | LPS units, DYNWAVE routing, GREEN_AMPT infiltration, CFL:3, node/link/subcatch counts |
+| **Drag-and-drop .inp** | File loading via drag or menu |
+
+---
+
+## WHAT'S MISSING — ORGANIZED BY PRIORITY
+
+---
+
+### 🔴 PRIORITY 1: INTERACTIVE PROPERTY EDITING (The #1 Gap)
+
+**This is the single biggest missing feature.** In EPA SWMM5, clicking ANY object opens a property editor panel. Without this, the app is a **viewer**, not an **editor**.
+
+#### 1A. Property Grid Component
+
+EPA SWMM5 uses a docked two-column property grid (Name | Value). The Replit app needs:
+
+```
+┌──────────────────────────────────────────────┐
+│ Property Editor              [📌 pin] [✕]    │
+├──────────────────────────────────────────────┤
+│ Junction J-42                                │
+├──────────────────────────────────────────────┤
+│ ▼ General                                    │
+│   Name              │ J-42                   │
+│   X-Coordinate      │ 2345.67                │
+│   Y-Coordinate      │ 1234.56                │
+│   Tag               │ MainTrunk              │
+├──────────────────────────────────────────────┤
+│ ▼ Hydraulic                                  │
+│   Invert Elevation  │ 123.45        ft       │
+│   Max Depth         │ 6.00          ft       │
+│   Initial Depth     │ 0.00          ft       │
+│   Surcharge Depth   │ 0.00          ft       │
+│   Ponded Area       │ 0             ft²      │
+├──────────────────────────────────────────────┤
+│ ▼ Inflows                                    │
+│   Direct Inflows    │ YES           [...]    │
+│   Dry Weather       │ NO            [...]    │
+│   RDII Inflows      │ NO            [...]    │
+├──────────────────────────────────────────────┤
+│ ▼ Treatment                                  │
+│   Treatment         │ NONE          [...]    │
+└──────────────────────────────────────────────┘
+
+BEHAVIORS NEEDED:
+- Click map object OR project tree item → property editor opens
+- Number fields: inline editing with validation (red border on error)
+- Enum fields: dropdown select
+- Boolean fields: YES/NO toggle
+- Subdialog fields: show summary + [...] button opens modal
+- Categories: collapsible ▼/▶ sections
+- Units shown in gray after value
+- Tab key moves between fields
+- Enter commits, Escape cancels
+- Changes immediately update in-memory model + map redraw
+- Selected object highlighted on map (bold outline, glow)
+```
+
+#### 1B. Complete Field Schemas for Every Object Type
+
+**Junction** (currently 149 in the loaded model):
+```
+General: Name, X, Y, Tag
+Hydraulic: Invert Elevation, Max Depth, Initial Depth, 
+           Surcharge Depth, Ponded Area
+Inflows: Direct [subdialog], DWF [subdialog], RDII [subdialog]
+Treatment: Treatment expressions [subdialog]
+```
+
+**Outfall** (5 in model):
+```
+General: Name, X, Y, Tag
+Hydraulic: Invert Elevation
+           Type: [FREE | NORMAL | FIXED | TIDAL | TIMESERIES]
+           Fixed Stage (when FIXED)
+           Tidal Curve ref (when TIDAL)
+           Time Series ref (when TIMESERIES)
+           Tide Gate: YES/NO
+           Route To: subcatchment ref (optional)
+```
+
+**Storage Unit** (17 in model):
+```
+General: Name, X, Y, Tag
+Hydraulic: Invert Elevation, Max Depth, Initial Depth, Ponded Area
+Storage Curve: Shape [FUNCTIONAL | TABULAR]
+  FUNCTIONAL → Coefficient A, Exponent B, Constant C
+  TABULAR → Storage Curve reference
+Seepage: Suction Head, Conductivity, Initial Deficit
+Evaporation: Factor (0-1)
+Inflows: Direct, DWF, RDII [subdialogs]
+```
+
+**Divider** (1 in model):
+```
+General: Name, X, Y, Tag
+Hydraulic: Invert Elevation, Max Depth, Initial Depth, Ponded Area
+Diversion: Type [CUTOFF | TABULAR | WEIR | OVERFLOW]
+  CUTOFF → Cutoff Flow
+  TABULAR → Diversion Curve ref
+  WEIR → Min Flow, Max Depth, Coefficient
+```
+
+**Conduit** (223 in model):
+```
+General: Name, From Node, To Node, Tag
+Geometry: Length, Manning's n, Inlet Offset, Outlet Offset
+Cross-Section: 
+  Shape: [CIRCULAR | RECT_OPEN | RECT_CLOSED | TRAPEZOIDAL |
+          TRIANGULAR | HORIZ_ELLIPSE | VERT_ELLIPSE | ARCH |
+          PARABOLIC | POWER | RECT_TRIANGULAR | RECT_ROUND |
+          MOD_BASKETHANDLE | EGG | HORSESHOE | GOTHIC |
+          CATENARY | SEMI_ELLIPTICAL | BASKETHANDLE |
+          SEMI_CIRCULAR | IRREGULAR | CUSTOM | STREET]
+  Geom1 (Max Depth), Geom2, Geom3, Geom4
+  Barrels (integer, default=1)
+  Transect ref (when IRREGULAR)
+  🎨 LIVE SVG PREVIEW of cross-section shape
+Flow: Initial Flow, Maximum Flow
+Losses: Entry Coeff, Exit Coeff, Avg Coeff, Flap Gate, Seepage Rate
+```
+
+**Pump** (5 in model):
+```
+General: Name, From Node, To Node, Tag
+Pump: Curve ref, Initial Status [ON|OFF], 
+      Startup Depth, Shutoff Depth
+```
+
+**Orifice** (2 in model):
+```
+General: Name, From Node, To Node, Tag
+Orifice: Type [SIDE|BOTTOM], Shape [CIRCULAR|RECT_CLOSED],
+         Height, Width, Inlet Offset, Discharge Coeff,
+         Flap Gate, Time to Open/Close
+```
+
+**Weir** (4 in model):
+```
+General: Name, From Node, To Node, Tag
+Weir: Type [TRANSVERSE|SIDEFLOW|V-NOTCH|TRAPEZOIDAL|ROADWAY],
+      Height, Length, Side Slope, Inlet Offset,
+      Discharge Coeff, End Contractions, Flap Gate,
+      End Coeff, Can Surcharge,
+      Road Width (ROADWAY), Road Surface [PAVED|GRAVEL] (ROADWAY)
+```
+
+**Outlet** (1 in model):
+```
+General: Name, From Node, To Node, Tag
+Outlet: Type [FUNCTIONAL/DEPTH|FUNCTIONAL/HEAD|TABULAR/DEPTH|TABULAR/HEAD],
+        Coefficient, Exponent (FUNCTIONAL),
+        Rating Curve ref (TABULAR),
+        Inlet Offset, Flap Gate
+```
+
+**Subcatchment** (30 in model):
+```
+General: Name, Rain Gage ref, Outlet ref (node or subcatch), Tag
+Area/Geometry: Area, Width, % Slope, Curb Length
+Imperviousness: % Impervious, N-Imperv, N-Perv,
+                Dstore-Imperv, Dstore-Perv, %Zero-Imperv
+Subarea Routing: Method [OUTLET|IMPERV|PERV], % Routed
+Infiltration (depends on project method):
+  GREEN_AMPT → Suction Head, Conductivity, Initial Deficit
+  HORTON → Max Rate, Min Rate, Decay, Drying Time, Max Volume
+  CURVE_NUMBER → Curve Number, Conductivity, Drying Time
+Groundwater: [subdialog]
+Snow Pack: Snow Pack ref
+LID Controls: [subdialog table]
+Land Uses: [subdialog]
+Initial Buildup: [subdialog]
+```
+
+**Rain Gage:**
+```
+General: Name, X, Y, Tag
+Rainfall: Format [INTENSITY|VOLUME|CUMULATIVE], Interval,
+          Snow Catch Factor
+Data Source: Type [TIMESERIES|FILE],
+            Time Series ref (when TS), 
+            File Name + Station ID + Rain Units (when FILE)
+```
+
+#### 1C. Essential Sub-Dialog Editors
+
+These modal dialogs open from`[...]` buttons in the property grid:
+
+```
+MUST HAVE for 75%:
+1. Direct Inflow Editor
+   - Constituent (FLOW or pollutant), Baseline, Pattern ref,
+     Time Series ref, Scale Factor, Type [FLOW|CONCEN|MASS]
+
+2. Dry Weather Flow Editor
+   - Average value, Monthly/Daily/Hourly/Weekend pattern refs
+
+3. Cross-Section Shape Preview
+   - Live SVG showing shape with dimensions, updates as user edits
+
+4. Infiltration Parameters Panel
+   - Dynamic fields based on project infiltration method
+
+5. LID Usage Table Editor
+   - Table: LID Name | Number | Area | Width | InitSat | FromImp | ToPerv
+   - Add/Delete/Edit rows
+
+SHOULD HAVE:
+6. Groundwater Parameter Editor
+7. Time Series Editor (tabular + graph preview)
+8. Curve Editor (storage, pump, rating, tidal, etc.)
+9. Pattern Editor (monthly/daily/hourly with bar chart)
+10. Treatment Expression Editor
+```
+
+#### 1D. Full Analysis Options Dialog
+
+The app shows`DYNWAVE`,`GREEN_AMPT`,`CFL:3` in the status bar but needs the full editing dialog:
+
+```
+TAB 1 — General:
+  Process Models: ☑Rainfall/Runoff ☐Snowmelt ☐Groundwater 
+                  ☑Flow Routing ☐Water Quality
+  Infiltration: [GREEN_AMPT ▼]
+  Routing: [DYNWAVE ▼]
+  ☐Allow Ponding  ☐Skip Steady State
+  Min Conduit Slope: [0]%
+
+TAB 2 — Dates:
+  Start/End Date+Time, Report Start, 
+  Sweep Start/End, Antecedent Dry Days
+
+TAB 3 — Time Steps:
+  Reporting [00:05:00], Wet Runoff [00:01:00], 
+  Dry Runoff [01:00:00], Routing [30] sec
+  ☑Variable Time Step, Courant Factor [75]%
+
+TAB 4 — Dynamic Wave:
+  Inertial Terms [DAMPEN▼], Force Main Eq [H-W▼],
+  Surcharge Method [EXTRAN▼], Lengthening Step,
+  Min Surface Area, Max Trials, Head Tolerance, Threads
+
+TAB 5 — Interface Files:
+  Use/Save Hotstart, Rainfall, Runoff, RDII, Inflows
+```
+
+#### 1E. Save/Download Modified .inp
+
+```
+CRITICAL — without this, editing is pointless:
+- File → Save triggers browser download of modified .inp
+- Round-trip fidelity: preserve comments (;; lines), blank lines,
+  section order, number precision
+- Sections the UI doesn't edit → pass through verbatim
+- Ctrl+S keyboard shortcut
+```
+
+---
+
+### 🔴 PRIORITY 2: RESULTS POST-PROCESSING
+
+The app has`Run`,`Report`,`Profile`,`Graph`,`Calibrate` buttons but needs full implementation behind them.
+
+#### 2A. Binary .out File Parser
+
+```javascript
+// SWMM writes binary .out file — need JavaScript reader
+class SWMMOutput {
+  constructor(arrayBuffer) { /* parse header, build index */ }
+  
+  // Core accessors
+  getNodeResult(id, variable, timestep): number
+  getLinkResult(id, variable, timestep): number  
+  getSubcatchResult(id, variable, timestep): number
+  getSystemResult(variable, timestep): number
+  
+  // Time series extraction
+  getNodeSeries(id, variable): {time: Date, value: number}[]
+  getLinkSeries(id, variable): {time: Date, value: number}[]
+  
+  // Metadata
+  getTimesteps(): Date[]
+  getNodeVariables(): string[]  // depth, head, volume, lat_inflow, total_inflow, flooding
+  getLinkVariables(): string[]  // flow, depth, velocity, volume, capacity
+  getSubcatchVariables(): string[] // rainfall, snow, evap, infil, runoff, gw_flow
+}
+
+// Binary format structure:
+// Header → ID strings → Variable indices → 
+// [Subcatch results | Node results | Link results | System results] × N timesteps
+// → Footer with pointers and period count
+```
+
+#### 2B. Map Animation with Time Slider
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    MAP (animated colors)              │
+│  Nodes: fill color = depth/head/flooding             │
+│  Links: color + width = flow/velocity/capacity       │
+│  Subcatchments: fill color = runoff/rainfall         │
+├──────────────────────────────────────────────────────┤
+│ ⏮ ⏪ ▶️ ⏩ ⏭ │ Speed:[1x▼] │ 01/15/2024 03:45:00  │
+│ ├─────────●──────────────────────────────────┤       │
+│ 00:00          ↑current                  24:00       │
+├──────────────────────────────────────────────────────┤
+│ Variable: [Node Depth (ft) ▼]                        │
+│ Legend:   0.0 ░░ 1.5 ▒▒ 3.0 ▓▓ 4.5 ██ 6.0+        │
+└──────────────────────────────────────────────────────┘
+
+MUST IMPLEMENT:
+☐ Play/Pause auto-advance through timesteps
+☐ Speed: 0.5x, 1x, 2x, 5x, 10x
+☐ Scrub slider for any timestep
+☐ Variable selector dropdown per object type
+☐ Color mapping: Blue→Cyan→Green→Yellow→Red
+☐ Link width scaling by flow magnitude
+☐ Hover tooltip: "J-42: Depth = 3.24 ft @ 03:45"
+☐ Click object during animation → opens time series graph
+☐ Flooding indicator: red halo on flooding nodes
+```
+
+#### 2C. Time Series Graphs
+
+The`Graph` button needs a full implementation:
+
+```
+┌────────────────────────────────────────────────────┐
+│ Time Series Plot                         [✕]       │
+├────────────────────────────────────────────────────┤
+│  8 ┤           ╱╲                                  │
+│  6 ┤          ╱  ╲      ╱╲                         │
+│  4 ┤    ╱╲  ╱    ╲    ╱  ╲                        │
+│  2 ┤   ╱  ╲╱      ╲  ╱    ╲───                   │
+│  0 ┤──╱              ╲╱        ────────           │
+│    └──────────────────────────────────────         │
+│    00:00  04:00  08:00  12:00  16:00  24:00       │
+├────────────────────────────────────────────────────┤
+│ [+ Add Series]                                     │
+│ ● Node J-42 — Depth (ft) — Blue                   │
+│ ● Node J-55 — Depth (ft) — Red                    │
+│ ○ Observed J-42 — ● scatter — Green               │
+└────────────────────────────────────────────────────┘
+
+USE: Plotly.js (best for interactive scientific charts)
+☐ Zoom (scroll), Pan (drag), Autoscale, Download PNG
+☐ Add series: pick ObjectType → ObjectID → Variable
+☐ Up to 10 series per plot
+☐ Calibration/observed data overlay
+☐ Vertical cursor synced with map animation time
+☐ Right-click → Copy as CSV, Export PNG/SVG
+```
+
+#### 2D. Profile Plot
+
+The`Profile` button needs:
+
+```
+┌────────────────────────────────────────────────────┐
+│ Profile Plot                             [✕]       │
+│ Path: J1 → C1 → J2 → C2 → J3 → C3 → OF1         │
+│ Time: 01/15/2024 03:45 [◀ ▶]                      │
+├────────────────────────────────────────────────────┤
+│ 140┤══════╗                                        │
+│ 135┤ ░░░░░║══════╗                                 │
+│ 130┤ ░░░░░╚══════╝░░░══════╗                      │
+│ 125┤      ▓▓▓▓▓▓▓░░░░░░░░░║══════╗               │
+│ 120┤──────────────▓▓▓▓▓▓▓▓╚══════╝──→            │
+│    └──────────────────────────────────             │
+│    0     200    400    600    800   1000 ft        │
+├────────────────────────────────────────────────────┤
+│ ═ Crown  ░ Conduit  ▓ Water Surface  ─ Invert     │
+└────────────────────────────────────────────────────┘
+
+☐ Select path: click nodes on map OR choose saved profile
+☐ Show: ground elev, crown, invert, water surface
+☐ Animate water level synced with map time slider
+☐ Node labels, conduit IDs
+☐ Hover → exact elevation values
+```
+
+#### 2E. Summary Report Viewer
+
+The`Report` button needs:
+
+```
+PARSE .rpt file into tabbed view:
+
+Tab: Summary
+  - Continuity errors (runoff %, routing %)
+  - Time step summary (min/avg/max, % at minimum)
+
+Tab: Node Summary (sortable table)
+  Node | Type | MaxDepth | MaxHGL | MaxInflow | MaxFlooding
+  Click row → highlight on map
+
+Tab: Link Summary (sortable table)  
+  Link | Type | MaxFlow | MaxVelocity | Max d/D | TimeOfMax
+  Click row → highlight on map
+
+Tab: Node Flooding
+  Node | Hours | MaxRate | TotalVolume
+  Color: red rows
+
+Tab: Outfall Loading
+  Outfall | AvgFlow | MaxFlow | TotalVolume
+
+Tab: Link Surcharging
+  Link | Hours | UpstreamHrs | DownstreamHrs
+
+Tab: Pumping Summary
+  Pump | %Utilized | #Starts | MinFlow | AvgFlow | MaxFlow | TotalVol
+
+Tab: Subcatchment Runoff
+  Subcatch | Precip | Runon | Evap | Infil | Runoff | RunoffCoeff
+
+ALL TABLES: sortable columns, searchable, export to CSV
+```
+
+#### 2F. Tabular Results
+
+```
+Two modes matching EPA SWMM5:
+
+Table by Object: Select one object → all timesteps
+  DateTime | Depth | Head | Volume | LatInflow | TotalInflow | Flooding
+
+Table by Variable: Select variable + timestep → all objects  
+  ObjectID | Value    (sortable to find max/min)
+```
+
+---
+
+### 🔴 PRIORITY 3: MAP DISPLAY — BACKDROP & RENDERING
+
+#### 3A. Basemap Tile Layers (Major Web Advantage!)
+
+EPA SWMM5 desktop only supports manually loaded static backdrop images. The web app can **surpass** it:
+
+```
+IMPLEMENTATION with Leaflet.js:
+
+Layer Control:
+  ○ OpenStreetMap
+  ○ Satellite (Esri World Imagery)  
+  ○ Topo Map
+  ○ Dark Mode (CartoDB Dark Matter)
+  ○ None (current blank)
+  
+  Opacity: [████████░░] 80%
+
+COORDINATE ALIGNMENT:
+SWMM models use various coordinate systems:
+  a) State Plane / UTM (large numbers like 2345678.0)
+  b) Lat/Lon (decimal degrees like 35.612, -77.394)
+  c) Arbitrary local (small numbers 0-1000)
+
+Need:
+  - Auto-detect coordinate type from value ranges
+  - proj4js library for State Plane → Lat/Lon conversion
+  - EPSG code selector for known projections
+  - Manual georeferencing (2+ control points) for arbitrary coords
+  - Fallback: static image backdrop (EPA SWMM5 compatibility)
+
+FOR THIS MODEL (Greenville_SI.inp):
+  - The "Greenville" in the filename suggests Greenville, SC or NC
+  - If coordinates are State Plane, likely NC SP (EPSG:2264) 
+    or SC SP (EPSG:2273)
+  - Use proj4js to transform → render over satellite tiles
+```
+
+#### 3B. Enhanced Map Symbology
+
+```
+CURRENT: All nodes appear as same circles, all links as same lines
+
+NEEDED (matching EPA SWMM5):
+Nodes:
+  ○ Junction — small circle
+  ▽ Outfall — downward triangle  
+  □ Storage — square
+  ◇ Divider — diamond
+  Size scales with zoom level
+  During results: size can scale with variable magnitude
+
+Links:
+  ─── Conduit — solid line, width ~ diameter
+  ⑆── Pump — line with pump symbol
+  ╥── Weir — line with weir symbol
+  ◉── Orifice — line with orifice symbol
+  During results: flow direction arrows (animated triangles)
+  Width scales with flow during animation
+
+Subcatchments:
+  Semi-transparent polygon fill (alpha 0.3)
+  Dashed line from centroid to outlet node
+  Centroid label (ID + area)
+
+Rain Gages:
+  ☁ Cloud icon at gage location
+  Animated rain drops when rainfall > 0
+
+Labels:
+  User-placed text from [LABELS] section
+  Font size, color, bold/italic
+```
+
+#### 3C. Map Interaction
+
+```
+SELECTION (partially exists, needs enhancement):
+  ☐ Click → select + open property editor
+  ☐ Shift+click → multi-select
+  ☐ Rectangle drag → select all inside
+  ☐ Selected = bold outline + glow effect
+
+HOVER:
+  ☐ Design mode: "J-42: Invert=123.45 ft"
+  ☐ Results mode: "J-42: Depth=3.24 ft @ 03:45"
+
+CONTEXT MENU (right-click):
+  ☐ Properties...
+  ☐ Delete
+  ☐ Find Connected (upstream/downstream trace)
+  ☐ Reverse Direction (for links)
+  ☐ Copy ID to Clipboard
+  ☐ Add to Profile Path
+
+NAVIGATION:
+  ☐ Smooth mouse wheel zoom
+  ☐ Zoom to Fit (the "Fit" button exists!)
+  ☐ Zoom to Selection
+  ☐ Minimap in corner showing viewport rectangle
+```
+
+---
+
+### 🟡 PRIORITY 4: SUPPORTING FEATURES FOR 75%
+
+#### 4A. Find Object (Ctrl+F)
+
+```
+┌───────────────────────────────┐
+│ Find Object           [✕]    │
+│ Type: [All        ▼]         │
+│ ID:   [J-4________] 🔍      │
+│                               │
+│ Results:                      │
+│ ● Junction J-4               │
+│ ● Junction J-40              │
+│ ● Junction J-41              │
+│ ● Junction J-42              │
+│                               │
+│ [Go To]  [Select]  [Close]   │
+└───────────────────────────────┘
+
+- Fuzzy/partial match as user types
+- "Go To" zooms to object + selects it
+```
+
+#### 4B. Design Queries
+
+```
+┌──────────────────────────────────────┐
+│ Design Query                         │
+│ Object: [Conduits        ▼]          │
+│ Property: [Max d/D        ▼]        │
+│ Condition: [Greater Than  ▼]         │
+│ Value: [0.80            ]            │
+│                                      │
+│ [Apply] [Clear]                      │
+│ Found: 23 conduits → highlighted     │
+└──────────────────────────────────────┘
+
+Useful presets:
+- Flooding nodes (flooding > 0)
+- Capacity > 80% conduits
+- Low velocity < 2 ft/s
+- High velocity > 15 ft/s
+```
+
+#### 4C. Data Object Editors
+
+```
+Time Series Editor:
+  Tabular (Time | Value) + live line graph preview
+  Import from CSV/clipboard
+
+Curve Editor:  
+  Types: Storage, Pump (1-4), Rating, Tidal, Diversion, Shape, Control
+  Tabular (X | Y) + live graph preview
+
+Pattern Editor:
+  Types: Monthly(12), Daily(7), Hourly(24), Weekend(24)
+  Bar chart preview + table editing
+
+Control Rules Editor:
+  Text editor with syntax highlighting
+  Keywords: RULE, IF, AND, OR, THEN, ELSE, PRIORITY
+  Objects: NODE, LINK, PUMP, ORIFICE, WEIR
+  Conditions: DEPTH, HEAD, INFLOW, FLOW, STATUS, SETTING, TIMEOFDAY, DATE, CLOCKTIME, ELAPSED
+  Validation on save
+```
+
+---
+
+## IMPLEMENTATION ROADMAP
+
+### Sprint 1 (Weeks 1-2): Property Editing Foundation
+```
+☐ Build reusable <PropertyGrid> component
+☐ Junction schema + full editing
+☐ Conduit schema + full editing (with cross-section preview)
+☐ Subcatchment schema + full editing
+☐ Click-to-select → property editor opens
+☐ File → Save/Download .inp (round-trip fidelity)
+☐ Preserve comments, section order, number precision
+```
+
+### Sprint 2 (Weeks 3-4): Complete All Object Editors
+```
+☐ Outfall, Storage, Divider property schemas
+☐ Pump, Orifice, Weir, Outlet property schemas
+☐ Rain Gage properties
+☐ Cross-section live SVG preview (all 20+ shapes)
+☐ Direct Inflow sub-editor
+☐ DWF Inflow sub-editor
+☐ Full Analysis Options dialog (5 tabs)
+☐ Infiltration parameter sub-panel
+```
+
+### Sprint 3 (Weeks 5-6): Results Engine
+```
+☐ Binary .out file parser in JavaScript
+☐ Map animation + time slider + VCR controls
+☐ Variable selector for map coloring
+☐ Color mapping (Blue→Cyan→Green→Yellow→Red)
+☐ Link width scaling by flow
+☐ Hover tooltips with current values
+☐ Flooding indicators (red halos)
+☐ Summary Report parser → tabbed viewer
+```
+
+### Sprint 4 (Weeks 7-8): Graphs & Profile
+```
+☐ Time Series graph (Plotly.js)
+☐ Multi-series + add-series dialog
+☐ Profile Plot (path selection + pipe rendering)
+☐ Animated water surface on profile
+☐ Tabular results (by Object, by Variable)
+☐ Calibration data overlay
+☐ Export graph/table → PNG/CSV
+```
+
+### Sprint 5 (Weeks 9-10): Map Enhancements
+```
+☐ Leaflet.js basemap integration (OSM + Satellite)
+☐ proj4js coordinate transformation
+☐ Basemap opacity control
+☐ Distinct symbols per node type (○▽□◇)
+☐ Distinct symbols per link type (─⑆╥◉)
+☐ Flow direction arrows
+☐ Right-click context menu
+☐ Find Object (Ctrl+F)
+```
+
+### Sprint 6 (Weeks 11-12): Polish for 75%
+```
+☐ Design Queries
+☐ LID Usage table editor
+☐ Time Series / Curve / Pattern editors
+☐ Control Rules editor with syntax highlighting
+☐ Keyboard shortcuts (Ctrl+S, Ctrl+F, Ctrl+Z, Delete)
+☐ Performance optimization for large models (1000+ objects)
+☐ Error handling and validation messages
+```
+
+---
+
+## WHAT 75% PARITY MEANS
+
+**A user can:**
+```
+✅ Open any .inp file
+✅ See model on satellite basemap with proper symbology
+✅ Click any object and edit ALL its properties
+✅ Modify all analysis options
+✅ Run simulation with local 5.2.4 engine
+✅ Watch animated results on map with time slider
+✅ Plot time series for any variable at any object
+✅ View longitudinal profile with animated water surface
+✅ Read full summary report with sortable tables
+✅ Find objects by ID search
+✅ Query objects by property criteria
+✅ Save modified model as .inp download
+✅ Compare simulated vs observed (calibration)
+✅ Export graphs and tables
+```
+
+**Still in the 25% NOT covered (future work):**
+```
+✗ Draw new objects on map (full model building from scratch)
+✗ Full undo/redo system
+✗ Water quality (pollutants, land uses, buildup/washoff)
+✗ Snow pack / detailed groundwater editing
+✗ RDII / Unit Hydrograph editor
+✗ Street / Inlet features (SWMM 5.2+)
+✗ GIS import/export (shapefiles)
+✗ Transect editor for irregular channels
+✗ Print / PDF export
+```
+
+---
+
+## WEB ADVANTAGES TO EXPLOIT (Surpass Desktop)
+
+The Replit app can actually **beat** EPA SWMM5 desktop in several ways:
+
+| Feature | Desktop EPA SWMM5 | Web App Can Do |
+|---|---|---|
+| **Basemap** | Manual static image only | Live satellite/OSM tiles with auto-alignment |
+| **Charts** | Static Win32 charts | Interactive Plotly (zoom, pan, hover, export) |
+| **Platform** | Windows only | Any OS, any browser, tablets |
+| **Sharing** | Email .inp files | Shareable URL with model state |
+| **Updates** | Manual reinstall | Instant, always latest |
+| **Collaboration** | None | Real-time multi-user editing (future) |
+| **Search** | Basic Find dialog | Fuzzy search, instant filter |
+| **Auto-save** | Manual only | Browser localStorage auto-save |
+| **AI assist** | None | Parameter estimation, error detection (future) |
+
+---
+
+## SUMMARY SCORECARD
+
+| Category | EPA Desktop | Replit App Now | After Roadmap |
+|---|---|---|---|
+| File I/O | ★★★★★ | ★★★☆☆ | ★★★★☆ |
+| Map Display | ★★★★☆ | ★★★☆☆ | ★★★★★ |
+| Property Editing | ★★★★★ | ★☆☆☆☆ | ★★★★☆ |
+| Data Editors | ★★★★★ | ★☆☆☆☆ | ★★★★☆ |
+| Analysis Options | ★★★★★ | ★★☆☆☆ | ★★★★★ |
+| Engine | ★★★★★ | ★★★★☆ | ★★★★☆ |
+| Results Animation | ★★★★★ | ★★☆☆☆ | ★★★★☆ |
+| Time Series Plots | ★★★★★ | ★★☆☆☆ | ★★★★★ |
+| Profile Plot | ★★★★★ | ★★☆☆☆ | ★★★★☆ |
+| Reports | ★★★★★ | ★★☆☆☆ | ★★★★☆ |
+| Calibration | ★★★★☆ | ★☆☆☆☆ | ★★★☆☆ |
+| **Overall** | **~95%** | **~35-40%** | **~75-80%** |
+
+The foundation is solid. The biggest wins come from implementing the **property grid** (makes it an editor, not just a viewer) and the **results animation** (makes simulation output actionable). Those two features alone would jump the app from ~40% to ~60% parity, and the remaining items push it to 75%+.

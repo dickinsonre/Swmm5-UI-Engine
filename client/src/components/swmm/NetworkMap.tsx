@@ -343,7 +343,8 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     if (results && results.timeSteps[timeStep]) {
       const lr = results.timeSteps[timeStep].links[linkId];
       if (lr) {
-        return Math.max(1.5, Math.min(6, lr.flow * 0.5));
+        const absFlow = Math.abs(lr.flow);
+        return Math.max(1.5, Math.min(8, 1.5 + Math.sqrt(absFlow) * 0.8));
       }
     }
     return 2;
@@ -574,18 +575,23 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       const dy = p2[1] - p1[1];
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len > 0) {
-        const ux = dx / len;
-        const uy = dy / len;
-        const arrowLen = Math.max(4, Math.min(8, mapState.zoom * 200));
+        const lr = results && results.timeSteps[timeStep] ? results.timeSteps[timeStep].links[link.id] : null;
+        const flowDir = lr && lr.flow < 0 ? -1 : 1;
+        const ux = (dx / len) * flowDir;
+        const uy = (dy / len) * flowDir;
+        const arrowLen = Math.max(4, Math.min(10, mapState.zoom * 250));
+        const arrowW = lr ? Math.max(0.3, Math.min(0.6, 0.3 + Math.sqrt(Math.abs(lr?.flow || 0)) * 0.05)) : 0.4;
         const ax = mx + ux * arrowLen * 1.5;
         const ay = my + uy * arrowLen * 1.5;
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillStyle = lr ? getLinkColor(link.id) : 'rgba(0,0,0,0.35)';
+        ctx.globalAlpha = lr ? 0.9 : 0.35;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
-        ctx.lineTo(ax - ux * arrowLen - uy * arrowLen * 0.4, ay - uy * arrowLen + ux * arrowLen * 0.4);
-        ctx.lineTo(ax - ux * arrowLen + uy * arrowLen * 0.4, ay - uy * arrowLen - ux * arrowLen * 0.4);
+        ctx.lineTo(ax - ux * arrowLen - uy * arrowLen * arrowW, ay - uy * arrowLen + ux * arrowLen * arrowW);
+        ctx.lineTo(ax - ux * arrowLen + uy * arrowLen * arrowW, ay - uy * arrowLen - ux * arrowLen * arrowW);
         ctx.closePath();
         ctx.fill();
+        ctx.globalAlpha = 1.0;
       }
 
       if (preferences?.showLinkIds !== false) {
@@ -704,7 +710,24 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         ctx.stroke();
       }
 
-      if (hasDepthFill && depthRatio >= 0.95) {
+      if (nr && nr.flooding > 0) {
+        ctx.save();
+        const haloR = r + 6;
+        ctx.beginPath();
+        ctx.arc(sx, sy, haloR + 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(sx, sy, haloR, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(sx, sy, haloR, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.restore();
+      } else if (hasDepthFill && depthRatio >= 0.95) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(sx, sy, r + 4, 0, Math.PI * 2);

@@ -16,6 +16,7 @@ import DataEditorDialog from '@/components/swmm/DataEditors';
 import AboutDialog from '@/components/swmm/AboutDialog';
 import ProjectDefaultsDialog from '@/components/swmm/ProjectDefaultsDialog';
 import TableViewDialog from '@/components/swmm/TableViewDialog';
+import PropertyEditor from '@/components/swmm/PropertyEditor';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
@@ -125,7 +126,8 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | null>(null);
+  const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
   const [analysisOptionsTab, setAnalysisOptionsTab] = useState<string>('General');
@@ -252,6 +254,10 @@ export default function SwmmUI() {
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
         e.preventDefault();
         handleRedo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setFindSearchTerm('');
+        setOpenDialog('findObject');
       }
     };
     window.addEventListener('keydown', handler);
@@ -1117,6 +1123,102 @@ export default function SwmmUI() {
     closeContextMenu();
   }, [selectedObj, toast, closeContextMenu]);
 
+  const handleCopyId = useCallback(() => {
+    const target = contextMenu?.obj || selectedObj;
+    if (!target) return;
+    navigator.clipboard.writeText(target.id).then(() => {
+      toast({ title: 'Copied', description: `"${target.id}" copied to clipboard` });
+    }).catch(() => {
+      toast({ title: 'Copy ID', description: target.id });
+    });
+    closeContextMenu();
+  }, [contextMenu, selectedObj, toast, closeContextMenu]);
+
+  const handleFindConnected = useCallback(() => {
+    const target = contextMenu?.obj || selectedObj;
+    if (!target) return;
+    const id = target.id;
+    const t = target.objType;
+    const connected: string[] = [];
+    if (['junction', 'outfall', 'storage', 'divider'].includes(t)) {
+      for (const c of project.conduits) {
+        if (c.fromNode === id || c.toNode === id) connected.push(`Conduit: ${c.id}`);
+      }
+      for (const p of project.pumps) {
+        if (p.fromNode === id || p.toNode === id) connected.push(`Pump: ${p.id}`);
+      }
+      for (const o of (project.orifices || [])) {
+        if (o.fromNode === id || o.toNode === id) connected.push(`Orifice: ${o.id}`);
+      }
+      for (const w of (project.weirs || [])) {
+        if (w.fromNode === id || w.toNode === id) connected.push(`Weir: ${w.id}`);
+      }
+      for (const o of (project.outlets || [])) {
+        if (o.fromNode === id || o.toNode === id) connected.push(`Outlet: ${o.id}`);
+      }
+      for (const sc of project.subcatchments) {
+        if (sc.outlet === id) connected.push(`Subcatchment: ${sc.id}`);
+      }
+    } else if (['conduit', 'pump', 'orifice', 'weir', 'outlet'].includes(t)) {
+      const link = [...project.conduits, ...project.pumps, ...(project.orifices || []), ...(project.weirs || []), ...(project.outlets || [])].find(l => l.id === id);
+      if (link) {
+        connected.push(`From: ${(link as any).fromNode || (link as any).from}`);
+        connected.push(`To: ${(link as any).toNode || (link as any).to}`);
+      }
+    }
+    toast({ title: `Connected to ${id}`, description: connected.length > 0 ? connected.join(', ') : 'None found' });
+    closeContextMenu();
+  }, [contextMenu, selectedObj, project, toast, closeContextMenu]);
+
+  const handleOpenProperties = useCallback(() => {
+    const target = contextMenu?.obj || selectedObj;
+    if (target) {
+      setSelectedObj(target);
+    }
+    closeContextMenu();
+  }, [contextMenu, selectedObj, closeContextMenu]);
+
+  const handleFindObject = useCallback((id: string, objType: string) => {
+    const coord = project.coordinates[id];
+    if (coord && networkMapRef.current) {
+      networkMapRef.current.centerOnWorld(coord[0], coord[1]);
+      setSelectedObj({ id, objType: objType as any });
+    } else if (project.symbols && project.symbols[id] && networkMapRef.current) {
+      const sym = project.symbols[id];
+      networkMapRef.current.centerOnWorld(sym[0], sym[1]);
+      setSelectedObj({ id, objType: objType as any });
+    } else if (project.polygons && project.polygons[id]) {
+      const poly = project.polygons[id];
+      if (poly.length > 0) {
+        const cx = poly.reduce((s, v) => s + v[0], 0) / poly.length;
+        const cy = poly.reduce((s, v) => s + v[1], 0) / poly.length;
+        if (networkMapRef.current) networkMapRef.current.centerOnWorld(cx, cy);
+        setSelectedObj({ id, objType: objType as any });
+      }
+    } else {
+      toast({ title: 'Not Found', description: `Could not locate ${id} on the map` });
+    }
+    setOpenDialog(null);
+  }, [project, toast]);
+
+  const findResults = useMemo(() => {
+    if (!findSearchTerm.trim()) return [];
+    const term = findSearchTerm.toLowerCase();
+    const matches: { id: string; objType: string; category: string }[] = [];
+    for (const j of project.junctions) { if (j.id.toLowerCase().includes(term)) matches.push({ id: j.id, objType: 'junction', category: 'Junction' }); }
+    for (const o of project.outfalls) { if (o.id.toLowerCase().includes(term)) matches.push({ id: o.id, objType: 'outfall', category: 'Outfall' }); }
+    for (const s of project.storageUnits) { if (s.id.toLowerCase().includes(term)) matches.push({ id: s.id, objType: 'storage', category: 'Storage' }); }
+    for (const d of project.dividers) { if (d.id.toLowerCase().includes(term)) matches.push({ id: d.id, objType: 'divider', category: 'Divider' }); }
+    for (const c of project.conduits) { if (c.id.toLowerCase().includes(term)) matches.push({ id: c.id, objType: 'conduit', category: 'Conduit' }); }
+    for (const p of project.pumps) { if (p.id.toLowerCase().includes(term)) matches.push({ id: p.id, objType: 'pump', category: 'Pump' }); }
+    for (const o of (project.orifices || [])) { if (o.id.toLowerCase().includes(term)) matches.push({ id: o.id, objType: 'orifice', category: 'Orifice' }); }
+    for (const w of (project.weirs || [])) { if (w.id.toLowerCase().includes(term)) matches.push({ id: w.id, objType: 'weir', category: 'Weir' }); }
+    for (const o of (project.outlets || [])) { if (o.id.toLowerCase().includes(term)) matches.push({ id: o.id, objType: 'outlet', category: 'Outlet' }); }
+    for (const sc of project.subcatchments) { if (sc.id.toLowerCase().includes(term)) matches.push({ id: sc.id, objType: 'subcatchment', category: 'Subcatchment' }); }
+    for (const rg of (project.raingages || [])) { if (rg.id.toLowerCase().includes(term)) matches.push({ id: rg.id, objType: 'raingage', category: 'Rain Gage' }); }
+    return matches.slice(0, 50);
+  }, [findSearchTerm, project]);
+
   const handleEscapeMode = useCallback(() => {
     setInteractionMode('select');
     setLinkDrawState(null);
@@ -1462,6 +1564,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (results) setOpenDialog('timeSeries'); else toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); }} testId="btn-graph" />
             <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => setOpenDialog('calibration')} testId="btn-calibration" />
             <ToolbarButton icon={<Table2 className="w-4 h-4" />} label="Table" onClick={() => setOpenDialog('tableView')} testId="btn-table-view" />
+            <ToolbarButton icon={<Search className="w-4 h-4" />} label="Find" onClick={() => { setFindSearchTerm(''); setOpenDialog('findObject'); }} testId="btn-find" />
             <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <ToolbarButton
@@ -2020,15 +2123,29 @@ export default function SwmmUI() {
               <button onClick={() => setMobilePanel('none')} className="p-1.5 rounded-full hover:bg-white/10" data-testid="btn-close-right-panel"><X className="w-4 h-4 text-white/80" /></button>
             </div>
           )}
-          <ProjectExplorer
-            project={project}
-            selectedObj={selectedObj}
-            onSelectObj={handleSelectObj}
-            results={results}
-            timeStep={timeStep}
-            onUpdateProject={handleUpdateProject}
-            onViewTable={handleViewTable}
-          />
+          <div className={`${selectedObj ? 'h-[45%]' : 'flex-1'} overflow-hidden`}>
+            <ProjectExplorer
+              project={project}
+              selectedObj={selectedObj}
+              onSelectObj={handleSelectObj}
+              results={results}
+              timeStep={timeStep}
+              onUpdateProject={handleUpdateProject}
+              onViewTable={handleViewTable}
+            />
+          </div>
+          {selectedObj && (
+            <div className="flex-1 overflow-hidden border-t border-[#d0d0d8]" data-testid="property-editor-panel">
+              <PropertyEditor
+                project={project}
+                selectedObj={selectedObj}
+                onUpdateProject={handleUpdateProject}
+                onClose={() => setSelectedObj(null)}
+                results={results}
+                timeStep={timeStep}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -2863,6 +2980,45 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={openDialog === 'findObject'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-md bg-white border-[#d0d0d8]" data-testid="find-object-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <Search className="w-4 h-4" /> Find Object
+            </DialogTitle>
+            <DialogDescription>Search for objects by ID. Press Enter or click a result to navigate.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={findSearchTerm}
+              onChange={e => setFindSearchTerm(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && findResults.length > 0) handleFindObject(findResults[0].id, findResults[0].objType); }}
+              placeholder="Type object ID..."
+              className="w-full px-3 py-2 border border-[#d0d0d8] rounded text-sm focus:outline-none focus:ring-1 focus:ring-[#2c6eb5]"
+              data-testid="find-object-input"
+              autoFocus
+            />
+            <div className="max-h-[300px] overflow-y-auto border border-[#e0e0e8] rounded">
+              {findResults.length === 0 && findSearchTerm.trim() && (
+                <div className="px-3 py-4 text-center text-[11px] text-[#9090a0]" data-testid="find-no-results">No objects found</div>
+              )}
+              {findResults.map(r => (
+                <button
+                  key={`${r.objType}-${r.id}`}
+                  onClick={() => handleFindObject(r.id, r.objType)}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-[#f0f0f4] cursor-pointer text-left"
+                  data-testid={`find-result-${r.id}`}
+                >
+                  <span className="text-[#6b6b7b] min-w-[70px]">{r.category}</span>
+                  <span className="text-[#2a2a3e] font-medium">{r.id}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <AnalysisOptionsDialog
         open={openDialog === 'analysisOptions'}
         onOpenChange={v => !v && setOpenDialog(null)}
@@ -2918,17 +3074,23 @@ export default function SwmmUI() {
               <div className="px-3 py-1 text-[10px] text-[#6b6b7b] border-b border-[#d0d0d8]" data-testid="context-menu-title">
                 {contextMenu.obj.objType} — {contextMenu.obj.id}
               </div>
+              <ContextMenuItem icon={<FileText className="w-3 h-3" />} label="Properties" onClick={handleOpenProperties} testId="ctx-properties" />
+              <ContextMenuItem icon={<Clipboard className="w-3 h-3" />} label="Copy ID" onClick={handleCopyId} testId="ctx-copy-id" />
+              <div className="h-px my-0.5" style={{ backgroundColor: '#d0d0d8' }} />
               <ContextMenuItem icon={<Copy className="w-3 h-3" />} label="Copy" onClick={handleCopy} testId="ctx-copy" />
               <ContextMenuItem icon={<ClipboardPaste className="w-3 h-3" />} label="Paste" onClick={handlePaste} disabled={!copiedObj || copiedObj.objType !== ctxObj?.objType} testId="ctx-paste" />
               {isLinkType && (
                 <ContextMenuItem icon={<RotateCcw className="w-3 h-3" />} label="Reverse" onClick={handleReverseLink} testId="ctx-reverse" />
               )}
+              <ContextMenuItem icon={<ArrowLeftRight className="w-3 h-3" />} label="Find Connected" onClick={handleFindConnected} testId="ctx-find-connected" />
               <div className="h-px my-0.5" style={{ backgroundColor: '#d0d0d8' }} />
               <ContextMenuItem icon={<Trash2 className="w-3 h-3" />} label="Delete" onClick={() => { if (contextMenu?.obj) deleteObject(contextMenu.obj); closeContextMenu(); }} danger testId="ctx-delete" />
             </>
           )}
           {!contextMenu.obj && (
-            <div className="px-3 py-1.5 text-[10px] text-[#9090a0]">No object selected</div>
+            <>
+              <ContextMenuItem icon={<Search className="w-3 h-3" />} label="Find Object..." onClick={() => { closeContextMenu(); setFindSearchTerm(''); setOpenDialog('findObject'); }} testId="ctx-find" />
+            </>
           )}
         </div>
       )}

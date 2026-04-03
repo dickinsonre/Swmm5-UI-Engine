@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 const LEGEND_COLORS = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
 
-function CrossSectionSvg({ xs, size = 80 }: { xs: XSection; size?: number }) {
+export function CrossSectionSvg({ xs, size = 80 }: { xs: XSection; size?: number }) {
   const s = size;
   const cx = s / 2, cy = s / 2;
   const pad = 6;

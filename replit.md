@@ -22,7 +22,7 @@ Priority on startup: Local > WASM > Remote > Mock (first available wins).
 
 ## Key Files
 - `client/src/pages/swmm-ui.tsx` — Main UI component (~4300 lines), all state, toolbars, dialogs, canvas
-- `client/src/components/swmm/NetworkMap.tsx` — Canvas network map with pan/zoom, hit-testing, depth fill, overview minimap, backdrop image overlay, adjustable node size
+- `client/src/components/swmm/NetworkMap.tsx` — Canvas network map with pan/zoom, hit-testing, depth fill, overview minimap, backdrop image overlay, adjustable node size, flooding halos (pulsing red for flooding nodes), flow direction arrows (reverse on negative flow), link width scaling (sqrt-based with flow magnitude)
 - `client/src/components/swmm/ProjectExplorer.tsx` — Tree navigation, property panel (inline edit), data grid (inline edit). Editable fields defined in `EDITABLE_FIELDS` (property panel) and `GRID_EDITABLE_COLS` (data grid) covering all object types. Supports both numeric and string fields with trim validation.
 - `client/src/components/swmm/Panels.tsx` — Legend/Layers, Object Locator, Map Query panels
 - `client/src/components/swmm/SpeedBar.tsx` — Vertical tool palette for drawing modes (junction, outfall, storage, divider, conduit, pump, orifice, weir, outlet, subcatchment polygon, raingage, label, group select, measure)
@@ -58,6 +58,12 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - Title bar: `#2c3e6b`, Menu bar: `#3a5070`, Toolbar/status: `#f0f0f4`, Panels: `#f8f8fa`
 - Borders: `#d0d0d8`, Primary text: `#2a2a3e`, Secondary: `#6b6b7b`, Accent blue: `#2c6eb5`
 - Engine modes: local=`#2a8a4a`, wasm=`#e88a1a`, remote=`#2c6eb5`, mock=gray
+
+## Context Menu & Find
+- Right-click context menu on map objects: Properties, Copy ID, Copy, Paste, Reverse (links), Find Connected, Delete
+- Right-click on empty canvas area: Find Object...
+- Find Object dialog (Ctrl+F or toolbar "Find" button): search by ID across all object types, click result to pan/select
+- `client/src/components/swmm/PropertyEditor.tsx` — Docked property grid with schemas for all 12 SWMM object types, collapsible sections, inline editing, cross-section SVG preview for conduits, results panel
 
 ## External Dependencies
 - EPA SWMM 5.2.4 Binary (local dev only)
