@@ -129,6 +129,10 @@ export function LegendPanel({
     maxDepth: { title: 'Max Depth (ft)', labels: ['< 2', '2-5', '5-10', '10-15', '> 15'] },
     depth: { title: 'Depth (ft)', labels: ['< 1.5', '1.5-3.0', '3.0-4.0', '4.0-5.0', '> 5.0'] },
     head: { title: 'Head (ft)', labels: ['< 92', '92-95', '95-97', '97-100', '> 100'] },
+    volume: { title: 'Volume (ft³)', labels: ['< 100', '100-300', '300-500', '500-800', '> 800'] },
+    lateralInflow: { title: 'Lat. Inflow (CFS)', labels: ['< 1', '1-3', '3-5', '5-8', '> 8'] },
+    totalInflow: { title: 'Total Inflow (CFS)', labels: ['< 1', '1-4', '4-8', '8-12', '> 12'] },
+    flooding: { title: 'Flooding (CFS)', labels: ['0', '< 1', '1-2', '2-4', '> 4'] },
   };
   const linkLegend: Record<string, { title: string; labels: string[] }> = {
     none: { title: 'Links', labels: [] },
@@ -139,6 +143,8 @@ export function LegendPanel({
     flow: { title: 'Flow (CFS)', labels: ['< 1.0', '1.0-2.5', '2.5-4.0', '4.0-6.0', '> 6.0'] },
     velocity: { title: 'Velocity (fps)', labels: ['< 1.0', '1.0-2.0', '2.0-3.0', '3.0-5.0', '> 5.0'] },
     depth: { title: 'Depth (ft)', labels: ['< 0.5', '0.5-1.0', '1.0-1.5', '1.5-2.0', '> 2.0'] },
+    volume: { title: 'Volume (ft³)', labels: ['< 50', '50-150', '150-300', '300-400', '> 400'] },
+    capacity: { title: 'Capacity', labels: ['< 0.2', '0.2-0.4', '0.4-0.6', '0.6-0.8', '> 0.8'] },
   };
   const subcatchLegend: Record<string, { title: string; labels: string[] }> = {
     none: { title: 'Subcatchments', labels: [] },
@@ -149,6 +155,11 @@ export function LegendPanel({
     runoff: { title: 'Runoff (CFS)', labels: ['< 2', '2-5', '5-10', '10-15', '> 15'] },
     rainfall: { title: 'Rainfall (in/hr)', labels: ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-3.0', '> 3.0'] },
     infiltration: { title: 'Infiltration', labels: ['< 0.2', '0.2-0.5', '0.5-1.0', '1.0-2.0', '> 2.0'] },
+    snowDepth: { title: 'Snow Depth (in)', labels: ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-4.0', '> 4.0'] },
+    evap: { title: 'Evaporation', labels: ['< 0.05', '0.05-0.1', '0.1-0.2', '0.2-0.4', '> 0.4'] },
+    gwOutflow: { title: 'GW Outflow (CFS)', labels: ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-4.0', '> 4.0'] },
+    gwElev: { title: 'GW Elev. (ft)', labels: ['Low', '', '', '', 'High'] },
+    moisture: { title: 'Moisture', labels: ['< 0.1', '0.1-0.2', '0.2-0.3', '0.3-0.4', '> 0.4'] },
   };
 
   const nodeLabels = (nodeLegend[nodeTheme] || nodeLegend.none).labels;

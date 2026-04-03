@@ -633,8 +633,8 @@ export default function SwmmUI() {
     y += 24;
 
     const legendColors = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
-    const nodeLabels: Record<string, string> = { none: 'Nodes', elevation: 'Invert El.', maxDepth: 'Max Depth', depth: 'Node Depth', head: 'Node Head' };
-    const linkLabels: Record<string, string> = { none: 'Links', maxDepth: 'Max Depth', roughness: "Manning's N", length: 'Length', slope: 'Slope', flow: 'Link Flow', velocity: 'Link Velocity', depth: 'Link Depth' };
+    const nodeLabels: Record<string, string> = { none: 'Nodes', elevation: 'Invert El.', maxDepth: 'Max Depth', depth: 'Node Depth', head: 'Node Head', volume: 'Volume', lateralInflow: 'Lat. Inflow', totalInflow: 'Total Inflow', flooding: 'Flooding' };
+    const linkLabels: Record<string, string> = { none: 'Links', maxDepth: 'Max Depth', roughness: "Manning's N", length: 'Length', slope: 'Slope', flow: 'Link Flow', velocity: 'Link Velocity', depth: 'Link Depth', volume: 'Volume', capacity: 'Capacity' };
     const nodeLabel = nodeLabels[nodeTheme] || 'Nodes';
     const linkLabel = linkLabels[linkTheme] || 'Links';
 
@@ -1495,11 +1495,11 @@ export default function SwmmUI() {
         {activeMenu === 'View' && (
           <div className="flex items-center gap-2 sm:gap-4 px-1 sm:px-2 w-full overflow-x-auto">
             <ThemeCombo label="Sub" value={subcatchTheme} onChange={setSubcatchTheme}
-              options={[['none', 'None'], ['imperv', '% Imperv'], ['area', 'Area'], ['width', 'Width'], ['slope', 'Slope'], ['runoff', 'Runoff'], ['rainfall', 'Rainfall'], ['infiltration', 'Infiltration']]} testId="combo-subcatch" />
+              options={[['none', 'None'], ['imperv', '% Imperv'], ['area', 'Area'], ['width', 'Width'], ['slope', 'Slope'], ['runoff', 'Runoff'], ['rainfall', 'Rainfall'], ['infiltration', 'Infiltration'], ['snowDepth', 'Snow Depth'], ['evap', 'Evaporation'], ['gwOutflow', 'GW Outflow'], ['gwElev', 'GW Elev.'], ['moisture', 'Moisture']]} testId="combo-subcatch" />
             <ThemeCombo label="Nodes" value={nodeTheme} onChange={setNodeTheme}
-              options={[['none', 'None'], ['elevation', 'Invert El.'], ['maxDepth', 'Max Depth'], ['depth', 'Depth'], ['head', 'Head']]} testId="combo-nodes" />
+              options={[['none', 'None'], ['elevation', 'Invert El.'], ['maxDepth', 'Max Depth'], ['depth', 'Depth'], ['head', 'Head'], ['volume', 'Volume'], ['lateralInflow', 'Lat. Inflow'], ['totalInflow', 'Total Inflow'], ['flooding', 'Flooding']]} testId="combo-nodes" />
             <ThemeCombo label="Links" value={linkTheme} onChange={setLinkTheme}
-              options={[['none', 'None'], ['maxDepth', 'Max Depth'], ['roughness', 'Roughness'], ['length', 'Length'], ['slope', 'Slope'], ['flow', 'Flow'], ['depth', 'Depth'], ['velocity', 'Velocity']]} testId="combo-links" />
+              options={[['none', 'None'], ['maxDepth', 'Max Depth'], ['roughness', 'Roughness'], ['length', 'Length'], ['slope', 'Slope'], ['flow', 'Flow'], ['depth', 'Depth'], ['velocity', 'Velocity'], ['volume', 'Volume'], ['capacity', 'Capacity']]} testId="combo-links" />
             <div className="flex-1 min-w-0" />
             {results && (
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
