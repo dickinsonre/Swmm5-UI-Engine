@@ -203,6 +203,7 @@ export default function SwmmUI() {
   const [groupEditValue, setGroupEditValue] = useState('0');
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [mobilePanel, setMobilePanel] = useState<'none' | 'left' | 'right'>('none');
+  const [showRightPanel, setShowRightPanel] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [reportContent, setReportContent] = useState<string | null>(null);
   const [showReportDialog, setShowReportDialog] = useState(false);
@@ -2113,14 +2114,33 @@ export default function SwmmUI() {
           )}
         </div>
 
+        {!isMobile && !showRightPanel && (
+          <button
+            onClick={() => setShowRightPanel(true)}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-1 rounded-l-md transition-colors"
+            style={{ backgroundColor: '#e8e8f0', border: '1px solid #d0d0d8', borderRight: 'none' }}
+            title="Show Project Explorer"
+            data-testid="btn-show-right-panel"
+          >
+            <ChevronLeft className="w-4 h-4 text-[#4a4a5a] rotate-180" />
+          </button>
+        )}
         <div
-          className={`${isMobile ? (mobilePanel === 'right' ? 'fixed right-0 top-0 bottom-0 z-50 w-[300px] shadow-2xl animate-in slide-in-from-right duration-200' : 'hidden') : 'w-[220px]'} shrink-0 overflow-hidden flex flex-col`}
+          className={`${isMobile ? (mobilePanel === 'right' ? 'fixed right-0 top-0 bottom-0 z-50 w-[300px] shadow-2xl animate-in slide-in-from-right duration-200' : 'hidden') : (showRightPanel ? 'w-[220px]' : 'hidden')} shrink-0 overflow-hidden flex flex-col`}
           style={{ backgroundColor: '#f8f8fa', borderLeft: '1px solid #d0d0d8' }}
         >
           {isMobile && mobilePanel === 'right' && (
             <div className="h-10 flex items-center justify-between px-3 border-b shrink-0" style={{ backgroundColor: '#2c3e6b', borderColor: '#d0d0d8' }}>
               <span className="text-sm font-medium text-white">Project Explorer</span>
               <button onClick={() => setMobilePanel('none')} className="p-1.5 rounded-full hover:bg-white/10" data-testid="btn-close-right-panel"><X className="w-4 h-4 text-white/80" /></button>
+            </div>
+          )}
+          {!isMobile && (
+            <div className="h-7 flex items-center justify-between px-2 shrink-0" style={{ backgroundColor: '#e8edf2', borderBottom: '1px solid #d0d0d8' }}>
+              <span className="text-[10px] font-medium text-[#4a4a5a] uppercase tracking-wide">Project Explorer</span>
+              <button onClick={() => setShowRightPanel(false)} className="p-0.5 rounded hover:bg-black/[0.06] transition-colors" title="Close panel" data-testid="btn-close-explorer">
+                <X className="w-3.5 h-3.5 text-[#6b6b7b]" />
+              </button>
             </div>
           )}
           <div className={`${selectedObj ? 'h-[45%]' : 'flex-1'} overflow-hidden`}>
