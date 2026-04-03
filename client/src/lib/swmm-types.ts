@@ -357,6 +357,7 @@ export interface NodeResult {
   lateralInflow: number;
   totalInflow: number;
   flooding: number;
+  extended?: Record<string, number>;
 }
 
 export interface LinkResult {
@@ -365,6 +366,7 @@ export interface LinkResult {
   velocity: number;
   volume: number;
   capacity: number;
+  extended?: Record<string, number>;
 }
 
 export interface SubcatchResult {
@@ -376,6 +378,11 @@ export interface SubcatchResult {
   gwOutflow: number;
   gwElev: number;
   moisture: number;
+  extended?: Record<string, number>;
+}
+
+export interface SystemResult {
+  extended: Record<string, number>;
 }
 
 export interface TimeStepResults {
@@ -384,6 +391,7 @@ export interface TimeStepResults {
   nodes: Record<string, NodeResult>;
   links: Record<string, LinkResult>;
   subcatchments: Record<string, SubcatchResult>;
+  system?: SystemResult;
 }
 
 export interface SimulationResults {

@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-types';
+import { getNodeVarByKey, getLinkVarByKey, getSubVarByKey } from '@/lib/swmm-variables';
 import type { SwmmPreferences } from '@/pages/swmm-ui';
 
 const COLORS = {
@@ -323,20 +324,19 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         return COLORS.legend[Math.min(4, Math.floor(t * 5))];
       }
     }
-    const outputNodeThemes = ['depth', 'head', 'volume', 'lateralInflow', 'totalInflow', 'flooding'];
-    if (results && results.timeSteps[timeStep] && outputNodeThemes.includes(nodeTheme)) {
+    if (results && results.timeSteps[timeStep] && nodeTheme !== 'none' && nodeTheme !== 'elevation' && nodeTheme !== 'maxDepth') {
       const nr = results.timeSteps[timeStep].nodes[nodeId];
       if (nr) {
-        let val = 0, minVal = 0, maxVal = 1;
-        if (nodeTheme === 'depth') { val = nr.depth; maxVal = 8; }
-        else if (nodeTheme === 'head') { val = nr.head; minVal = 88; maxVal = 110; }
-        else if (nodeTheme === 'volume') { val = nr.volume; maxVal = 1000; }
-        else if (nodeTheme === 'lateralInflow') { val = nr.lateralInflow; maxVal = 10; }
-        else if (nodeTheme === 'totalInflow') { val = nr.totalInflow; maxVal = 15; }
-        else if (nodeTheme === 'flooding') { val = nr.flooding; maxVal = 5; }
-        const t = Math.min(1, Math.max(0, (val - minVal) / (maxVal - minVal || 1)));
-        const idx = Math.min(4, Math.floor(t * 5));
-        return COLORS.legend[idx];
+        const stdKeys: Record<string, number> = { depth: nr.depth, head: nr.head, volume: nr.volume, lateralInflow: nr.lateralInflow, totalInflow: nr.totalInflow, flooding: nr.flooding };
+        let val = stdKeys[nodeTheme] ?? (nr.extended ? nr.extended[nodeTheme] : undefined) ?? undefined;
+        if (val !== undefined) {
+          const varInfo = getNodeVarByKey(nodeTheme);
+          const maxVal = varInfo?.maxVal || 10;
+          const minVal = nodeTheme === 'head' ? 88 : 0;
+          const t = Math.min(1, Math.max(0, (val - minVal) / (maxVal - minVal || 1)));
+          const idx = Math.min(4, Math.floor(t * 5));
+          return COLORS.legend[idx];
+        }
       }
     }
     if (nodeTheme === 'none') {
@@ -382,19 +382,18 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
       return COLORS.linkDefault;
     }
-    const outputLinkThemes = ['flow', 'velocity', 'depth', 'volume', 'capacity'];
-    if (results && results.timeSteps[timeStep] && outputLinkThemes.includes(linkTheme)) {
+    if (results && results.timeSteps[timeStep] && linkTheme !== 'none' && linkTheme !== 'maxDepth' && linkTheme !== 'roughness' && linkTheme !== 'length' && linkTheme !== 'slope') {
       const lr = results.timeSteps[timeStep].links[linkId];
       if (lr) {
-        let val = 0, maxVal = 1;
-        if (linkTheme === 'flow') { val = Math.abs(lr.flow); maxVal = 15; }
-        else if (linkTheme === 'velocity') { val = Math.abs(lr.velocity); maxVal = 8; }
-        else if (linkTheme === 'depth') { val = lr.depth; maxVal = 3; }
-        else if (linkTheme === 'volume') { val = lr.volume; maxVal = 500; }
-        else if (linkTheme === 'capacity') { val = lr.capacity; maxVal = 1; }
-        const t = Math.min(1, Math.max(0, val / maxVal));
-        const idx = Math.min(4, Math.floor(t * 5));
-        return COLORS.legend[idx];
+        const stdKeys: Record<string, number> = { flow: Math.abs(lr.flow), velocity: Math.abs(lr.velocity), depth: lr.depth, volume: lr.volume, capacity: lr.capacity };
+        let val = stdKeys[linkTheme] ?? (lr.extended ? lr.extended[linkTheme] : undefined) ?? undefined;
+        if (val !== undefined) {
+          const varInfo = getLinkVarByKey(linkTheme);
+          const maxVal = varInfo?.maxVal || 10;
+          const t = Math.min(1, Math.max(0, val / maxVal));
+          const idx = Math.min(4, Math.floor(t * 5));
+          return COLORS.legend[idx];
+        }
       }
     }
     return COLORS.linkDefault;
@@ -429,23 +428,18 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
       return COLORS.subcatchFill;
     }
-    const outputSubThemes = ['runoff', 'rainfall', 'infiltration', 'snowDepth', 'evap', 'gwOutflow', 'gwElev', 'moisture'];
-    if (results && results.timeSteps[timeStep] && outputSubThemes.includes(subcatchTheme)) {
+    if (results && results.timeSteps[timeStep] && subcatchTheme !== 'none' && subcatchTheme !== 'imperv' && subcatchTheme !== 'area' && subcatchTheme !== 'width' && subcatchTheme !== 'slope') {
       const sr = results.timeSteps[timeStep].subcatchments[scId];
       if (sr) {
-        let val = 0, maxVal = 1;
-        if (subcatchTheme === 'runoff') { val = sr.runoff; maxVal = 20; }
-        else if (subcatchTheme === 'rainfall') { val = sr.rainfall; maxVal = 5; }
-        else if (subcatchTheme === 'infiltration') { val = sr.infiltration; maxVal = 3; }
-        else if (subcatchTheme === 'snowDepth') { val = sr.snowDepth; maxVal = 5; }
-        else if (subcatchTheme === 'evap') { val = sr.evap; maxVal = 0.5; }
-        else if (subcatchTheme === 'gwOutflow') { val = sr.gwOutflow; maxVal = 5; }
-        else if (subcatchTheme === 'gwElev') { val = sr.gwElev; maxVal = 50; }
-        else if (subcatchTheme === 'moisture') { val = sr.moisture; maxVal = 0.5; }
-        const t = Math.min(1, Math.max(0, val / maxVal));
-        const idx = Math.min(4, Math.floor(t * 5));
-        const c = COLORS.legend[idx];
-        return c + '40';
+        const stdKeys: Record<string, number> = { runoff: sr.runoff, rainfall: sr.rainfall, infiltration: sr.infiltration, snowDepth: sr.snowDepth, evap: sr.evap, gwOutflow: sr.gwOutflow, gwElev: sr.gwElev, moisture: sr.moisture };
+        let val = stdKeys[subcatchTheme] ?? (sr.extended ? sr.extended[subcatchTheme] : undefined) ?? undefined;
+        if (val !== undefined) {
+          const varInfo = getSubVarByKey(subcatchTheme);
+          const maxVal = varInfo?.maxVal || 10;
+          const t = Math.min(1, Math.max(0, val / maxVal));
+          const idx = Math.min(4, Math.floor(t * 5));
+          return COLORS.legend[idx] + '40';
+        }
       }
     }
     return COLORS.subcatchFill;
@@ -1109,12 +1103,12 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         } else if (results && results.timeSteps[timeStep]) {
           const nr = results.timeSteps[timeStep].nodes[nodeId];
           if (nr) {
-            if (nodeTheme === 'depth') info = `Depth: ${nr.depth.toFixed(2)}`;
-            else if (nodeTheme === 'head') info = `Head: ${nr.head.toFixed(2)}`;
-            else if (nodeTheme === 'volume') info = `Vol: ${nr.volume.toFixed(1)}`;
-            else if (nodeTheme === 'lateralInflow') info = `Lat.In: ${nr.lateralInflow.toFixed(2)}`;
-            else if (nodeTheme === 'totalInflow') info = `Tot.In: ${nr.totalInflow.toFixed(2)}`;
-            else if (nodeTheme === 'flooding') info = `Flood: ${nr.flooding.toFixed(2)}`;
+            const stdKeys: Record<string, number> = { depth: nr.depth, head: nr.head, volume: nr.volume, lateralInflow: nr.lateralInflow, totalInflow: nr.totalInflow, flooding: nr.flooding };
+            const val = stdKeys[nodeTheme] ?? (nr.extended ? nr.extended[nodeTheme] : undefined);
+            if (val !== undefined) {
+              const vi = getNodeVarByKey(nodeTheme);
+              info = `${vi?.name || nodeTheme}: ${val.toFixed(2)}`;
+            }
           }
         }
         if (!info) {
@@ -1167,11 +1161,12 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
           } else if (results && results.timeSteps[timeStep]) {
             const lr = results.timeSteps[timeStep].links[link.id];
             if (lr) {
-              if (linkTheme === 'flow') info = `Flow: ${lr.flow.toFixed(2)}`;
-              else if (linkTheme === 'velocity') info = `Vel: ${lr.velocity.toFixed(2)}`;
-              else if (linkTheme === 'depth') info = `Depth: ${lr.depth.toFixed(2)}`;
-              else if (linkTheme === 'volume') info = `Vol: ${lr.volume.toFixed(1)}`;
-              else if (linkTheme === 'capacity') info = `Cap: ${(lr.capacity * 100).toFixed(0)}%`;
+              const stdKeys: Record<string, number> = { flow: lr.flow, velocity: lr.velocity, depth: lr.depth, volume: lr.volume, capacity: lr.capacity };
+              const val = stdKeys[linkTheme] ?? (lr.extended ? lr.extended[linkTheme] : undefined);
+              if (val !== undefined) {
+                const vi = getLinkVarByKey(linkTheme);
+                info = linkTheme === 'capacity' ? `Cap: ${(val * 100).toFixed(0)}%` : `${vi?.name || linkTheme}: ${val.toFixed(2)}`;
+              }
             }
           }
           if (!info) {
@@ -1201,14 +1196,12 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
           } else if (results && results.timeSteps[timeStep]) {
             const sr = results.timeSteps[timeStep].subcatchments[scId];
             if (sr) {
-              if (subcatchTheme === 'runoff') info = `Runoff: ${sr.runoff.toFixed(2)}`;
-              else if (subcatchTheme === 'rainfall') info = `Rain: ${sr.rainfall.toFixed(2)}`;
-              else if (subcatchTheme === 'infiltration') info = `Infil: ${sr.infiltration.toFixed(2)}`;
-              else if (subcatchTheme === 'snowDepth') info = `Snow: ${sr.snowDepth.toFixed(2)}`;
-              else if (subcatchTheme === 'evap') info = `Evap: ${sr.evap.toFixed(3)}`;
-              else if (subcatchTheme === 'gwOutflow') info = `GW Out: ${sr.gwOutflow.toFixed(2)}`;
-              else if (subcatchTheme === 'gwElev') info = `GW El: ${sr.gwElev.toFixed(2)}`;
-              else if (subcatchTheme === 'moisture') info = `Moist: ${sr.moisture.toFixed(3)}`;
+              const stdKeys: Record<string, number> = { runoff: sr.runoff, rainfall: sr.rainfall, infiltration: sr.infiltration, snowDepth: sr.snowDepth, evap: sr.evap, gwOutflow: sr.gwOutflow, gwElev: sr.gwElev, moisture: sr.moisture };
+              const val = stdKeys[subcatchTheme] ?? (sr.extended ? sr.extended[subcatchTheme] : undefined);
+              if (val !== undefined) {
+                const vi = getSubVarByKey(subcatchTheme);
+                info = `${vi?.name || subcatchTheme}: ${val.toFixed(3)}`;
+              }
             }
           }
           if (!info && sc) {

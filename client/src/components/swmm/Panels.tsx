@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import type { SwmmProject, SelectedObject, XSection } from '@/lib/swmm-types';
 import { ChevronDown, ChevronRight, Droplets, CircleDot, Minus, CloudRain, Triangle, Square, ArrowLeftRight, X, Search, List } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { getNodeVarByKey, getLinkVarByKey, getSubVarByKey } from '@/lib/swmm-variables';
 
 const LEGEND_COLORS = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
 
@@ -123,52 +124,17 @@ export function LegendPanel({
   const [showLegendNodes, setShowLegendNodes] = useState(true);
   const [showLegendLinks, setShowLegendLinks] = useState(true);
 
-  const nodeLegend: Record<string, { title: string; labels: string[] }> = {
-    none: { title: 'Nodes', labels: [] },
-    elevation: { title: 'Invert El. (ft)', labels: ['Low', '', '', '', 'High'] },
-    maxDepth: { title: 'Max Depth (ft)', labels: ['< 2', '2-5', '5-10', '10-15', '> 15'] },
-    depth: { title: 'Depth (ft)', labels: ['< 1.5', '1.5-3.0', '3.0-4.0', '4.0-5.0', '> 5.0'] },
-    head: { title: 'Head (ft)', labels: ['< 92', '92-95', '95-97', '97-100', '> 100'] },
-    volume: { title: 'Volume (ft³)', labels: ['< 100', '100-300', '300-500', '500-800', '> 800'] },
-    lateralInflow: { title: 'Lat. Inflow (CFS)', labels: ['< 1', '1-3', '3-5', '5-8', '> 8'] },
-    totalInflow: { title: 'Total Inflow (CFS)', labels: ['< 1', '1-4', '4-8', '8-12', '> 12'] },
-    flooding: { title: 'Flooding (CFS)', labels: ['0', '< 1', '1-2', '2-4', '> 4'] },
-  };
-  const linkLegend: Record<string, { title: string; labels: string[] }> = {
-    none: { title: 'Links', labels: [] },
-    maxDepth: { title: 'Max Depth (ft)', labels: ['< 1', '1-2.5', '2.5-5', '5-7.5', '> 7.5'] },
-    roughness: { title: "Manning's N", labels: ['< 0.010', '0.010-0.015', '0.015-0.025', '0.025-0.035', '> 0.035'] },
-    length: { title: 'Length (ft)', labels: ['Short', '', '', '', 'Long'] },
-    slope: { title: 'Slope (ft/ft)', labels: ['< 0.005', '0.005-0.01', '0.01-0.02', '0.02-0.04', '> 0.04'] },
-    flow: { title: 'Flow (CFS)', labels: ['< 1.0', '1.0-2.5', '2.5-4.0', '4.0-6.0', '> 6.0'] },
-    velocity: { title: 'Velocity (fps)', labels: ['< 1.0', '1.0-2.0', '2.0-3.0', '3.0-5.0', '> 5.0'] },
-    depth: { title: 'Depth (ft)', labels: ['< 0.5', '0.5-1.0', '1.0-1.5', '1.5-2.0', '> 2.0'] },
-    volume: { title: 'Volume (ft³)', labels: ['< 50', '50-150', '150-300', '300-400', '> 400'] },
-    capacity: { title: 'Capacity', labels: ['< 0.2', '0.2-0.4', '0.4-0.6', '0.6-0.8', '> 0.8'] },
-  };
-  const subcatchLegend: Record<string, { title: string; labels: string[] }> = {
-    none: { title: 'Subcatchments', labels: [] },
-    imperv: { title: '% Imperv', labels: ['< 20%', '20-40%', '40-60%', '60-80%', '> 80%'] },
-    area: { title: 'Area (ac)', labels: ['Small', '', '', '', 'Large'] },
-    width: { title: 'Width (ft)', labels: ['Narrow', '', '', '', 'Wide'] },
-    slope: { title: 'Slope (%)', labels: ['Flat', '', '', '', 'Steep'] },
-    runoff: { title: 'Runoff (CFS)', labels: ['< 2', '2-5', '5-10', '10-15', '> 15'] },
-    rainfall: { title: 'Rainfall (in/hr)', labels: ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-3.0', '> 3.0'] },
-    infiltration: { title: 'Infiltration', labels: ['< 0.2', '0.2-0.5', '0.5-1.0', '1.0-2.0', '> 2.0'] },
-    snowDepth: { title: 'Snow Depth (in)', labels: ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-4.0', '> 4.0'] },
-    evap: { title: 'Evaporation', labels: ['< 0.05', '0.05-0.1', '0.1-0.2', '0.2-0.4', '> 0.4'] },
-    gwOutflow: { title: 'GW Outflow (CFS)', labels: ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-4.0', '> 4.0'] },
-    gwElev: { title: 'GW Elev. (ft)', labels: ['Low', '', '', '', 'High'] },
-    moisture: { title: 'Moisture', labels: ['< 0.1', '0.1-0.2', '0.2-0.3', '0.3-0.4', '> 0.4'] },
-  };
+  const nodeVar = getNodeVarByKey(nodeTheme);
+  const linkVar = getLinkVarByKey(linkTheme);
+  const subcatchVar = getSubVarByKey(subcatchTheme);
 
-  const nodeLabels = (nodeLegend[nodeTheme] || nodeLegend.none).labels;
-  const linkLabels = (linkLegend[linkTheme] || linkLegend.none).labels;
-  const subcatchLabels = (subcatchLegend[subcatchTheme] || subcatchLegend.none).labels;
+  const nodeLabels = nodeTheme === 'none' ? [] : (nodeVar?.labels || ['Low', '', '', '', 'High']);
+  const linkLabels = linkTheme === 'none' ? [] : (linkVar?.labels || ['Low', '', '', '', 'High']);
+  const subcatchLabels = subcatchTheme === 'none' ? [] : (subcatchVar?.labels || ['Low', '', '', '', 'High']);
 
-  const subcatchTitle = (subcatchLegend[subcatchTheme] || subcatchLegend.none).title;
-  const nodeTitle = (nodeLegend[nodeTheme] || nodeLegend.none).title;
-  const linkTitle = (linkLegend[linkTheme] || linkLegend.none).title;
+  const nodeTitle = nodeTheme === 'none' ? 'Nodes' : (nodeVar ? `${nodeVar.name}${nodeVar.units ? ' (' + nodeVar.units + ')' : ''}` : 'Nodes');
+  const linkTitle = linkTheme === 'none' ? 'Links' : (linkVar ? `${linkVar.name}${linkVar.units ? ' (' + linkVar.units + ')' : ''}` : 'Links');
+  const subcatchTitle = subcatchTheme === 'none' ? 'Subcatchments' : (subcatchVar ? `${subcatchVar.name}${subcatchVar.units ? ' (' + subcatchVar.units + ')' : ''}` : 'Subcatchments');
 
   const layers = [
     { key: 'subcatchments', label: 'Subcatchments', color: '#7092BE' },

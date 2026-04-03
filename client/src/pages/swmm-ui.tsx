@@ -1,6 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-types';
 import { createEmptyProject } from '@/lib/swmm-types';
+import {
+  NODE_INPUT_VARS, NODE_VARS, LINK_INPUT_VARS, LINK_VARS, SUB_INPUT_VARS, SUB_VARS,
+  getNodeCategories, getLinkCategories, getSubCategories,
+  getNodeVarByKey, getLinkVarByKey, getSubVarByKey,
+} from '@/lib/swmm-variables';
 import { parseInpFile } from '@/lib/inp-parser';
 import { createMockEngine, createRemoteEngine, createLocalEngine, createWasmEngine, checkRemoteEngine, checkLocalEngine, checkWasmEngine } from '@/lib/swmm-engine';
 import { computeCflAnalysis, discretizeProject, getDefaultSettings } from '@/lib/cfl-analysis';
@@ -633,8 +638,12 @@ export default function SwmmUI() {
     y += 24;
 
     const legendColors = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
-    const nodeLabels: Record<string, string> = { none: 'Nodes', elevation: 'Invert El.', maxDepth: 'Max Depth', depth: 'Node Depth', head: 'Node Head', volume: 'Volume', lateralInflow: 'Lat. Inflow', totalInflow: 'Total Inflow', flooding: 'Flooding' };
-    const linkLabels: Record<string, string> = { none: 'Links', maxDepth: 'Max Depth', roughness: "Manning's N", length: 'Length', slope: 'Slope', flow: 'Link Flow', velocity: 'Link Velocity', depth: 'Link Depth', volume: 'Volume', capacity: 'Capacity' };
+    const nodeVarInfo = getNodeVarByKey(nodeTheme);
+    const linkVarInfo = getLinkVarByKey(linkTheme);
+    const nodeLabels: Record<string, string> = { none: 'Nodes' };
+    if (nodeVarInfo) nodeLabels[nodeTheme] = nodeVarInfo.name + (nodeVarInfo.units ? ` (${nodeVarInfo.units})` : '');
+    const linkLabels: Record<string, string> = { none: 'Links' };
+    if (linkVarInfo) linkLabels[linkTheme] = linkVarInfo.name + (linkVarInfo.units ? ` (${linkVarInfo.units})` : '');
     const nodeLabel = nodeLabels[nodeTheme] || 'Nodes';
     const linkLabel = linkLabels[linkTheme] || 'Links';
 
@@ -1495,11 +1504,17 @@ export default function SwmmUI() {
         {activeMenu === 'View' && (
           <div className="flex items-center gap-2 sm:gap-4 px-1 sm:px-2 w-full overflow-x-auto">
             <ThemeCombo label="Sub" value={subcatchTheme} onChange={setSubcatchTheme}
-              options={[['none', 'None'], ['imperv', '% Imperv'], ['area', 'Area'], ['width', 'Width'], ['slope', 'Slope'], ['runoff', 'Runoff'], ['rainfall', 'Rainfall'], ['infiltration', 'Infiltration'], ['snowDepth', 'Snow Depth'], ['evap', 'Evaporation'], ['gwOutflow', 'GW Outflow'], ['gwElev', 'GW Elev.'], ['moisture', 'Moisture']]} testId="combo-subcatch" />
+              options={SUB_INPUT_VARS.map(v => [v.key, v.name] as [string, string])}
+              groups={getSubCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
+              testId="combo-subcatch" />
             <ThemeCombo label="Nodes" value={nodeTheme} onChange={setNodeTheme}
-              options={[['none', 'None'], ['elevation', 'Invert El.'], ['maxDepth', 'Max Depth'], ['depth', 'Depth'], ['head', 'Head'], ['volume', 'Volume'], ['lateralInflow', 'Lat. Inflow'], ['totalInflow', 'Total Inflow'], ['flooding', 'Flooding']]} testId="combo-nodes" />
+              options={NODE_INPUT_VARS.map(v => [v.key, v.name] as [string, string])}
+              groups={getNodeCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
+              testId="combo-nodes" />
             <ThemeCombo label="Links" value={linkTheme} onChange={setLinkTheme}
-              options={[['none', 'None'], ['maxDepth', 'Max Depth'], ['roughness', 'Roughness'], ['length', 'Length'], ['slope', 'Slope'], ['flow', 'Flow'], ['depth', 'Depth'], ['velocity', 'Velocity'], ['volume', 'Volume'], ['capacity', 'Capacity']]} testId="combo-links" />
+              options={LINK_INPUT_VARS.map(v => [v.key, v.name] as [string, string])}
+              groups={getLinkCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
+              testId="combo-links" />
             <div className="flex-1 min-w-0" />
             {results && (
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -3238,11 +3253,12 @@ function ToolbarIconButton({ icon, onClick, title, testId }: {
   );
 }
 
-function ThemeCombo({ label, value, onChange, options, testId }: {
+function ThemeCombo({ label, value, onChange, options, groups, testId }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: [string, string][];
+  options?: [string, string][];
+  groups?: { label: string; items: [string, string][] }[];
   testId?: string;
 }) {
   return (
@@ -3255,8 +3271,15 @@ function ThemeCombo({ label, value, onChange, options, testId }: {
         style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
         data-testid={testId}
       >
-        {options.map(([val, lbl]) => (
+        {options && options.map(([val, lbl]) => (
           <option key={val} value={val}>{lbl}</option>
+        ))}
+        {groups && groups.map(g => (
+          <optgroup key={g.label} label={g.label}>
+            {g.items.map(([val, lbl]) => (
+              <option key={val} value={val}>{lbl}</option>
+            ))}
+          </optgroup>
         ))}
       </select>
     </div>
@@ -3353,7 +3376,7 @@ const CALIB_COLORS = [
 ];
 
 const TS_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
-const NODE_VARS: { key: string; label: string; unit: string }[] = [
+const CHART_NODE_VARS: { key: string; label: string; unit: string }[] = [
   { key: 'depth', label: 'Depth', unit: 'ft' },
   { key: 'head', label: 'Head', unit: 'ft' },
   { key: 'totalInflow', label: 'Total Inflow', unit: 'CFS' },
@@ -3361,14 +3384,14 @@ const NODE_VARS: { key: string; label: string; unit: string }[] = [
   { key: 'flooding', label: 'Flooding', unit: 'CFS' },
   { key: 'volume', label: 'Volume', unit: 'ft³' },
 ];
-const LINK_VARS: { key: string; label: string; unit: string }[] = [
+const CHART_LINK_VARS: { key: string; label: string; unit: string }[] = [
   { key: 'flow', label: 'Flow', unit: 'CFS' },
   { key: 'velocity', label: 'Velocity', unit: 'ft/s' },
   { key: 'depth', label: 'Depth', unit: 'ft' },
   { key: 'capacity', label: 'Capacity', unit: '' },
   { key: 'volume', label: 'Volume', unit: 'ft³' },
 ];
-const SUBCATCH_VARS: { key: string; label: string; unit: string }[] = [
+const CHART_SUBCATCH_VARS: { key: string; label: string; unit: string }[] = [
   { key: 'rainfall', label: 'Rainfall', unit: 'in/hr' },
   { key: 'runoff', label: 'Runoff', unit: 'CFS' },
   { key: 'infiltration', label: 'Infiltration', unit: 'in/hr' },
@@ -3888,7 +3911,7 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
   const [searchText, setSearchText] = useState('');
   const [showCompare, setShowCompare] = useState(false);
 
-  const varDefs = category === 'node' ? NODE_VARS : category === 'link' ? LINK_VARS : SUBCATCH_VARS;
+  const varDefs = category === 'node' ? CHART_NODE_VARS : category === 'link' ? CHART_LINK_VARS : CHART_SUBCATCH_VARS;
   const allIds = category === 'node' ? nodeIds : category === 'link' ? linkIds : subcatchIds;
 
   const filteredIds = useMemo(() => {
