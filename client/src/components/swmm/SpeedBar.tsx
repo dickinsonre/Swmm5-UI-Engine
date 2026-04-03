@@ -1,6 +1,7 @@
 import {
   MousePointer2, Circle, Triangle, Square, Minus, Zap, Tag, Trash2,
-  BoxSelect, Play, Maximize,
+  BoxSelect, Play, Maximize, Diamond, CloudRain, Hexagon, CircleDot,
+  ArrowDownToLine, Waves, Ruler,
 } from 'lucide-react';
 
 export type InteractionMode =
@@ -8,10 +9,17 @@ export type InteractionMode =
   | 'addJunction'
   | 'addOutfall'
   | 'addStorage'
+  | 'addDivider'
   | 'addConduit'
   | 'addPump'
+  | 'addOrifice'
+  | 'addWeir'
+  | 'addOutlet'
+  | 'addSubcatchment'
+  | 'addRaingage'
   | 'addLabel'
   | 'groupSelect'
+  | 'measure'
   | 'query';
 
 interface SpeedBarProps {
@@ -24,15 +32,22 @@ interface SpeedBarProps {
   isMobile?: boolean;
 }
 
-const tools: { mode: InteractionMode; icon: typeof Circle; label: string; shortLabel: string; testId: string }[] = [
+const tools: { mode: InteractionMode; icon: typeof Circle; label: string; shortLabel: string; testId: string; group?: string }[] = [
   { mode: 'select', icon: MousePointer2, label: 'Select', shortLabel: 'Sel', testId: 'speed-select' },
-  { mode: 'addJunction', icon: Circle, label: 'Add Junction', shortLabel: 'Junc', testId: 'speed-junction' },
-  { mode: 'addOutfall', icon: Triangle, label: 'Add Outfall', shortLabel: 'Out', testId: 'speed-outfall' },
-  { mode: 'addStorage', icon: Square, label: 'Add Storage', shortLabel: 'Stor', testId: 'speed-storage' },
-  { mode: 'addConduit', icon: Minus, label: 'Add Conduit', shortLabel: 'Cond', testId: 'speed-conduit' },
-  { mode: 'addPump', icon: Zap, label: 'Add Pump', shortLabel: 'Pump', testId: 'speed-pump' },
+  { mode: 'addJunction', icon: Circle, label: 'Add Junction', shortLabel: 'Junc', testId: 'speed-junction', group: 'nodes' },
+  { mode: 'addOutfall', icon: Triangle, label: 'Add Outfall', shortLabel: 'Out', testId: 'speed-outfall', group: 'nodes' },
+  { mode: 'addStorage', icon: Square, label: 'Add Storage', shortLabel: 'Stor', testId: 'speed-storage', group: 'nodes' },
+  { mode: 'addDivider', icon: Diamond, label: 'Add Divider', shortLabel: 'Div', testId: 'speed-divider', group: 'nodes' },
+  { mode: 'addConduit', icon: Minus, label: 'Add Conduit', shortLabel: 'Cond', testId: 'speed-conduit', group: 'links' },
+  { mode: 'addPump', icon: Zap, label: 'Add Pump', shortLabel: 'Pump', testId: 'speed-pump', group: 'links' },
+  { mode: 'addOrifice', icon: CircleDot, label: 'Add Orifice', shortLabel: 'Orif', testId: 'speed-orifice', group: 'links' },
+  { mode: 'addWeir', icon: ArrowDownToLine, label: 'Add Weir', shortLabel: 'Weir', testId: 'speed-weir', group: 'links' },
+  { mode: 'addOutlet', icon: Waves, label: 'Add Outlet', shortLabel: 'Outl', testId: 'speed-outlet', group: 'links' },
+  { mode: 'addSubcatchment', icon: Hexagon, label: 'Draw Subcatchment', shortLabel: 'Sub', testId: 'speed-subcatchment', group: 'hydro' },
+  { mode: 'addRaingage', icon: CloudRain, label: 'Add Rain Gage', shortLabel: 'Rain', testId: 'speed-raingage', group: 'hydro' },
   { mode: 'addLabel', icon: Tag, label: 'Add Label', shortLabel: 'Label', testId: 'speed-label' },
   { mode: 'groupSelect', icon: BoxSelect, label: 'Group Select', shortLabel: 'Grp', testId: 'speed-group' },
+  { mode: 'measure', icon: Ruler, label: 'Measure Distance', shortLabel: 'Meas', testId: 'speed-measure' },
 ];
 
 export default function SpeedBar({

@@ -21,11 +21,16 @@ Client-server architecture with client-side SWMM data management.
 Priority on startup: Local > WASM > Remote > Mock (first available wins).
 
 ## Key Files
-- `client/src/pages/swmm-ui.tsx` — Main UI component (~3100 lines), all state, toolbars, dialogs, canvas
-- `client/src/components/swmm/NetworkMap.tsx` — Canvas network map with pan/zoom, hit-testing, depth fill
+- `client/src/pages/swmm-ui.tsx` — Main UI component (~4300 lines), all state, toolbars, dialogs, canvas
+- `client/src/components/swmm/NetworkMap.tsx` — Canvas network map with pan/zoom, hit-testing, depth fill, overview minimap, backdrop image overlay, adjustable node size
 - `client/src/components/swmm/ProjectExplorer.tsx` — Tree navigation, property panel (inline edit), data grid (inline edit). Editable fields defined in `EDITABLE_FIELDS` (property panel) and `GRID_EDITABLE_COLS` (data grid) covering all object types. Supports both numeric and string fields with trim validation.
 - `client/src/components/swmm/Panels.tsx` — Legend/Layers, Object Locator, Map Query panels
-- `client/src/components/swmm/SpeedBar.tsx` — Vertical tool palette for drawing modes
+- `client/src/components/swmm/SpeedBar.tsx` — Vertical tool palette for drawing modes (junction, outfall, storage, divider, conduit, pump, orifice, weir, outlet, subcatchment polygon, raingage, label, group select, measure)
+- `client/src/components/swmm/AnalysisOptionsDialog.tsx` — Full Analysis Options with General, Dates, Time Steps, Dynamic Wave, Interface Files tabs
+- `client/src/components/swmm/DataEditors.tsx` — Tabbed data editors: Time Series (with chart), Curves (with chart), Patterns (with bar chart), Controls (with syntax highlighting), Pollutants, Land Uses, LID Controls (with editable layers), Evaporation, Aquifers
+- `client/src/components/swmm/AboutDialog.tsx` — About/version dialog
+- `client/src/components/swmm/ProjectDefaultsDialog.tsx` — Project defaults for new objects (ID prefixes, subcatchment/node/link/conduit defaults)
+- `client/src/components/swmm/TableViewDialog.tsx` — Tabular result views: by Object (all timesteps) or by Variable (all objects at one timestep)
 - `client/src/lib/swmm-types.ts` — All TypeScript interfaces (SwmmProject, SimulationResults, etc.)
 - `client/src/lib/inp-parser.ts` — INP file parser + writer (projectToInp), 30+ sections
 - `client/src/lib/swmm-out-parser.ts` — Binary .out file parser

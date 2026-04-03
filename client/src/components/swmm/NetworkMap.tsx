@@ -104,7 +104,30 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   const hasInitialized = useRef(false);
   const lastProjectCoords = useRef<Record<string, [number, number]> | null>(null);
   const movingNode = useRef<string | null>(null);
+  const backdropImgRef = useRef<HTMLImageElement | null>(null);
+  const [backdropLoaded, setBackdropLoaded] = useState(false);
   const isLayerVisible = useCallback((layer: string) => layerVisibility[layer] !== false, [layerVisibility]);
+
+  const nodeSizeFactor = preferences?.nodeSize ?? 1.0;
+
+  useEffect(() => {
+    const src = preferences?.backdropImage;
+    if (!src) {
+      backdropImgRef.current = null;
+      setBackdropLoaded(false);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      backdropImgRef.current = img;
+      setBackdropLoaded(true);
+    };
+    img.onerror = () => {
+      backdropImgRef.current = null;
+      setBackdropLoaded(false);
+    };
+    img.src = src;
+  }, [preferences?.backdropImage]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -408,6 +431,22 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     };
     drawWorldGrid();
 
+    if (backdropImgRef.current && backdropLoaded) {
+      const img = backdropImgRef.current;
+      const bScale = preferences?.backdropScale ?? 1.0;
+      const bOpacity = preferences?.backdropOpacity ?? 0.5;
+      const bOffX = preferences?.backdropOffsetX ?? 0;
+      const bOffY = preferences?.backdropOffsetY ?? 0;
+      const imgW = img.width * bScale;
+      const imgH = img.height * bScale;
+      const [sx1, sy1] = worldToScreen(bOffX, bOffY + imgH);
+      const [sx2, sy2] = worldToScreen(bOffX + imgW, bOffY);
+      ctx.save();
+      ctx.globalAlpha = bOpacity;
+      ctx.drawImage(img, sx1, sy1, sx2 - sx1, sy2 - sy1);
+      ctx.restore();
+    }
+
     if (showSubcatchments) {
       for (const [scId, pts] of Object.entries(project.polygons)) {
         if (pts.length < 3) continue;
@@ -569,7 +608,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       if (nType === 'storage' && !isLayerVisible('storage')) continue;
       const [sx, sy] = worldToScreen(nx, ny);
       const isSelected = selectedObj?.id === nodeId;
-      const r = Math.max(4, Math.min(8, mapState.zoom * 250));
+      const r = Math.max(3, Math.min(12, mapState.zoom * 250 * nodeSizeFactor));
 
       const nodeColor = getNodeColor(nodeId, nType);
       ctx.strokeStyle = isSelected ? '#000000' : 'rgba(0,0,0,0.4)';
@@ -751,7 +790,85 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
 
-  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences, linkDrawState, rubberBandPos, groupSelectPoints, groupSelectedIds, interactionMode, cflFlaggedIds, discretizedJunctionIds]);
+    if (preferences?.showMinimap !== false && (Object.keys(project.coordinates).length > 0 || Object.keys(project.polygons).length > 0)) {
+      const mmW = 160;
+      const mmH = 120;
+      const mmPad = 8;
+      const mmX = canvasSize.w - mmW - mmPad;
+      const mmY = canvasSize.h - mmH - mmPad;
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.strokeStyle = 'rgba(44,62,107,0.3)';
+      ctx.lineWidth = 1;
+      ctx.fillRect(mmX, mmY, mmW, mmH);
+      ctx.strokeRect(mmX, mmY, mmW, mmH);
+
+      const ext = getExtent();
+      const dataW = ext.maxX - ext.minX;
+      const dataH = ext.maxY - ext.minY;
+      const mmScale = Math.min((mmW - 8) / dataW, (mmH - 8) / dataH);
+      const mmCx = mmX + mmW / 2;
+      const mmCy = mmY + mmH / 2;
+      const extCx = (ext.minX + ext.maxX) / 2;
+      const extCy = (ext.minY + ext.maxY) / 2;
+      const toMmX = (wx: number) => mmCx + (wx - extCx) * mmScale;
+      const toMmY = (wy: number) => mmCy - (wy - extCy) * mmScale;
+
+      for (const [, pts] of Object.entries(project.polygons)) {
+        if (pts.length < 3) continue;
+        ctx.fillStyle = 'rgba(44,110,181,0.12)';
+        ctx.beginPath();
+        ctx.moveTo(toMmX(pts[0][0]), toMmY(pts[0][1]));
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(toMmX(pts[i][0]), toMmY(pts[i][1]));
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      const allMmLinks = [
+        ...project.conduits.map(c => ({ from: c.fromNode, to: c.toNode })),
+        ...project.pumps.map(p => ({ from: p.fromNode, to: p.toNode })),
+        ...project.orifices.map(o => ({ from: o.fromNode, to: o.toNode })),
+        ...project.weirs.map(w => ({ from: w.fromNode, to: w.toNode })),
+        ...project.outlets.map(o => ({ from: o.fromNode, to: o.toNode })),
+      ];
+      ctx.strokeStyle = 'rgba(90,122,154,0.5)';
+      ctx.lineWidth = 0.8;
+      for (const lnk of allMmLinks) {
+        const fc = project.coordinates[lnk.from];
+        const tc = project.coordinates[lnk.to];
+        if (!fc || !tc) continue;
+        ctx.beginPath();
+        ctx.moveTo(toMmX(fc[0]), toMmY(fc[1]));
+        ctx.lineTo(toMmX(tc[0]), toMmY(tc[1]));
+        ctx.stroke();
+      }
+
+      for (const [, [nx, ny]] of Object.entries(project.coordinates)) {
+        ctx.fillStyle = 'rgba(112,146,190,0.8)';
+        ctx.beginPath();
+        ctx.arc(toMmX(nx), toMmY(ny), 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const vTL = screenToWorld(0, 0);
+      const vBR = screenToWorld(canvasSize.w, canvasSize.h);
+      const vpLeft = toMmX(Math.min(vTL[0], vBR[0]));
+      const vpRight = toMmX(Math.max(vTL[0], vBR[0]));
+      const vpTop = toMmY(Math.max(vTL[1], vBR[1]));
+      const vpBottom = toMmY(Math.min(vTL[1], vBR[1]));
+      ctx.strokeStyle = '#2c6eb5';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(
+        Math.max(mmX, vpLeft),
+        Math.max(mmY, vpTop),
+        Math.min(mmW, vpRight - vpLeft),
+        Math.min(mmH, vpBottom - vpTop),
+      );
+      ctx.restore();
+    }
+
+  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, screenToWorld, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences, linkDrawState, rubberBandPos, groupSelectPoints, groupSelectedIds, interactionMode, cflFlaggedIds, discretizedJunctionIds, nodeSizeFactor, backdropLoaded, getExtent]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -942,14 +1059,20 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
-    const isNodeCreationMode = interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage';
+    const isNodeCreationMode = interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage' || interactionMode === 'addDivider' || interactionMode === 'addRaingage';
     if (isNodeCreationMode && onCreateNode) {
       const [wx, wy] = screenToWorld(sx, sy);
       onCreateNode(wx, wy, interactionMode);
       return;
     }
 
-    const isLinkCreationMode = interactionMode === 'addConduit' || interactionMode === 'addPump';
+    if (interactionMode === 'addSubcatchment') {
+      const [wx, wy] = screenToWorld(sx, sy);
+      onGroupSelectPoint?.(wx, wy);
+      return;
+    }
+
+    const isLinkCreationMode = interactionMode === 'addConduit' || interactionMode === 'addPump' || interactionMode === 'addOrifice' || interactionMode === 'addWeir' || interactionMode === 'addOutlet';
     if (isLinkCreationMode) {
       const hitNode = hitTestNode(sx, sy);
       if (hitNode) {
@@ -1015,7 +1138,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   const handleRightClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
 
-    if (interactionMode === 'groupSelect' && groupSelectPoints && groupSelectPoints.length >= 3) {
+    if ((interactionMode === 'groupSelect' || interactionMode === 'addSubcatchment') && groupSelectPoints && groupSelectPoints.length >= 3) {
       onGroupSelectComplete?.();
       setRubberBandPos(null);
       return;
@@ -1056,7 +1179,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   }, []);
 
   const handleDoubleClick = useCallback(() => {
-    if (interactionMode === 'groupSelect' && groupSelectPoints && groupSelectPoints.length >= 3) {
+    if ((interactionMode === 'groupSelect' || interactionMode === 'addSubcatchment') && groupSelectPoints && groupSelectPoints.length >= 3) {
       onGroupSelectComplete?.();
       setRubberBandPos(null);
       return;
@@ -1164,11 +1287,13 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     }
   }, [hitTestNode, hitTestLink, onSelectObj, onCreateNode, onStartLink, onCompleteLink, onAddLinkVertex, interactionMode, mapState, linkDrawState]);
 
-  const cursorStyle = interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage'
+  const cursorStyle = interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage' || interactionMode === 'addDivider' || interactionMode === 'addRaingage'
     ? 'copy'
-    : interactionMode === 'addConduit' || interactionMode === 'addPump'
+    : interactionMode === 'addConduit' || interactionMode === 'addPump' || interactionMode === 'addOrifice' || interactionMode === 'addWeir' || interactionMode === 'addOutlet'
     ? (linkDrawState ? 'crosshair' : 'cell')
-    : interactionMode === 'groupSelect'
+    : interactionMode === 'groupSelect' || interactionMode === 'addSubcatchment'
+    ? 'crosshair'
+    : interactionMode === 'measure'
     ? 'crosshair'
     : 'crosshair';
 

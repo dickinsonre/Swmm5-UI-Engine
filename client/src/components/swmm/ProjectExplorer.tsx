@@ -268,6 +268,12 @@ export default function ProjectExplorer({
     }
   }, [toggleLeaf, project]);
 
+  const handleLeafDoubleClick = useCallback((node: TreeNodeDef) => {
+    if (node.inpSection && onViewTable) {
+      onViewTable(node.inpSection);
+    }
+  }, [onViewTable]);
+
   const handleObjectClick = useCallback((category: string, id: string) => {
     onSelectObj({ id, objType: category as SelectedObject['objType'] });
   }, [onSelectObj]);
@@ -409,6 +415,7 @@ export default function ProjectExplorer({
       <div key={node.id}>
         <div
           onClick={() => isGroup ? toggle(node.id) : handleLeafClick(node)}
+          onDoubleClick={() => { if (!isGroup) handleLeafDoubleClick(node); }}
           onContextMenu={e => handleContextMenu(e, node.id, isGroup ? 'group' : 'leaf', category, node.countKey)}
           className={`flex items-center gap-1 rounded cursor-pointer text-[11px] py-[3px] px-1 transition-colors select-none
             ${isActive ? 'bg-[#2c6eb5]/15 text-[#2c6eb5]' : isDimmed ? 'text-[#b0b0b8] hover:bg-black/[0.03]' : 'text-[#2a2a3e] hover:bg-black/[0.04]'}`}

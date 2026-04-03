@@ -11,6 +11,11 @@ import NetworkMap, { type NetworkMapHandle } from '@/components/swmm/NetworkMap'
 import { LegendPanel, ObjectLocatorPanel, MapQueryPanel, evaluateQuery } from '@/components/swmm/Panels';
 import type { MapQuery } from '@/components/swmm/Panels';
 import ProjectExplorer from '@/components/swmm/ProjectExplorer';
+import AnalysisOptionsDialog from '@/components/swmm/AnalysisOptionsDialog';
+import DataEditorDialog from '@/components/swmm/DataEditors';
+import AboutDialog from '@/components/swmm/AboutDialog';
+import ProjectDefaultsDialog from '@/components/swmm/ProjectDefaultsDialog';
+import TableViewDialog from '@/components/swmm/TableViewDialog';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +43,13 @@ export interface SwmmPreferences {
   showNodeIds: boolean;
   showLinkIds: boolean;
   mapBackgroundColor: string;
+  nodeSize: number;
+  showMinimap: boolean;
+  backdropImage: string;
+  backdropOffsetX: number;
+  backdropOffsetY: number;
+  backdropScale: number;
+  backdropOpacity: number;
 }
 
 const DEFAULT_PREFERENCES: SwmmPreferences = {
@@ -48,6 +60,13 @@ const DEFAULT_PREFERENCES: SwmmPreferences = {
   showNodeIds: true,
   showLinkIds: true,
   mapBackgroundColor: '#ffffff',
+  nodeSize: 1.0,
+  showMinimap: true,
+  backdropImage: '',
+  backdropOffsetX: 0,
+  backdropOffsetY: 0,
+  backdropScale: 1.0,
+  backdropOpacity: 0.5,
 };
 
 function loadPreferences(): SwmmPreferences {
@@ -61,7 +80,14 @@ function loadPreferences(): SwmmPreferences {
 }
 
 function savePreferences(prefs: SwmmPreferences) {
-  localStorage.setItem('swmm5-preferences', JSON.stringify(prefs));
+  try {
+    const toSave = { ...prefs };
+    if (toSave.backdropImage && toSave.backdropImage.length > 500000) {
+      toSave.backdropImage = '';
+    }
+    localStorage.setItem('swmm5-preferences', JSON.stringify(toSave));
+  } catch {
+  }
 }
 
 type MenuTab = 'File' | 'Edit' | 'View' | 'Map' | 'Project' | 'Help';
@@ -99,7 +125,11 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | null>(null);
+  const [dataEditorSection, setDataEditorSection] = useState<string>('');
+  const [dataEditorItem, setDataEditorItem] = useState<string>('');
+  const [analysisOptionsTab, setAnalysisOptionsTab] = useState<string>('General');
+  const [tableViewMode, setTableViewMode] = useState<'byObject' | 'byVariable'>('byObject');
   const [calibrationData, setCalibrationData] = useState<CalibrationDataSet[]>([]);
   const calibFileRef = useRef<HTMLInputElement>(null);
   const [importTab, setImportTab] = useState<'csv-nodes' | 'csv-links' | 'dxf' | 'geojson'>('csv-nodes');
@@ -411,6 +441,23 @@ export default function SwmmUI() {
     URL.revokeObjectURL(url);
     toast({ title: 'Saved', description: `${fileName} downloaded` });
   }, [project, fileName, toast]);
+
+  const handleViewTable = useCallback((section: string) => {
+    const optionsSections = ['OPTIONS', 'opt-general', 'opt-hydrology', 'opt-hydraulics', 'opt-routing', 'opt-quality', 'opt-dates', 'opt-timesteps', 'opt-reporting'];
+    if (optionsSections.includes(section)) {
+      const tabMap: Record<string, string> = { 'opt-general': 'General', 'opt-hydrology': 'General', 'opt-hydraulics': 'Dynamic Wave', 'opt-routing': 'General', 'opt-quality': 'General', 'opt-dates': 'Dates', 'opt-timesteps': 'Time Steps', 'opt-reporting': 'Interface Files', 'OPTIONS': 'General' };
+      setAnalysisOptionsTab(tabMap[section] || 'General');
+      setOpenDialog('analysisOptions');
+      return;
+    }
+    const editorSections = ['TIMESERIES', 'CURVES', 'PATTERNS', 'CONTROLS', 'POLLUTANTS', 'LANDUSES', 'LID_CONTROLS', 'EVAPORATION', 'AQUIFERS'];
+    if (editorSections.includes(section)) {
+      setDataEditorSection(section);
+      setDataEditorItem('');
+      setOpenDialog('dataEditor');
+      return;
+    }
+  }, []);
 
   const handleLocateObject = useCallback((objType: string, id: string) => {
     type ObjType = 'junction' | 'outfall' | 'divider' | 'storage' | 'conduit' | 'pump' | 'orifice' | 'weir' | 'outlet' | 'subcatchment' | 'raingage' | 'label';
@@ -898,6 +945,12 @@ export default function SwmmUI() {
       } else if (mode === 'addStorage') {
         id = generateId('SU', allIds);
         next.storageUnits = [...prev.storageUnits, { id, elevation: 0, maxDepth: 10, initDepth: 0, shape: 'TABULAR', curveParams: [], surDepth: 0, fevap: 0 }];
+      } else if (mode === 'addDivider') {
+        id = generateId('D', allIds);
+        next.dividers = [...(prev.dividers || []), { id, elevation: 0, divertedLink: '*', type: 'CUTOFF', cutoffFlow: 0, maxDepth: 0, initDepth: 0, surDepth: 0, aponded: 0 }];
+      } else if (mode === 'addRaingage') {
+        id = generateId('RG', allIds);
+        next.raingages = [...(prev.raingages || []), { id, format: 'INTENSITY', interval: '0:05', scf: 1.0, sourceType: 'TIMESERIES', sourceName: '*', stationId: '', units: '' }];
       } else return prev;
 
       next.coordinates = { ...prev.coordinates, [id]: [wx, wy] };
@@ -936,11 +989,26 @@ export default function SwmmUI() {
         if (vertices.length > 0) {
           next.vertices = { ...prev.vertices, [id]: vertices };
         }
+      } else if (interactionMode === 'addOrifice') {
+        const id = generateId('OR', allLinkIds);
+        next.orifices = [...prev.orifices, { id, fromNode: fromId, toNode: toNodeId, type: 'SIDE', offset: 0, cd: 0.65, gated: 'NO', closeTime: 0 }];
+        next.xsections = { ...prev.xsections, [id]: { linkId: id, shape: 'CIRCULAR', geom1: 1, geom2: 0, geom3: 0, geom4: 0, barrels: 1 } };
+        if (vertices.length > 0) { next.vertices = { ...prev.vertices, [id]: vertices }; }
+      } else if (interactionMode === 'addWeir') {
+        const id = generateId('W', allLinkIds);
+        next.weirs = [...prev.weirs, { id, fromNode: fromId, toNode: toNodeId, type: 'TRANSVERSE', crestHeight: 0, cd: 3.33, gated: 'NO', ec: 0, cd2: 0, surcharge: 'YES' }];
+        next.xsections = { ...prev.xsections, [id]: { linkId: id, shape: 'RECT_OPEN', geom1: 1, geom2: 1, geom3: 0, geom4: 0, barrels: 1 } };
+        if (vertices.length > 0) { next.vertices = { ...prev.vertices, [id]: vertices }; }
+      } else if (interactionMode === 'addOutlet') {
+        const id = generateId('OL', allLinkIds);
+        next.outlets = [...prev.outlets, { id, fromNode: fromId, toNode: toNodeId, offset: 0, type: 'TABULAR/HEAD', curveOrTable: '*' }];
+        if (vertices.length > 0) { next.vertices = { ...prev.vertices, [id]: vertices }; }
       }
       return next;
     });
     setLinkDrawState(null);
-    toast({ title: 'Link Created', description: `New ${interactionMode === 'addConduit' ? 'Conduit' : 'Pump'} drawn` });
+    const typeNames: Record<string, string> = { addConduit: 'Conduit', addPump: 'Pump', addOrifice: 'Orifice', addWeir: 'Weir', addOutlet: 'Outlet' };
+    toast({ title: 'Link Created', description: `New ${typeNames[interactionMode] || 'Link'} drawn` });
   }, [linkDrawState, interactionMode, generateId, toast]);
 
   const handleAddLinkVertex = useCallback((wx: number, wy: number) => {
@@ -1061,6 +1129,24 @@ export default function SwmmUI() {
 
   const handleGroupSelectComplete = useCallback(() => {
     if (groupSelectPoints.length < 3) return;
+
+    if (interactionMode === 'addSubcatchment') {
+      setProject(prev => {
+        const next = { ...prev };
+        const allIds = prev.subcatchments.map(s => s.id);
+        const id = generateId('S', allIds);
+        const outlet = prev.junctions.length > 0 ? prev.junctions[0].id : (prev.outfalls.length > 0 ? prev.outfalls[0].id : '*');
+        next.subcatchments = [...prev.subcatchments, { id, rainGage: '*', outlet, area: 0, pctImperv: 25, width: 100, slope: 0.5, curbLen: 0, snowPack: '' }];
+        next.subareas = { ...prev.subareas, [id]: { nImperv: 0.01, nPerv: 0.1, sImperv: 0.05, sPerv: 0.05, pctZero: 25, routeTo: 'OUTLET', pctRouted: 100 } };
+        next.polygons = { ...(prev.polygons || {}), [id]: groupSelectPoints.map(p => [p[0], p[1]] as [number, number]) };
+        next.infiltration = { ...(prev.infiltration || {}), [id]: Object.values(prev.infiltration)[0] || { maxRate: 3, minRate: 0.5, decay: 4, dryTime: 7, maxInfil: 0 } };
+        return next;
+      });
+      setGroupSelectPoints([]);
+      toast({ title: 'Subcatchment Created', description: 'New subcatchment polygon drawn on map' });
+      return;
+    }
+
     const ids = new Set<string>();
     for (const [nodeId, [nx, ny]] of Object.entries(project.coordinates)) {
       if (pointInPolygonWorld(nx, ny, groupSelectPoints)) {
@@ -1084,7 +1170,7 @@ export default function SwmmUI() {
       setOpenDialog('groupEdit');
     }
     toast({ title: 'Group Selected', description: `${ids.size} objects selected` });
-  }, [groupSelectPoints, project, toast]);
+  }, [groupSelectPoints, project, toast, interactionMode, generateId]);
 
   const handleGroupEdit = useCallback(() => {
     if (!groupSelectedIds || groupSelectedIds.size === 0) return;
@@ -1246,6 +1332,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" onClick={() => setOpenDialog('exportData')} testId="btn-export" />
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" onClick={() => { setImportPreviewText(''); setImportFileName(''); setDxfLayers([]); setDxfSelectedLayers(new Set()); setDxfEntities([]); setGeojsonFeatures([]); setGeojsonFields([]); setGeojsonIdField(''); setGeojsonElevField(''); setOpenDialog('importData'); }} testId="btn-import" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
+            <ToolbarButton icon={<Folder className="w-4 h-4" />} label="Defaults" onClick={() => setOpenDialog('projectDefaults')} testId="btn-defaults" />
             <div className="w-px h-8 mx-1" style={{ backgroundColor: '#d0d0d8' }} />
             <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Samples" onClick={() => setShowSamplesMenu(v => !v)} testId="btn-samples" />
           </div>
@@ -1300,18 +1387,30 @@ export default function SwmmUI() {
           </div>
         )}
         {activeMenu === 'Map' && (
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0.5 flex-wrap">
             <ToolbarButton icon={<ZoomIn className="w-4 h-4" />} label="Zoom In" testId="btn-zoom-in" />
             <ToolbarButton icon={<ZoomOut className="w-4 h-4" />} label="Zoom Out" testId="btn-zoom-out" />
-            <ToolbarButton icon={<Maximize className="w-4 h-4" />} label="Extent" testId="btn-extent" />
-            <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Options" testId="btn-map-options" />
+            <ToolbarButton icon={<Maximize className="w-4 h-4" />} label="Extent" onClick={() => networkMapRef.current?.fitExtent()} testId="btn-extent" />
+            <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Options" onClick={() => setOpenDialog('mapOptions')} testId="btn-map-options" />
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Query" onClick={() => setShowQueryPanel(!showQueryPanel)} testId="btn-query" />
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" onClick={() => setOpenDialog('export')} testId="btn-map-export" />
+            <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-[#6b6b7b]">Size</span>
+              <input type="range" min={0.3} max={3} step={0.1} value={preferences.nodeSize}
+                onChange={e => updatePreference('nodeSize', +e.target.value)}
+                className="w-14" style={{ accentColor: '#2c6eb5' }} data-testid="slider-node-size" />
+            </div>
+            <label className="flex items-center gap-1 text-[9px] text-[#6b6b7b] cursor-pointer ml-1" data-testid="toggle-minimap">
+              <input type="checkbox" checked={preferences.showMinimap} onChange={e => updatePreference('showMinimap', e.target.checked)}
+                className="w-3 h-3 rounded" style={{ accentColor: '#2c6eb5' }} />
+              Mini
+            </label>
           </div>
         )}
         {activeMenu === 'Project' && (
           <div className="flex items-center gap-0.5">
-            <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Setup" testId="btn-setup" />
+            <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Options" onClick={() => setOpenDialog('analysisOptions')} testId="btn-analysis-options" />
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Locate" onClick={() => setShowLocator(!showLocator)} testId="btn-locate" />
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" testId="btn-summary" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" testId="btn-details" />
@@ -1328,6 +1427,8 @@ export default function SwmmUI() {
             <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Profile" onClick={() => setOpenDialog('profilePlot')} testId="btn-profile-plot" />
             <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (results) setOpenDialog('timeSeries'); else toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); }} testId="btn-graph" />
             <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => setOpenDialog('calibration')} testId="btn-calibration" />
+            <ToolbarButton icon={<Table2 className="w-4 h-4" />} label="Table" onClick={() => setOpenDialog('tableView')} testId="btn-table-view" />
+            <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <ToolbarButton
               icon={<Scissors className="w-4 h-4" />}
@@ -1369,7 +1470,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<HelpCircle className="w-4 h-4" />} label="Topics" testId="btn-topics" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Tutorial" testId="btn-tutorial" />
             <ToolbarButton icon={<AlertTriangle className="w-4 h-4" />} label="Errors" testId="btn-errors" />
-            <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" testId="btn-about" />
+            <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about-help" />
           </div>
         )}
       </div>
@@ -1888,6 +1989,7 @@ export default function SwmmUI() {
             results={results}
             timeStep={timeStep}
             onUpdateProject={handleUpdateProject}
+            onViewTable={handleViewTable}
           />
         </div>
       </div>
@@ -2186,6 +2288,116 @@ export default function SwmmUI() {
                 <Clipboard className="w-3.5 h-3.5 mr-1.5" />
                 Copy to Clipboard
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'mapOptions'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-md w-[95vw] sm:w-auto max-h-[90vh] overflow-y-auto" data-testid="map-options-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#2c3e6b]">
+              <Settings className="w-4 h-4" /> Map Options
+            </DialogTitle>
+            <DialogDescription className="text-[#6b6b7b]">Configure map display, backdrop image, and node sizing.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-[#2c3e6b]">Backdrop Image</h4>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="text-[11px] h-7 border-[#d0d0d8]" data-testid="btn-load-backdrop"
+                  onClick={() => {
+                    const inp = document.createElement('input');
+                    inp.type = 'file';
+                    inp.accept = 'image/*';
+                    inp.onchange = () => {
+                      const file = inp.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          updatePreference('backdropImage', reader.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    };
+                    inp.click();
+                  }}
+                >Load Image...</Button>
+                {preferences.backdropImage && (
+                  <Button size="sm" variant="outline" className="text-[11px] h-7 border-[#d0d0d8] text-red-600" data-testid="btn-clear-backdrop"
+                    onClick={() => updatePreference('backdropImage', '')}
+                  >Clear</Button>
+                )}
+              </div>
+              {preferences.backdropImage && (
+                <div className="space-y-2 pl-1">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] w-14">Opacity</Label>
+                    <input type="range" min={0.05} max={1} step={0.05} value={preferences.backdropOpacity}
+                      onChange={e => updatePreference('backdropOpacity', +e.target.value)}
+                      className="flex-1" style={{ accentColor: '#2c6eb5' }} data-testid="slider-backdrop-opacity" />
+                    <span className="text-[10px] font-mono w-8 text-right">{Math.round(preferences.backdropOpacity * 100)}%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] w-14">Scale</Label>
+                    <input type="range" min={0.1} max={10} step={0.1} value={preferences.backdropScale}
+                      onChange={e => updatePreference('backdropScale', +e.target.value)}
+                      className="flex-1" style={{ accentColor: '#2c6eb5' }} data-testid="slider-backdrop-scale" />
+                    <span className="text-[10px] font-mono w-8 text-right">{(preferences.backdropScale ?? 1).toFixed(1)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] w-14">Offset X</Label>
+                    <input type="number" value={preferences.backdropOffsetX} step={10}
+                      onChange={e => updatePreference('backdropOffsetX', +e.target.value)}
+                      className="flex-1 text-[10px] rounded px-1.5 py-1 border border-[#d0d0d8]" data-testid="input-backdrop-ox" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] w-14">Offset Y</Label>
+                    <input type="number" value={preferences.backdropOffsetY} step={10}
+                      onChange={e => updatePreference('backdropOffsetY', +e.target.value)}
+                      className="flex-1 text-[10px] rounded px-1.5 py-1 border border-[#d0d0d8]" data-testid="input-backdrop-oy" />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-[#2c3e6b]">Node Display</h4>
+              <div className="flex items-center gap-2">
+                <Label className="text-[10px] w-14">Node Size</Label>
+                <input type="range" min={0.3} max={3} step={0.1} value={preferences.nodeSize}
+                  onChange={e => updatePreference('nodeSize', +e.target.value)}
+                  className="flex-1" style={{ accentColor: '#2c6eb5' }} data-testid="slider-node-size-dialog" />
+                <span className="text-[10px] font-mono w-8 text-right">{(preferences.nodeSize ?? 1).toFixed(1)}x</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-[#2c3e6b]">Minimap</h4>
+              <div className="flex items-center gap-2">
+                <Switch checked={preferences.showMinimap} onCheckedChange={v => updatePreference('showMinimap', v)} data-testid="switch-minimap" />
+                <Label className="text-[10px]">Show overview minimap</Label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-[#2c3e6b]">Labels</h4>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+                  <input type="checkbox" checked={preferences.showNodeIds} onChange={e => updatePreference('showNodeIds', e.target.checked)}
+                    className="w-3 h-3 rounded" style={{ accentColor: '#2c6eb5' }} data-testid="chk-show-node-ids" />
+                  Node IDs
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+                  <input type="checkbox" checked={preferences.showLinkIds} onChange={e => updatePreference('showLinkIds', e.target.checked)}
+                    className="w-3 h-3 rounded" style={{ accentColor: '#2c6eb5' }} data-testid="chk-show-link-ids" />
+                  Link IDs
+                </label>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-[10px] w-14">BG Color</Label>
+              <input type="color" value={preferences.mapBackgroundColor}
+                onChange={e => updatePreference('mapBackgroundColor', e.target.value)}
+                className="w-8 h-6 border border-[#d0d0d8] rounded cursor-pointer" data-testid="input-map-bg-color" />
+              <span className="text-[10px] font-mono text-[#6b6b7b]">{preferences.mapBackgroundColor}</span>
             </div>
           </div>
         </DialogContent>
@@ -2600,6 +2812,45 @@ export default function SwmmUI() {
           />
         </DialogContent>
       </Dialog>
+
+      <AnalysisOptionsDialog
+        open={openDialog === 'analysisOptions'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        onUpdateProject={handleUpdateProject}
+        initialTab={analysisOptionsTab}
+      />
+
+      <DataEditorDialog
+        open={openDialog === 'dataEditor'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        onUpdateProject={handleUpdateProject}
+        initialSection={dataEditorSection}
+        initialItem={dataEditorItem}
+      />
+
+      <AboutDialog
+        open={openDialog === 'about'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+      />
+
+      <ProjectDefaultsDialog
+        open={openDialog === 'projectDefaults'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        onUpdateProject={handleUpdateProject}
+      />
+
+      <TableViewDialog
+        open={openDialog === 'tableView'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        results={results}
+        mode={tableViewMode}
+        onModeChange={setTableViewMode}
+        timeStep={timeStep}
+      />
 
       {contextMenu && (
         <div
