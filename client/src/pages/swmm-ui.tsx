@@ -3098,7 +3098,7 @@ function CalibrationContent({ project, results, calibrationData, onLoadData }: {
   calibrationData: CalibrationDataSet[];
   onLoadData: (ds: CalibrationDataSet) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'data' | 'timeseries' | 'correlation' | 'statistics'>('correlation');
+  const [activeTab, setActiveTab] = useState<'data' | 'timeseries' | 'correlation' | 'statistics' | 'create'>('correlation');
   const [activeDataset, setActiveDataset] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -3277,6 +3277,7 @@ function CalibrationContent({ project, results, calibrationData, onLoadData }: {
   }, [ds, results, nodeIds]);
 
   const tabs = [
+    { key: 'create' as const, label: 'Create File' },
     { key: 'data' as const, label: 'Calibration Data' },
     { key: 'timeseries' as const, label: 'Time Series Plot' },
     { key: 'correlation' as const, label: 'Correlation Plot' },
@@ -3325,24 +3326,36 @@ function CalibrationContent({ project, results, calibrationData, onLoadData }: {
         )}
       </div>
 
-      {!ds ? (
+      {activeTab === 'create' ? (
+        <CalibrationFileCreator project={project} results={results} onLoadData={onLoadData} />
+      ) : !ds ? (
         <div className="flex-1 flex flex-col items-center justify-center text-[#9090a0] gap-3 py-10">
           <Target className="w-10 h-10 text-[#c0c0cc]" />
           <div className="text-sm">No calibration data loaded</div>
           <div className="text-xs max-w-sm text-center">
-            Load a calibration file (SWMM .dat format) with observed measurements to compare against simulation results.
+            Load a calibration file (SWMM .dat format) or use the Create File tab to build one from scratch.
           </div>
           <div className="text-[10px] text-[#b0b0bc] max-w-sm text-center mt-1 font-mono">
             Format: NodeID  MM/DD/YYYY  HH:MM  Value
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-2 border-[#d0d0d8]"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="w-3.5 h-3.5 mr-1.5" /> Browse Files
-          </Button>
+          <div className="flex gap-2 mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-[#d0d0d8]"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-3.5 h-3.5 mr-1.5" /> Browse Files
+            </Button>
+            <Button
+              size="sm"
+              className="bg-[#2c6eb5] hover:bg-[#245a9a] text-white"
+              onClick={() => setActiveTab('create')}
+              data-testid="calib-goto-create"
+            >
+              <FilePlus className="w-3.5 h-3.5 mr-1.5" /> Create New
+            </Button>
+          </div>
         </div>
       ) : activeTab === 'data' ? (
         <div className="flex-1 overflow-auto border border-[#d0d0d8] rounded" style={{ maxHeight: 400 }}>
@@ -3571,6 +3584,456 @@ function CalibrationContent({ project, results, calibrationData, onLoadData }: {
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+interface CalibrationEntry {
+  locationId: string;
+  date: string;
+  time: string;
+  value: string;
+}
+
+const CALIB_VARIABLES = [
+  { group: 'Node', items: [
+    { key: 'node.Depth', label: 'Node Depth', varName: 'Depth', cat: 'node' as const },
+    { key: 'node.Head', label: 'Hydraulic Head', varName: 'Head', cat: 'node' as const },
+    { key: 'node.Flooding', label: 'Flooding', varName: 'Flooding', cat: 'node' as const },
+    { key: 'node.Lateral_Inflow', label: 'Lateral Inflow', varName: 'Lateral_Inflow', cat: 'node' as const },
+  ]},
+  { group: 'Link', items: [
+    { key: 'link.Flow', label: 'Link Flow', varName: 'Flow', cat: 'link' as const },
+    { key: 'link.Velocity', label: 'Flow Velocity', varName: 'Velocity', cat: 'link' as const },
+    { key: 'link.Depth', label: 'Flow Depth', varName: 'Depth', cat: 'link' as const },
+  ]},
+  { group: 'Subcatchment', items: [
+    { key: 'subcatch.Runoff', label: 'Subcatchment Runoff', varName: 'Runoff', cat: 'subcatch' as const },
+    { key: 'subcatch.Rainfall', label: 'Rainfall', varName: 'Rainfall', cat: 'subcatch' as const },
+    { key: 'subcatch.GWOutflow', label: 'GW Outflow', varName: 'GWOutflow', cat: 'subcatch' as const },
+    { key: 'subcatch.Snow_Depth', label: 'Snow Depth', varName: 'Snow_Depth', cat: 'subcatch' as const },
+  ]},
+];
+
+function CalibrationFileCreator({ project, results, onLoadData }: {
+  project: SwmmProject;
+  results: SimulationResults | null;
+  onLoadData: (ds: CalibrationDataSet) => void;
+}) {
+  const [variableKey, setVariableKey] = useState('node.Depth');
+  const [entries, setEntries] = useState<CalibrationEntry[]>([{ locationId: '', date: '', time: '', value: '' }]);
+  const [useSimTimes, setUseSimTimes] = useState(false);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [templateInterval, setTemplateInterval] = useState('60');
+
+  const currentVar = useMemo(() => {
+    for (const grp of CALIB_VARIABLES) {
+      const found = grp.items.find(i => i.key === variableKey);
+      if (found) return found;
+    }
+    return CALIB_VARIABLES[0].items[0];
+  }, [variableKey]);
+
+  const variable = currentVar.varName;
+  const category = currentVar.cat;
+
+  const nodeIds = useMemo(() => [
+    ...project.junctions.map(j => j.id),
+    ...project.outfalls.map(o => o.id),
+    ...project.storageUnits.map(s => s.id),
+    ...project.dividers.map(d => d.id),
+  ], [project]);
+
+  const linkIds = useMemo(() => [
+    ...project.conduits.map(c => c.id),
+    ...project.pumps.map(p => p.id),
+    ...project.weirs.map(w => w.id),
+    ...project.orifices.map(o => o.id),
+    ...project.outlets.map(o => o.id),
+  ], [project]);
+
+  const subcatchIds = useMemo(() => project.subcatchments.map(s => s.id), [project]);
+
+  const locationIds = useMemo(() => {
+    if (category === 'node') return nodeIds;
+    if (category === 'link') return linkIds;
+    return subcatchIds;
+  }, [category, nodeIds, linkIds, subcatchIds]);
+
+  const handleVariableChange = (val: string) => {
+    setVariableKey(val);
+    setSelectedLocations([]);
+  };
+
+  const updateEntry = (idx: number, field: keyof CalibrationEntry, val: string) => {
+    setEntries(prev => prev.map((e, i) => i === idx ? { ...e, [field]: val } : e));
+  };
+
+  const addRow = () => {
+    const last = entries[entries.length - 1];
+    setEntries(prev => [...prev, { locationId: last?.locationId || '', date: last?.date || '', time: '', value: '' }]);
+  };
+
+  const removeRow = (idx: number) => {
+    if (entries.length <= 1) return;
+    setEntries(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const generateTemplate = () => {
+    if (selectedLocations.length === 0) return;
+    const newEntries: CalibrationEntry[] = [];
+    let startDate = '01/01/2024';
+    let startHour = 0;
+    let endHour = 23;
+    const interval = parseInt(templateInterval) || 60;
+
+    if (results && results.timeSteps.length > 0) {
+      const firstDt = results.timeSteps[0].dateTime;
+      const lastDt = results.timeSteps[results.timeSteps.length - 1].dateTime;
+      const fm = firstDt.match(/(\d+\/\d+\/\d+)\s+(\d+)/);
+      const lm = lastDt.match(/(\d+\/\d+\/\d+)\s+(\d+)/);
+      if (fm) { startDate = fm[1]; startHour = parseInt(fm[2]); }
+      if (lm) { endHour = parseInt(lm[2]); }
+    }
+
+    if (useSimTimes && results && results.timeSteps.length > 0) {
+      const step = Math.max(1, Math.round(interval / 15));
+      for (const locId of selectedLocations) {
+        for (let i = 0; i < results.timeSteps.length; i += step) {
+          const ts = results.timeSteps[i];
+          const dtParts = ts.dateTime.split(/\s+/);
+          newEntries.push({
+            locationId: locId,
+            date: dtParts[0] || startDate,
+            time: dtParts[1] || '0:00',
+            value: '',
+          });
+        }
+      }
+    } else {
+      for (const locId of selectedLocations) {
+        for (let h = startHour; h <= Math.min(endHour, startHour + 24); h++) {
+          for (let m = 0; m < 60; m += interval) {
+            if (interval >= 60 && m > 0) continue;
+            const hr = interval >= 60 ? h : h;
+            const mn = interval >= 60 ? 0 : m;
+            newEntries.push({
+              locationId: locId,
+              date: startDate,
+              time: `${hr}:${String(mn).padStart(2, '0')}`,
+              value: '',
+            });
+          }
+        }
+      }
+    }
+
+    setEntries(newEntries.length > 0 ? newEntries : [{ locationId: '', date: '', time: '', value: '' }]);
+  };
+
+  const generateCalibrationFile = (): string => {
+    const lines: string[] = [];
+    lines.push(`;; SWMM Calibration Data File`);
+    lines.push(`;; Generated by SWMM5-UI`);
+    lines.push(`;; Variable: ${variable}`);
+    lines.push(`;; Category: ${category}`);
+    lines.push(``);
+
+    const validEntries = entries.filter(e => e.locationId && e.date && e.time && e.value !== '' && !isNaN(parseFloat(e.value)));
+
+    const byLocation = new Map<string, CalibrationEntry[]>();
+    for (const e of validEntries) {
+      if (!byLocation.has(e.locationId)) byLocation.set(e.locationId, []);
+      byLocation.get(e.locationId)!.push(e);
+    }
+
+    for (const [locId, pts] of byLocation) {
+      lines.push(`;; Location: ${locId}`);
+      for (const pt of pts) {
+        lines.push(`${locId.padEnd(16)} ${pt.date.padEnd(12)} ${pt.time.padEnd(8)} ${pt.value}`);
+      }
+      lines.push(``);
+    }
+
+    return lines.join('\n');
+  };
+
+  const handleDownload = () => {
+    const content = generateCalibrationFile();
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${variable.toLowerCase()}_calibration.dat`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLoadIntoAnalysis = () => {
+    const content = generateCalibrationFile();
+    const ds = parseCalibrationFile(content);
+    onLoadData(ds);
+  };
+
+  const handleImportCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      if (!text) return;
+      const csvLines = text.split(/\r?\n/).filter(l => l.trim());
+      const newEntries: CalibrationEntry[] = [];
+      const hasHeader = csvLines[0]?.toLowerCase().includes('location') || csvLines[0]?.toLowerCase().includes('node') || csvLines[0]?.toLowerCase().includes('id');
+      const startIdx = hasHeader ? 1 : 0;
+      for (let i = startIdx; i < csvLines.length; i++) {
+        const parts = csvLines[i].split(/[,\t]+/).map(s => s.trim());
+        if (parts.length >= 4) {
+          newEntries.push({ locationId: parts[0], date: parts[1], time: parts[2], value: parts[3] });
+        } else if (parts.length === 3) {
+          const dtParts = parts[1].split(/\s+/);
+          if (dtParts.length >= 2) {
+            newEntries.push({ locationId: parts[0], date: dtParts[0], time: dtParts[1], value: parts[2] });
+          } else {
+            newEntries.push({ locationId: parts[0], date: parts[1], time: '0:00', value: parts[2] });
+          }
+        }
+      }
+      if (newEntries.length > 0) setEntries(newEntries);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  const validCount = entries.filter(e => e.locationId && e.date && e.time && e.value !== '' && !isNaN(parseFloat(e.value))).length;
+
+  return (
+    <div className="flex flex-col gap-3" data-testid="calib-create-content">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="text-[11px] font-semibold text-[#2c3e6b] mb-1 block">Variable / Parameter</label>
+          <select
+            className="w-full h-8 text-[11px] border border-[#d0d0d8] rounded px-2 bg-white"
+            value={variableKey}
+            onChange={e => handleVariableChange(e.target.value)}
+            data-testid="calib-create-variable"
+          >
+            {CALIB_VARIABLES.map(grp => (
+              <optgroup key={grp.group} label={grp.group}>
+                {grp.items.map(item => (
+                  <option key={item.key} value={item.key}>{item.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-[#2c3e6b] mb-1 block">Category</label>
+          <div className="flex items-center gap-3 h-8">
+            {(['node', 'link', 'subcatch'] as const).map(c => (
+              <label key={c} className={`flex items-center gap-1 text-[11px] ${category === c ? 'text-[#2c6eb5] font-semibold' : 'text-[#9090a0]'}`}>
+                <span className={`inline-block w-2.5 h-2.5 rounded-full border ${category === c ? 'bg-[#2c6eb5] border-[#2c6eb5]' : 'bg-white border-[#c0c0cc]'}`} />
+                {c === 'node' ? 'Node' : c === 'link' ? 'Link' : 'Subcatchment'}
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-[#d0d0d8] rounded p-3 bg-[#f8f8fa]">
+        <div className="text-[11px] font-semibold text-[#2c3e6b] mb-2">Template Generator</div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[180px]">
+            <label className="text-[10px] text-[#6b6b7b] mb-0.5 block">Select Locations</label>
+            <select
+              multiple
+              className="w-full h-20 text-[10px] border border-[#d0d0d8] rounded px-1 bg-white font-mono"
+              value={selectedLocations}
+              onChange={e => setSelectedLocations(Array.from(e.target.selectedOptions, o => o.value))}
+              data-testid="calib-create-locations"
+            >
+              {locationIds.map(id => (
+                <option key={id} value={id}>{id}</option>
+              ))}
+            </select>
+            <div className="text-[9px] text-[#9090a0] mt-0.5">Hold Ctrl/Cmd to select multiple</div>
+          </div>
+          <div className="w-24">
+            <label className="text-[10px] text-[#6b6b7b] mb-0.5 block">Interval (min)</label>
+            <select
+              className="w-full h-7 text-[10px] border border-[#d0d0d8] rounded px-1 bg-white"
+              value={templateInterval}
+              onChange={e => setTemplateInterval(e.target.value)}
+              data-testid="calib-create-interval"
+            >
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 hour</option>
+              <option value="120">2 hours</option>
+              <option value="360">6 hours</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            {results && results.timeSteps.length > 0 && (
+              <label className="flex items-center gap-1 text-[10px] text-[#4a4a5a]">
+                <input
+                  type="checkbox"
+                  checked={useSimTimes}
+                  onChange={e => setUseSimTimes(e.target.checked)}
+                  className="w-3 h-3"
+                  data-testid="calib-create-use-sim"
+                />
+                Use simulation time steps
+              </label>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[10px] border-[#d0d0d8]"
+              onClick={generateTemplate}
+              disabled={selectedLocations.length === 0}
+              data-testid="calib-create-generate"
+            >
+              <FilePlus className="w-3 h-3 mr-1" /> Generate Template
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="text-[11px] font-semibold text-[#2c3e6b]">
+          Measurement Data ({entries.length} rows, {validCount} complete)
+        </div>
+        <div className="flex-1" />
+        <input ref={csvInputRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleImportCsv} />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 text-[10px] border-[#d0d0d8]"
+          onClick={() => csvInputRef.current?.click()}
+          data-testid="calib-create-import-csv"
+        >
+          <Upload className="w-3 h-3 mr-1" /> Import CSV
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 text-[10px] border-[#d0d0d8]"
+          onClick={addRow}
+          data-testid="calib-create-add-row"
+        >
+          + Add Row
+        </Button>
+      </div>
+
+      <div className="overflow-auto border border-[#d0d0d8] rounded" style={{ maxHeight: 280 }}>
+        <table className="w-full text-[11px]" data-testid="calib-create-table">
+          <thead className="sticky top-0 bg-[#f0f0f4]">
+            <tr>
+              <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8] w-8">#</th>
+              <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Location ID</th>
+              <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Date (MM/DD/YYYY)</th>
+              <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Time (HH:MM)</th>
+              <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Value</th>
+              <th className="w-8 border-b border-[#d0d0d8]" />
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry, i) => (
+              <tr key={i} className="hover:bg-[#f8f8fa] border-b border-[#e8e8ee]">
+                <td className="px-2 py-0.5 text-[#9090a0] text-[10px]">{i + 1}</td>
+                <td className="px-1 py-0.5">
+                  <select
+                    className="w-full h-6 text-[10px] border border-[#e0e0e8] rounded px-1 bg-white font-mono"
+                    value={entry.locationId}
+                    onChange={e => updateEntry(i, 'locationId', e.target.value)}
+                    data-testid={`calib-create-loc-${i}`}
+                  >
+                    <option value="">— select —</option>
+                    {locationIds.map(id => (
+                      <option key={id} value={id}>{id}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-1 py-0.5">
+                  <input
+                    type="text"
+                    className="w-full h-6 text-[10px] border border-[#e0e0e8] rounded px-1 font-mono"
+                    placeholder="01/15/2024"
+                    value={entry.date}
+                    onChange={e => updateEntry(i, 'date', e.target.value)}
+                    data-testid={`calib-create-date-${i}`}
+                  />
+                </td>
+                <td className="px-1 py-0.5">
+                  <input
+                    type="text"
+                    className="w-full h-6 text-[10px] border border-[#e0e0e8] rounded px-1 font-mono"
+                    placeholder="12:00"
+                    value={entry.time}
+                    onChange={e => updateEntry(i, 'time', e.target.value)}
+                    data-testid={`calib-create-time-${i}`}
+                  />
+                </td>
+                <td className="px-1 py-0.5">
+                  <input
+                    type="text"
+                    className="w-full h-6 text-[10px] border border-[#e0e0e8] rounded px-1 font-mono"
+                    placeholder="0.00"
+                    value={entry.value}
+                    onChange={e => updateEntry(i, 'value', e.target.value)}
+                    data-testid={`calib-create-val-${i}`}
+                  />
+                </td>
+                <td className="px-1 py-0.5 text-center">
+                  {entries.length > 1 && (
+                    <button
+                      onClick={() => removeRow(i)}
+                      className="text-[#b0b0bc] hover:text-[#dc2626] transition-colors"
+                      data-testid={`calib-create-del-${i}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center gap-2 border-t border-[#e0e0e8] pt-3">
+        <div className="text-[10px] text-[#6b6b7b] flex-1">
+          File format: SWMM .dat calibration file with {category} {variable} measurements
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px] border-[#d0d0d8]"
+          onClick={handleLoadIntoAnalysis}
+          disabled={validCount === 0}
+          data-testid="calib-create-load"
+        >
+          <Target className="w-3 h-3 mr-1" /> Load into Analysis
+        </Button>
+        <Button
+          size="sm"
+          className="h-7 text-[11px] bg-[#2c6eb5] hover:bg-[#245a9a] text-white"
+          onClick={handleDownload}
+          disabled={validCount === 0}
+          data-testid="calib-create-download"
+        >
+          <Download className="w-3 h-3 mr-1" /> Download .dat File
+        </Button>
+      </div>
+
+      <div className="text-[9px] text-[#9090a0] border border-[#e8e8ee] rounded p-2 bg-[#fafafa]">
+        <span className="font-semibold">Tip:</span> Select locations from your model, generate a template with time intervals,
+        fill in observed measurement values, then download the .dat file or load directly into the analysis tabs.
+        You can also import measurements from a CSV file (columns: LocationID, Date, Time, Value).
+      </div>
     </div>
   );
 }

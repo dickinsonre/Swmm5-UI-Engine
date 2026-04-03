@@ -32,6 +32,7 @@ Priority on startup: Local > WASM > Remote > Mock (first available wins).
 - `client/src/lib/swmm-engine.ts` — Engine adapters (local, wasm, remote, mock)
 - `client/src/lib/cfl-analysis.ts` — CFL stability analysis + discretization
 - `client/src/lib/import-export.ts` — CSV/DXF/GeoJSON import/export
+- Calibration File Creator — integrated in calibration dialog (Create File tab), supports variable selection (node depth/head/flooding, link flow/velocity/depth, subcatchment runoff/rainfall), template generation from simulation timesteps, CSV import, .dat file export
 - `server/routes.ts` — Express API routes (GitHub proxy, SWMM run, BatchSWMM proxy)
 - `client/public/swmm_engine.js`, `client/public/js.wasm`, `client/public/js.data` — WASM engine files
 
