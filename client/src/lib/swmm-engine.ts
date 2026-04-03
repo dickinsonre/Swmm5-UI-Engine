@@ -949,8 +949,9 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
       ext.targetSetting = 1.0;
       ext.timeOpen = 0;
 
+      const depthRatio = geom1 > 0 ? lr.depth / geom1 : 0;
       if (lr.depth <= 0.001) ext.flowClass = 0;
-      else if (dOverD >= 0.97) ext.flowClass = 4;
+      else if (depthRatio >= 0.97) ext.flowClass = 4;
       else if (froude < 0.95) ext.flowClass = 1;
       else if (froude > 1.05) ext.flowClass = 2;
       else ext.flowClass = 3;
