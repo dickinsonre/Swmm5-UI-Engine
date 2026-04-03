@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-types';
 import { createEmptyProject } from '@/lib/swmm-types';
-import { parseInpFile, SAMPLE_INP } from '@/lib/inp-parser';
+import { parseInpFile } from '@/lib/inp-parser';
 import { createMockEngine, createRemoteEngine, createLocalEngine, createWasmEngine, checkRemoteEngine, checkLocalEngine, checkWasmEngine } from '@/lib/swmm-engine';
 import { computeCflAnalysis, discretizeProject, getDefaultSettings } from '@/lib/cfl-analysis';
 import type { CflAnalysisResult, DiscretizationSettings, DiscretizationResult } from '@/lib/cfl-analysis';
@@ -79,8 +79,9 @@ interface LinkDrawState {
 
 export default function SwmmUI() {
   const { toast } = useToast();
-  const [project, setProject] = useState<SwmmProject>(() => parseInpFile(SAMPLE_INP));
-  const [fileName, setFileName] = useState('Example_Network.inp');
+  const [project, setProject] = useState<SwmmProject>(() => createEmptyProject());
+  const [fileName, setFileName] = useState('Greenville_SI.inp');
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuTab>('Project');
   const [selectedObj, setSelectedObj] = useState<SelectedObject>(null);
   const [showSubcatch, setShowSubcatch] = useState(true);
@@ -224,6 +225,19 @@ export default function SwmmUI() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (initialLoadDone) return;
+    setInitialLoadDone(true);
+    fetch('/samples/Greenville_SI.inp')
+      .then(r => { if (!r.ok) throw new Error('Failed'); return r.text(); })
+      .then(text => {
+        const parsed = parseInpFile(text);
+        setProject(parsed);
+        setFileName('Greenville_SI.inp');
+      })
+      .catch(() => {});
+  }, [initialLoadDone]);
 
   const maxTimeStep = results ? results.timeSteps.length - 1 : 0;
 
