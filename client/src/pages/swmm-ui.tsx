@@ -17,6 +17,7 @@ import AboutDialog from '@/components/swmm/AboutDialog';
 import ProjectDefaultsDialog from '@/components/swmm/ProjectDefaultsDialog';
 import TableViewDialog from '@/components/swmm/TableViewDialog';
 import PropertyEditor from '@/components/swmm/PropertyEditor';
+import { SubDialogRouter, type SubDialogState } from '@/components/swmm/SubDialogs';
 import AIAssistPanel from '@/components/swmm/AIAssistPanel';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
@@ -135,6 +136,7 @@ export default function SwmmUI() {
   const [tableViewMode, setTableViewMode] = useState<'byObject' | 'byVariable'>('byObject');
   const [calibrationData, setCalibrationData] = useState<CalibrationDataSet[]>([]);
   const calibFileRef = useRef<HTMLInputElement>(null);
+  const [activeSubDialog, setActiveSubDialog] = useState<SubDialogState>(null);
   const [importTab, setImportTab] = useState<'csv-nodes' | 'csv-links' | 'dxf' | 'geojson'>('csv-nodes');
   const [importMode, setImportMode] = useState<'add' | 'modify'>('add');
   const [importPreviewText, setImportPreviewText] = useState('');
@@ -2169,6 +2171,7 @@ export default function SwmmUI() {
                 selectedObj={selectedObj}
                 onUpdateProject={handleUpdateProject}
                 onClose={() => setSelectedObj(null)}
+                onSubdialog={(type, objId) => setActiveSubDialog({ type, objId })}
                 results={results}
                 timeStep={timeStep}
               />
@@ -3094,6 +3097,13 @@ export default function SwmmUI() {
         mode={tableViewMode}
         onModeChange={setTableViewMode}
         timeStep={timeStep}
+      />
+
+      <SubDialogRouter
+        state={activeSubDialog}
+        project={project}
+        onClose={() => setActiveSubDialog(null)}
+        onProjectChange={(p) => { handleUpdateProject(() => p); setActiveSubDialog(null); }}
       />
 
       {contextMenu && (

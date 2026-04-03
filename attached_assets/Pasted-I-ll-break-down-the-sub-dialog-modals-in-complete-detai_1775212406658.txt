@@ -1,0 +1,2257 @@
+I'll break down the sub-dialog modals in complete detail, explain the priority matrix reasoning, and provide realistic completion estimates for each phase.
+
+---
+
+## 1. COMPLETING THE SUB-DIALOG MODALS — Full Specification
+
+Sub-dialog modals are the`[...]` buttons in the property grid that open dedicated editors for complex, multi-field properties. There are **12 sub-dialog types** needed. Here's every one with complete field specs, UI layout, and implementation code.
+
+### 1A. Direct Inflow Editor
+
+**Used by:** Junctions (149), Storage Units (17) — any node can have direct inflows
+**Opens from:** Property Grid → Inflows → Direct Inflows →`[...]`
+```
+PURPOSE: Defines external flow or pollutant time series entering a node.
+This is how rainfall-derived or user-defined hydrographs enter the system.
+```
+
+<file_path>src/components/SubDialogs/DirectInflowEditor.jsx</file_path>
+<file_content>
+import React, { useState, useEffect } from 'react';
+import './SubDialogs.css';
+
+const DirectInflowEditor = ({ nodeId, model, onSave, onClose }) => {
+  // A node can have multiple inflow records (one per constituent)
+  const [inflows, setInflows] = useState([]);
+
+  useEffect(() => {
+    if (!model || !nodeId) return;
+    // Load existing inflows for this node
+    const existing = [];
+    model.inflows.forEach((inf, key) => {
+      if (inf.node === nodeId) {
+        existing.push({ ...inf, _key: key });
+      }
+    });
+    if (existing.length === 0) {
+      // Default: one FLOW inflow
+      existing.push({
+        node: nodeId,
+        constituent: 'FLOW',
+        timeSeries: '',
+        type: 'FLOW',
+        unitsFactor: 1.0,
+        scaleFactor: 1.0,
+        baseline: 0,
+        pattern: '',
+      });
+    }
+    setInflows(existing);
+  }, [model, nodeId]);
+
+  // Get available time series from model
+  const timeSeriesNames = model ? Array.from(model.timeseries.keys()) : [];
+  const patternNames = model ? Array.from(model.patterns.keys()) : [];
+
+  const updateInflow = (index, field, value) => {
+    setInflows(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const addInflow = () => {
+    setInflows(prev => [...prev, {
+      node: nodeId,
+      constituent: 'FLOW',
+      timeSeries: '',
+      type: 'FLOW',
+      unitsFactor: 1.0,
+      scaleFactor: 1.0,
+      baseline: 0,
+      pattern: '',
+    }]);
+  };
+
+  const removeInflow = (index) => {
+    setInflows(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSave = () => {
+    // Remove old inflows for this node
+    const keysToRemove = [];
+    model.inflows.forEach((inf, key) => {
+      if (inf.node === nodeId) keysToRemove.push(key);
+    });
+    keysToRemove.forEach(k => model.inflows.delete(k));
+
+    // Add new inflows
+    inflows.forEach(inf => {
+      if (inf.timeSeries || inf.baseline > 0) {
+        const key =`${nodeId}:${inf.constituent}`;
+        model.inflows.set(key, { ...inf, node: nodeId });
+      }
+    });
+
+    // Update node's directInflows indicator
+    const hasInflows = inflows.some(inf => inf.timeSeries || inf.baseline > 0);
+    const node = model.getObject('junction', nodeId) ||
+                 model.getObject('storage', nodeId);
+    if (node) {
+      node.directInflows = hasInflows ? 'YES' : 'NO';
+    }
+
+    model._dirty = true;
+    model._emit('change', { type: 'inflows', id: nodeId });
+    if (onSave) onSave();
+    if (onClose) onClose();
+  };
+
+  return (
+    <div className="subdialog-overlay" onClick={(e) => {
+      if (e.target === e.currentTarget) onClose();
+    }}>
+      <div className="subdialog-modal subdialog-wide">
+        <div className="sd-header">
+          <span className="sd-title">Direct Inflows — {nodeId}</span>
+          <button className="sd-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="sd-body">
+          <div className="sd-help-text">
+            Define external inflow hydrographs or constant flows entering this node.
+            Each row defines an inflow for one constituent (FLOW or a pollutant).
+          </div>
+
+          <table className="sd-table">
+            <thead>
+              <tr>
+                <th>Constituent</th>
+                <th>Time Series</th>
+                <th>Type</th>
+                <th>Units Factor</th>
+                <th>Scale Factor</th>
+                <th>Baseline</th>
+                <th>Baseline Pattern</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {inflows.map((inf, i) => (
+                <tr key={i}>
+                  <td>
+                    <select value={inf.constituent}
+                      onChange={e => updateInflow(i, 'constituent', e.target.value)}>
+                      <option value="FLOW">FLOW</option>
+                      {/* Pollutant names would come from model */}
+                    </select>
+                  </td>
+                  <td>
+                    <select value={inf.timeSeries}
+                      onChange={e => updateInflow(i, 'timeSeries', e.target.value)}>
+                      <option value="">-- None --</option>
+                      {timeSeriesNames.map(ts => (
+                        <option key={ts} value={ts}>{ts}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <select value={inf.type}
+                      onChange={e => updateInflow(i, 'type', e.target.value)}>
+                      <option value="FLOW">FLOW</option>
+                      <option value="CONCEN">CONCEN</option>
+                      <option value="MASS">MASS</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input type="number" value={inf.unitsFactor} step="0.1"
+                      onChange={e => updateInflow(i, 'unitsFactor', parseFloat(e.target.value) || 1)} />
+                  </td>
+                  <td>
+                    <input type="number" value={inf.scaleFactor} step="0.1"
+                      onChange={e => updateInflow(i, 'scaleFactor', parseFloat(e.target.value) || 1)} />
+                  </td>
+                  <td>
+                    <input type="number" value={inf.baseline} step="0.01"
+                      onChange={e => updateInflow(i, 'baseline', parseFloat(e.target.value) || 0)} />
+                  </td>
+                  <td>
+                    <select value={inf.pattern}
+                      onChange={e => updateInflow(i, 'pattern', e.target.value)}>
+                      <option value="">-- None --</option>
+                      {patternNames.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <button className="sd-row-delete" onClick={() => removeInflow(i)}
+                      title="Remove">✕</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <button className="sd-add-row" onClick={addInflow}>+ Add Inflow</button>
+        </div>
+
+        <div className="sd-footer">
+          <button className="sd-btn sd-btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="sd-btn sd-btn-save" onClick={handleSave}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DirectInflowEditor;
+</file_content>
+
+### 1B. Dry Weather Flow Editor
+
+**Used by:** Junctions (149), Storage Units (17)
+**Opens from:** Property Grid → Inflows → Dry Weather →`[...]`
+
+<file_path>src/components/SubDialogs/DWFEditor.jsx</file_path>
+<file_content>
+import React, { useState, useEffect } from 'react';
+import './SubDialogs.css';
+
+const DWFEditor = ({ nodeId, model, onSave, onClose }) => {
+  const [dwfRecords, setDwfRecords] = useState([]);
+
+  useEffect(() => {
+    if (!model || !nodeId) return;
+    const existing = [];
+    model.dwf.forEach((d, key) => {
+      if (d.node === nodeId) existing.push({ ...d, _key: key });
+    });
+    if (existing.length === 0) {
+      existing.push({
+        node: nodeId,
+        constituent: 'FLOW',
+        avgValue: 0,
+        pat1: '', pat2: '', pat3: '', pat4: '',
+      });
+    }
+    setDwfRecords(existing);
+  }, [model, nodeId]);
+
+  const patternNames = model ? Array.from(model.patterns.keys()) : [];
+
+  const updateRecord = (index, field, value) => {
+    setDwfRecords(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const addRecord = () => {
+    setDwfRecords(prev => [...prev, {
+      node: nodeId, constituent: 'FLOW', avgValue: 0,
+      pat1: '', pat2: '', pat3: '', pat4: '',
+    }]);
+  };
+
+  const removeRecord = (index) => {
+    setDwfRecords(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSave = () => {
+    const keysToRemove = [];
+    model.dwf.forEach((d, key) => {
+      if (d.node === nodeId) keysToRemove.push(key);
+    });
+    keysToRemove.forEach(k => model.dwf.delete(k));
+
+    dwfRecords.forEach(rec => {
+      if (rec.avgValue > 0) {
+        const key =`${nodeId}:${rec.constituent}`;
+        model.dwf.set(key, { ...rec, node: nodeId });
+      }
+    });
+
+    const hasDWF = dwfRecords.some(r => r.avgValue > 0);
+    const node = model.getObject('junction', nodeId) || model.getObject('storage', nodeId);
+    if (node) node.dwfInflows = hasDWF ? 'YES' : 'NO';
+
+    model._dirty = true;
+    model._emit('change', { type: 'dwf', id: nodeId });
+    if (onSave) onSave();
+    if (onClose) onClose();
+  };
+
+  return (
+    <div className="subdialog-overlay" onClick={e => {
+      if (e.target === e.currentTarget) onClose();
+    }}>
+      <div className="subdialog-modal subdialog-wide">
+        <div className="sd-header">
+          <span className="sd-title">Dry Weather Flow — {nodeId}</span>
+          <button className="sd-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="sd-body">
+          <div className="sd-help-text">
+            Dry weather flow is the average sanitary/base flow at this node.
+            Up to 4 time patterns can modify the average value (monthly, daily, hourly, weekend).
+          </div>
+
+          <table className="sd-table">
+            <thead>
+              <tr>
+                <th>Constituent</th>
+                <th>Average Value</th>
+                <th>Pattern 1 (Monthly)</th>
+                <th>Pattern 2 (Daily)</th>
+                <th>Pattern 3 (Hourly)</th>
+                <th>Pattern 4 (Weekend)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {dwfRecords.map((rec, i) => (
+                <tr key={i}>
+                  <td>
+                    <select value={rec.constituent}
+                      onChange={e => updateRecord(i, 'constituent', e.target.value)}>
+                      <option value="FLOW">FLOW</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input type="number" value={rec.avgValue} step="0.001"
+                      onChange={e => updateRecord(i, 'avgValue', parseFloat(e.target.value) || 0)} />
+                  </td>
+                  {['pat1', 'pat2', 'pat3', 'pat4'].map(patKey => (
+                    <td key={patKey}>
+                      <select value={rec[patKey]}
+                        onChange={e => updateRecord(i, patKey, e.target.value)}>
+                        <option value="">-- None --</option>
+                        {patternNames.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </td>
+                  ))}
+                  <td>
+                    <button className="sd-row-delete" onClick={() => removeRecord(i)}>✕</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <button className="sd-add-row" onClick={addRecord}>+ Add DWF Record</button>
+        </div>
+
+        <div className="sd-footer">
+          <button className="sd-btn sd-btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="sd-btn sd-btn-save" onClick={handleSave}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DWFEditor;
+</file_content>
+
+### 1C. Time Series Editor
+
+**Used by:** Rain Gages, Direct Inflows, Outfalls (TIMESERIES type), Control Rules
+**This is one of the most important data editors — rain data goes here**
+
+<file_path>src/components/SubDialogs/TimeSeriesEditor.jsx</file_path>
+<file_content>
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import './SubDialogs.css';
+
+const TimeSeriesEditor = ({ tsName, model, onSave, onClose }) => {
+  const [name, setName] = useState(tsName || '');
+  const [data, setData] = useState([]);
+  const [isFile, setIsFile] = useState(false);
+  const [filePath, setFilePath] = useState('');
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (!model || !tsName) return;
+    const ts = model.timeseries.get(tsName);
+    if (ts) {
+      setName(ts.name);
+      if (ts.file) {
+        setIsFile(true);
+        setFilePath(ts.file);
+      } else {
+        setData(ts.data.map(d => ({ ...d })));
+      }
+    }
+  }, [model, tsName]);
+
+  // Live graph preview
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || data.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const W = rect.width;
+    const H = rect.height;
+    const margin = { top: 10, right: 10, bottom: 25, left: 45 };
+    const plotW = W - margin.left - margin.right;
+    const plotH = H - margin.top - margin.bottom;
+
+    ctx.fillStyle = '#11111b';
+    ctx.fillRect(0, 0, W, H);
+
+    // Parse time values to indices
+    const values = data.map(d => d.value);
+    const yMin = 0;
+    const yMax = Math.max(...values) * 1.1 || 1;
+
+    const xScale = (i) => margin.left + (i / Math.max(1, data.length - 1)) * plotW;
+    const yScale = (v) => margin.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+    // Grid
+    ctx.strokeStyle = '#2a2a3a';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const y = margin.top + (plotH * i) / 4;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, y);
+      ctx.lineTo(margin.left + plotW, y);
+      ctx.stroke();
+
+      const val = yMax - (i / 4) * (yMax - yMin);
+      ctx.fillStyle = '#6c7086';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(val.toFixed(2), margin.left - 4, y + 3);
+    }
+
+    // Plot line
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    data.forEach((d, i) => {
+      const x = xScale(i);
+      const y = yScale(d.value);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Fill area
+    ctx.fillStyle = 'rgba(137, 180, 250, 0.15)';
+    ctx.beginPath();
+    ctx.moveTo(xScale(0), yScale(0));
+    data.forEach((d, i) => ctx.lineTo(xScale(i), yScale(d.value)));
+    ctx.lineTo(xScale(data.length - 1), yScale(0));
+    ctx.closePath();
+    ctx.fill();
+
+    // X axis labels
+    ctx.fillStyle = '#6c7086';
+    ctx.textAlign = 'center';
+    ctx.font = '8px sans-serif';
+    const labelStep = Math.max(1, Math.floor(data.length / 8));
+    for (let i = 0; i < data.length; i += labelStep) {
+      ctx.fillText(data[i].time || i.toString(), xScale(i), H - 5);
+    }
+
+    // Border
+    ctx.strokeStyle = '#45475a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(margin.left, margin.top, plotW, plotH);
+  }, [data]);
+
+  const updateRow = (index, field, value) => {
+    setData(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const addRow = () => {
+    const lastTime = data.length > 0 ? data[data.length - 1].time : '0';
+    setData(prev => [...prev, { time: lastTime, value: 0 }]);
+  };
+
+  const removeRow = (index) => {
+    setData(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const importCSV = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.txt,.dat';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const lines = ev.target.result.split(/\r?\n/);
+        const parsed = [];
+        for (const line of lines) {
+          const parts = line.trim().split(/[,\t\s]+/);
+          if (parts.length >= 2) {
+            const time = parts[0];
+            const value = parseFloat(parts[1]);
+            if (!isNaN(value)) {
+              parsed.push({ time, value });
+            }
+          }
+        }
+        if (parsed.length > 0) setData(parsed);
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
+  const pasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const lines = text.split(/\r?\n/);
+      const parsed = [];
+      for (const line of lines) {
+        const parts = line.trim().split(/[,\t\s]+/);
+        if (parts.length >= 2) {
+          const time = parts[0];
+          const value = parseFloat(parts[1]);
+          if (!isNaN(value)) parsed.push({ time, value });
+        }
+      }
+      if (parsed.length > 0) setData(parsed);
+    } catch (e) {
+      console.warn('Clipboard read failed:', e);
+    }
+  };
+
+  const handleSave = () => {
+    if (!model || !name) return;
+
+    const tsObj = {
+      name,
+      data: isFile ? [] : data,
+      file: isFile ? filePath : undefined,
+    };
+
+    model.timeseries.set(name, tsObj);
+    model._dirty = true;
+    model._emit('change', { type: 'timeseries', id: name });
+    if (onSave) onSave();
+    if (onClose) onClose();
+  };
+
+  return (
+    <div className="subdialog-overlay" onClick={e => {
+      if (e.target === e.currentTarget) onClose();
+    }}>
+      <div className="subdialog-modal subdialog-large">
+        <div className="sd-header">
+          <span className="sd-title">📈 Time Series Editor — {name || 'New'}</span>
+          <button className="sd-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="sd-body sd-ts-body">
+          {/* Name */}
+          <div className="sd-field-row">
+            <label>Name:</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)}
+              className="sd-input" placeholder="Time series name" />
+          </div>
+
+          {/* Source toggle */}
+          <div className="sd-field-row">
+            <label>Source:</label>
+            <div className="sd-radio-group">
+              <label>
+                <input type="radio" checked={!isFile} onChange={() => setIsFile(false)} />
+                Table
+              </label>
+              <label>
+                <input type="radio" checked={isFile} onChange={() => setIsFile(true)} />
+                External File
+              </label>
+            </div>
+          </div>
+
+          {isFile ? (
+            <div className="sd-field-row">
+              <label>File Path:</label>
+              <input type="text" value={filePath}
+                onChange={e => setFilePath(e.target.value)}
+                className="sd-input sd-input-wide" placeholder="/path/to/rainfall.dat" />
+            </div>
+          ) : (
+            <>
+              {/* Graph preview */}
+              <div className="sd-graph-wrapper">
+                <canvas ref={canvasRef} className="sd-graph-canvas" />
+              </div>
+
+              {/* Import buttons */}
+              <div className="sd-toolbar">
+                <button className="sd-tool-btn" onClick={importCSV}>📂 Import CSV</button>
+                <button className="sd-tool-btn" onClick={pasteFromClipboard}>📋 Paste</button>
+                <button className="sd-tool-btn" onClick={addRow}>+ Add Row</button>
+                <span className="sd-row-count">{data.length} rows</span>
+              </div>
+
+              {/* Data table */}
+              <div className="sd-table-scroll">
+                <table className="sd-table sd-table-compact">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Date/Time</th>
+                      <th>Value</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.map((row, i) => (
+                      <tr key={i}>
+                        <td className="sd-row-num">{i + 1}</td>
+                        <td>
+                          <input type="text" value={row.time}
+                            onChange={e => updateRow(i, 'time', e.target.value)}
+                            className="sd-cell-input" />
+                        </td>
+                        <td>
+                          <input type="number" value={row.value} step="any"
+                            onChange={e => updateRow(i, 'value', parseFloat(e.target.value) || 0)}
+                            className="sd-cell-input sd-cell-number" />
+                        </td>
+                        <td>
+                          <button className="sd-row-delete" onClick={() => removeRow(i)}>✕</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="sd-footer">
+          <button className="sd-btn sd-btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="sd-btn sd-btn-save" onClick={handleSave}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default TimeSeriesEditor;
+</file_content>
+
+### 1D. Curve Editor
+
+**Used by:** Storage Units (storage curve), Pumps (pump curve types 1-4), Outfalls (tidal curve), Outlets (rating curve), Dividers (diversion curve)
+**This is heavily referenced — 17 storage units and 5 pumps in the Greenville model need curves**
+
+<file_path>src/components/SubDialogs/CurveEditor.jsx</file_path>
+<file_content>
+import React, { useState, useEffect, useRef } from 'react';
+import './SubDialogs.css';
+
+const CURVE_TYPES = {
+  STORAGE: { xLabel: 'Depth (ft)', yLabel: 'Area (ft²)', description: 'Storage depth vs. surface area' },
+  PUMP1: { xLabel: 'Volume (ft³)', yLabel: 'Flow (CFS)', description: 'Type 1: Volume vs. Flow' },
+  PUMP2: { xLabel: 'Depth (ft)', yLabel: 'Flow (CFS)', description: 'Type 2: Depth vs. Flow' },
+  PUMP3: { xLabel: 'Head (ft)', yLabel: 'Flow (CFS)', description: 'Type 3: Head vs. Flow' },
+  PUMP4: { xLabel: 'Depth (ft)', yLabel: 'Flow (CFS)', description: 'Type 4: Depth vs. Flow' },
+  RATING: { xLabel: 'Head (ft)', yLabel: 'Flow (CFS)', description: 'Head vs. outflow rating' },
+  TIDAL: { xLabel: 'Hour of Day', yLabel: 'Stage (ft)', description: 'Tidal stage variation' },
+  DIVERSION: { xLabel: 'Inflow (CFS)', yLabel: 'Diverted Flow (CFS)', description: 'Inflow vs. diverted flow' },
+  SHAPE: { xLabel: 'Depth Fraction', yLabel: 'Width Fraction', description: 'Custom cross-section shape' },
+  CONTROL: { xLabel: 'Controller Value', yLabel: 'Setting', description: 'Control curve for rules' },
+};
+
+const CurveEditor = ({ curveName, curveType, model, onSave, onClose }) => {
+  const [name, setName] = useState(curveName || '');
+  const [type, setType] = useState(curveType || 'STORAGE');
+  const [data, setData] = useState([]);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (!model || !curveName) return;
+    const curve = model.curves.get(curveName);
+    if (curve) {
+      setName(curve.name);
+      setType(curve.type || 'STORAGE');
+      setData(curve.data.map(d => ({ ...d })));
+    }
+  }, [model, curveName]);
+
+  // Live graph preview
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || data.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const W = rect.width;
+    const H = rect.height;
+    const margin = { top: 15, right: 15, bottom: 30, left: 50 };
+    const plotW = W - margin.left - margin.right;
+    const plotH = H - margin.top - margin.bottom;
+
+    ctx.fillStyle = '#11111b';
+    ctx.fillRect(0, 0, W, H);
+
+    const xValues = data.map(d => d.x);
+    const yValues = data.map(d => d.y);
+    const xMin = Math.min(0, ...xValues);
+    const xMax = Math.max(...xValues) || 1;
+    const yMin = Math.min(0, ...yValues);
+    const yMax = Math.max(...yValues) * 1.1 || 1;
+
+    const xScale = (v) => margin.left + ((v - xMin) / (xMax - xMin)) * plotW;
+    const yScale = (v) => margin.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+    // Grid
+    ctx.strokeStyle = '#2a2a3a';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const y = margin.top + (plotH * i) / 4;
+      ctx.beginPath(); ctx.moveTo(margin.left, y); ctx.lineTo(margin.left + plotW, y); ctx.stroke();
+      const val = yMax - (i / 4) * (yMax - yMin);
+      ctx.fillStyle = '#6c7086';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(val.toFixed(1), margin.left - 4, y + 3);
+    }
+    for (let i = 0; i <= 4; i++) {
+      const x = margin.left + (plotW * i) / 4;
+      ctx.beginPath(); ctx.moveTo(x, margin.top); ctx.lineTo(x, margin.top + plotH); ctx.stroke();
+      const val = xMin + (i / 4) * (xMax - xMin);
+      ctx.fillStyle = '#6c7086';
+      ctx.textAlign = 'center';
+      ctx.fillText(val.toFixed(1), x, H - margin.bottom + 15);
+    }
+
+    // Plot line
+    const sorted = [...data].sort((a, b) => a.x - b.x);
+    ctx.strokeStyle = '#a6e3a1';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    sorted.forEach((d, i) => {
+      const x = xScale(d.x);
+      const y = yScale(d.y);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Data points
+    sorted.forEach(d => {
+      ctx.fillStyle = '#a6e3a1';
+      ctx.beginPath();
+      ctx.arc(xScale(d.x), yScale(d.y), 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Axis labels
+    const typeInfo = CURVE_TYPES[type] || {};
+    ctx.fillStyle = '#a6adc8';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(typeInfo.xLabel || 'X', margin.left + plotW / 2, H - 3);
+    ctx.save();
+    ctx.translate(10, margin.top + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(typeInfo.yLabel || 'Y', 0, 0);
+    ctx.restore();
+
+    ctx.strokeStyle = '#45475a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(margin.left, margin.top, plotW, plotH);
+  }, [data, type]);
+
+  const updateRow = (index, field, value) => {
+    setData(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: parseFloat(value) || 0 };
+      return updated;
+    });
+  };
+
+  const addRow = () => {
+    const lastX = data.length > 0 ? data[data.length - 1].x + 1 : 0;
+    setData(prev => [...prev, { x: lastX, y: 0 }]);
+  };
+
+  const removeRow = (index) => {
+    setData(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSave = () => {
+    if (!model || !name) return;
+    model.curves.set(name, { name, type, data: data.map(d => ({ ...d })) });
+    model._dirty = true;
+    model._emit('change', { type: 'curve', id: name });
+    if (onSave) onSave();
+    if (onClose) onClose();
+  };
+
+  const typeInfo = CURVE_TYPES[type] || {};
+
+  return (
+    <div className="subdialog-overlay" onClick={e => {
+      if (e.target === e.currentTarget) onClose();
+    }}>
+      <div className="subdialog-modal subdialog-large">
+        <div className="sd-header">
+          <span className="sd-title">📊 Curve Editor — {name || 'New'}</span>
+          <button className="sd-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="sd-body sd-ts-body">
+          <div className="sd-field-row">
+            <label>Name:</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)}
+              className="sd-input" />
+            <label style={{ marginLeft: 12 }}>Type:</label>
+            <select value={type} onChange={e => setType(e.target.value)} className="sd-select">
+              {Object.keys(CURVE_TYPES).map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          {typeInfo.description && (
+            <div className="sd-help-text">{typeInfo.description}</div>
+          )}
+
+          <div className="sd-graph-wrapper">
+            <canvas ref={canvasRef} className="sd-graph-canvas" />
+          </div>
+
+          <div className="sd-toolbar">
+            <button className="sd-tool-btn" onClick={addRow}>+ Add Point</button>
+            <span className="sd-row-count">{data.length} points</span>
+          </div>
+
+          <div className="sd-table-scroll sd-table-short">
+            <table className="sd-table sd-table-compact">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>{typeInfo.xLabel || 'X'}</th>
+                  <th>{typeInfo.yLabel || 'Y'}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((row, i) => (
+                  <tr key={i}>
+                    <td className="sd-row-num">{i + 1}</td>
+                    <td>
+                      <input type="number" value={row.x} step="any"
+                        onChange={e => updateRow(i, 'x', e.target.value)}
+                        className="sd-cell-input sd-cell-number" />
+                    </td>
+                    <td>
+                      <input type="number" value={row.y} step="any"
+                        onChange={e => updateRow(i, 'y', e.target.value)}
+                        className="sd-cell-input sd-cell-number" />
+                    </td>
+                    <td>
+                      <button className="sd-row-delete" onClick={() => removeRow(i)}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="sd-footer">
+          <button className="sd-btn sd-btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="sd-btn sd-btn-save" onClick={handleSave}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CurveEditor;
+</file_content>
+
+### 1E. Pattern Editor
+
+**Used by:** DWF Inflows (monthly/daily/hourly/weekend patterns)
+
+<file_path>src/components/SubDialogs/PatternEditor.jsx</file_path>
+<file_content>
+import React, { useState, useEffect, useRef } from 'react';
+import './SubDialogs.css';
+
+const PATTERN_CONFIGS = {
+  MONTHLY: { count: 12, labels: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] },
+  DAILY: { count: 7, labels: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] },
+  HOURLY: { count: 24, labels: Array.from({length: 24}, (_, i) =>`${i}:00`) },
+  WEEKEND: { count: 24, labels: Array.from({length: 24}, (_, i) =>`${i}:00`) },
+};
+
+const PatternEditor = ({ patternName, model, onSave, onClose }) => {
+  const [name, setName] = useState(patternName || '');
+  const [type, setType] = useState('MONTHLY');
+  const [multipliers, setMultipliers] = useState([]);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (!model || !patternName) return;
+    const pat = model.patterns.get(patternName);
+    if (pat) {
+      setName(pat.name);
+      setType(pat.type || 'MONTHLY');
+      const config = PATTERN_CONFIGS[pat.type || 'MONTHLY'];
+      const mults = [...pat.multipliers];
+      while (mults.length < config.count) mults.push(1.0);
+      setMultipliers(mults.slice(0, config.count));
+    }
+  }, [model, patternName]);
+
+  // Initialize multipliers when type changes
+  useEffect(() => {
+    const config = PATTERN_CONFIGS[type];
+    if (multipliers.length !== config.count) {
+      const mults = [...multipliers];
+      while (mults.length < config.count) mults.push(1.0);
+      setMultipliers(mults.slice(0, config.count));
+    }
+  }, [type]);
+
+  // Bar chart preview
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || multipliers.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const W = rect.width;
+    const H = rect.height;
+    const margin = { top: 15, right: 10, bottom: 30, left: 40 };
+    const plotW = W - margin.left - margin.right;
+    const plotH = H - margin.top - margin.bottom;
+
+    ctx.fillStyle = '#11111b';
+    ctx.fillRect(0, 0, W, H);
+
+    const maxVal = Math.max(1, ...multipliers) * 1.15;
+    const barW = plotW / multipliers.length * 0.75;
+    const gap = plotW / multipliers.length * 0.25;
+
+    // Grid
+    ctx.strokeStyle = '#2a2a3a';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const y = margin.top + (plotH * i) / 4;
+      ctx.beginPath(); ctx.moveTo(margin.left, y); ctx.lineTo(margin.left + plotW, y); ctx.stroke();
+      const val = maxVal - (i / 4) * maxVal;
+      ctx.fillStyle = '#6c7086';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(val.toFixed(2), margin.left - 4, y + 3);
+    }
+
+    // Reference line at 1.0
+    const refY = margin.top + plotH - (1.0 / maxVal) * plotH;
+    ctx.strokeStyle = '#f9e2af';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(margin.left, refY); ctx.lineTo(margin.left + plotW, refY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Bars
+    const config = PATTERN_CONFIGS[type];
+    multipliers.forEach((val, i) => {
+      const x = margin.left + i * (plotW / multipliers.length) + gap / 2;
+      const barH = (val / maxVal) * plotH;
+      const y = margin.top + plotH - barH;
+
+      const t = val / maxVal;
+      const r = Math.round(49 + t * 166);
+      const g = Math.round(163 - t * 35);
+      const b = Math.round(84 + t * 100);
+      ctx.fillStyle =`rgb(${r},${g},${b})`;
+      ctx.fillRect(x, y, barW, barH);
+
+      // Label
+      ctx.fillStyle = '#6c7086';
+      ctx.font = '7px sans-serif';
+      ctx.textAlign = 'center';
+      const label = config.labels[i] || i.toString();
+      ctx.fillText(label, x + barW / 2, H - margin.bottom + 12);
+    });
+
+    ctx.strokeStyle = '#45475a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(margin.left, margin.top, plotW, plotH);
+  }, [multipliers, type]);
+
+  const updateMultiplier = (index, value) => {
+    setMultipliers(prev => {
+      const updated = [...prev];
+      updated[index] = parseFloat(value) || 0;
+      return updated;
+    });
+  };
+
+  const handleSave = () => {
+    if (!model || !name) return;
+    model.patterns.set(name, { name, type, multipliers: [...multipliers] });
+    model._dirty = true;
+    model._emit('change', { type: 'pattern', id: name });
+    if (onSave) onSave();
+    if (onClose) onClose();
+  };
+
+  const config = PATTERN_CONFIGS[type];
+
+  return (
+    <div className="subdialog-overlay" onClick={e => {
+      if (e.target === e.currentTarget) onClose();
+    }}>
+      <div className="subdialog-modal subdialog-large">
+        <div className="sd-header">
+          <span className="sd-title">📊 Pattern Editor — {name || 'New'}</span>
+          <button className="sd-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="sd-body sd-ts-body">
+          <div className="sd-field-row">
+            <label>Name:</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)}
+              className="sd-input" />
+            <label style={{ marginLeft: 12 }}>Type:</label>
+            <select value={type} onChange={e => setType(e.target.value)} className="sd-select">
+              <option value="MONTHLY">Monthly (12 values)</option>
+              <option value="DAILY">Daily (7 values)</option>
+              <option value="HOURLY">Hourly (24 values)</option>
+              <option value="WEEKEND">Weekend (24 values)</option>
+            </select>
+          </div>
+
+          <div className="sd-help-text">
+            Multipliers adjust the base value. A value of 1.0 = no adjustment.
+            The dashed yellow line shows 1.0 reference.
+          </div>
+
+          <div className="sd-graph-wrapper">
+            <canvas ref={canvasRef} className="sd-graph-canvas" />
+          </div>
+
+          <div className="sd-pattern-grid">
+            {multipliers.map((val, i) => (
+              <div key={i} className="sd-pattern-cell">
+                <label className="sd-pattern-label">{config.labels[i]}</label>
+                <input type="number" value={val} step="0.01" min="0"
+                  onChange={e => updateMultiplier(i, e.target.value)}
+                  className="sd-pattern-input" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="sd-footer">
+          <button className="sd-btn sd-btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="sd-btn sd-btn-save" onClick={handleSave}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default PatternEditor;
+</file_content>
+
+### 1F. LID Usage Editor
+
+**Used by:** Subcatchments (30 in the Greenville model)
+**Opens from:** Subcatchment property grid → LID Controls →`[...]`
+
+<file_path>src/components/SubDialogs/LIDUsageEditor.jsx</file_path>
+<file_content>
+import React, { useState, useEffect } from 'react';
+import './SubDialogs.css';
+
+const LID_TYPES = [
+  'Bio-Retention Cell', 'Rain Garden', 'Green Roof', 'Infiltration Trench',
+  'Permeable Pavement', 'Rain Barrel', 'Rooftop Disconnect', 'Vegetative Swale',
+];
+
+const LIDUsageEditor = ({ subcatchId, model, onSave, onClose }) => {
+  const [lidRows, setLidRows] = useState([]);
+
+  useEffect(() => {
+    // Load existing LID usage for this subcatchment
+    // LID_USAGE section format: Subcatch LIDProcess Number Area Width InitSat FromImp ToPerv RptFile DrainTo
+    // For now, initialize with empty
+    setLidRows([]);
+  }, [model, subcatchId]);
+
+  const addRow = () => {
+    setLidRows(prev => [...prev, {
+      lidControl: '',
+      number: 1,
+      area: 0,
+      width: 0,
+      initSat: 0,
+      fromImperv: 0,
+      toPerv: 0,
+      rptFile: '',
+      drainTo: '',
+    }]);
+  };
+
+  const updateRow = (index, field, value) => {
+    setLidRows(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const removeRow = (index) => {
+    setLidRows(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSave = () => {
+    // Save LID usage back to model
+    // Update subcatchment's lidControls indicator
+    const sub = model.getObject('subcatchment', subcatchId);
+    if (sub) {
+      sub.lidControls = lidRows.length > 0 ?`${lidRows.length} LID(s)` : 'NONE';
+    }
+    model._dirty = true;
+    model._emit('change', { type: 'lid', id: subcatchId });
+    if (onSave) onSave();
+    if (onClose) onClose();
+  };
+
+  return (
+    <div className="subdialog-overlay" onClick={e => {
+      if (e.target === e.currentTarget) onClose();
+    }}>
+      <div className="subdialog-modal subdialog-wide">
+        <div className="sd-header">
+          <span className="sd-title">🌿 LID Controls — {subcatchId}</span>
+          <button className="sd-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="sd-body">
+          <div className="sd-help-text">
+            Assign Low Impact Development (LID) controls to this subcatchment.
+            Each row represents one type of LID practice applied to the subcatchment.
+          </div>
+
+          <table className="sd-table">
+            <thead>
+              <tr>
+                <th>LID Control</th>
+                <th>Number</th>
+                <th>Area (ft²)</th>
+                <th>Width (ft)</th>
+                <th>Init Sat (%)</th>
+                <th>From Imperv (%)</th>
+                <th>To Perv</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lidRows.map((row, i) => (
+                <tr key={i}>
+                  <td>
+                    <select value={row.lidControl}
+                      onChange={e => updateRow(i, 'lidControl', e.target.value)}>
+                      <option value="">-- Select --</option>
+                      {LID_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <input type="number" value={row.number} min="1" step="1"
+                      onChange={e => updateRow(i, 'number', parseInt(e.target.value) || 1)} />
+                  </td>
+                  <td>
+                    <input type="number" value={row.area} min="0" step="10"
+                      onChange={e => updateRow(i, 'area', parseFloat(e.target.value) || 0)} />
+                  </td>
+                  <td>
+                    <input type="number" value={row.width} min="0" step="1"
+                      onChange={e => updateRow(i, 'width', parseFloat(e.target.value) || 0)} />
+                  </td>
+                  <td>
+                    <input type="number" value={row.initSat} min="0" max="100" step="1"
+                      onChange={e => updateRow(i, 'initSat', parseFloat(e.target.value) || 0)} />
+                  </td>
+                  <td>
+                    <input type="number" value={row.fromImperv} min="0" max="100" step="1"
+                      onChange={e => updateRow(i, 'fromImperv', parseFloat(e.target.value) || 0)} />
+                  </td>
+                  <td>
+                    <input type="number" value={row.toPerv} min="0" max="1" step="1"
+                      onChange={e => updateRow(i, 'toPerv', parseInt(e.target.value) || 0)} />
+                  </td>
+                  <td>
+                    <button className="sd-row-delete" onClick={() => removeRow(i)}>✕</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <button className="sd-add-row" onClick={addRow}>+ Add LID Control</button>
+
+          {lidRows.length === 0 && (
+            <div className="sd-empty-msg">
+              No LID controls assigned. Click "+ Add LID Control" to add green infrastructure.
+            </div>
+          )}
+        </div>
+
+        <div className="sd-footer">
+          <button className="sd-btn sd-btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="sd-btn sd-btn-save" onClick={handleSave}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default LIDUsageEditor;
+</file_content>
+
+### 1G. Control Rules Editor
+
+**Opens from:** Project Explorer → Controls
+
+<file_path>src/components/SubDialogs/ControlRulesEditor.jsx</file_path>
+<file_content>
+import React, { useState, useEffect, useRef } from 'react';
+import './SubDialogs.css';
+
+const KEYWORDS = [
+  'RULE', 'IF', 'AND', 'OR', 'THEN', 'ELSE', 'PRIORITY',
+  'NODE', 'LINK', 'CONDUIT', 'PUMP', 'ORIFICE', 'WEIR',
+  'DEPTH', 'HEAD', 'VOLUME', 'INFLOW', 'FLOW',
+  'STATUS', 'SETTING', 'TIMEOFDAY', 'DATE', 'CLOCKTIME',
+  'DAY', 'MONTH', 'SIMULATION', 'TIME', 'ELAPSED',
+  'ON', 'OFF', 'OPEN', 'CLOSED',
+  'IS', 'NOT', 'ABOVE', 'BELOW',
+];
+
+const ControlRulesEditor = ({ model, onSave, onClose }) => {
+  const [rulesText, setRulesText] = useState('');
+  const [errors, setErrors] = useState([]);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (model) {
+      setRulesText(model.controls || '');
+    }
+  }, [model]);
+
+  // Basic syntax validation
+  const validate = (text) => {
+    const errs = [];
+    const lines = text.split('\n');
+    let inRule = false;
+    let ruleHasIf = false;
+    let ruleHasThen = false;
+
+    lines.forEach((line, lineNum) => {
+      const trimmed = line.trim().toUpperCase();
+      if (!trimmed || trimmed.startsWith(';')) return;
+
+      if (trimmed.startsWith('RULE')) {
+        if (inRule && !ruleHasThen) {
+          errs.push({ line: lineNum, message: 'Previous RULE has no THEN clause' });
+        }
+        inRule = true;
+        ruleHasIf = false;
+        ruleHasThen = false;
+        const parts = trimmed.split(/\s+/);
+        if (parts.length < 2) {
+          errs.push({ line: lineNum + 1, message: 'RULE needs a name' });
+        }
+      } else if (trimmed.startsWith('IF') || trimmed.startsWith('AND') || trimmed.startsWith('OR')) {
+        if (!inRule) {
+          errs.push({ line: lineNum + 1, message:`${trimmed.split(' ')[0]} outside of RULE block` });
+        }
+        ruleHasIf = true;
+      } else if (trimmed.startsWith('THEN') || trimmed.startsWith('ELSE')) {
+        if (!inRule) {
+          errs.push({ line: lineNum + 1, message:`${trimmed.split(' ')[0]} outside of RULE block` });
+        }
+        if (trimmed.startsWith('THEN')) ruleHasThen = true;
+      } else if (trimmed.startsWith('PRIORITY')) {
+        // OK
+      } else if (inRule) {
+        // Unknown line inside rule
+        errs.push({ line: lineNum + 1, message:`Unrecognized: "${line.trim()}"` });
+      }
+    });
+
+    if (inRule && !ruleHasThen) {
+      errs.push({ line: lines.length, message: 'Last RULE has no THEN clause' });
+    }
+
+    return errs;
+  };
+
+  const handleTextChange = (e) => {
+    const text = e.target.value;
+    setRulesText(text);
+    setErrors(validate(text));
+  };
+
+  // Syntax-highlighted display would go here
+  // For now, use plain textarea with error markers
+
+  const handleSave = () => {
+    const errs = validate(rulesText);
+    if (errs.some(e => !e.message.includes('Unrecognized'))) {
+      // Only block on structural errors, not unknown lines
+    }
+    model.controls = rulesText;
+    model._rawSections['CONTROLS'] = rulesText.split('\n');
+    model._dirty = true;
+    model._emit('change', { type: 'controls' });
+    if (onSave) onSave();
+    if (onClose) onClose();
+  };
+
+  const insertTemplate = () => {
+    const template = `RULE PumpControl1
+IF NODE WetWell1 DEPTH > 5.0
+THEN PUMP Pump1 STATUS = ON
+PRIORITY 1
+
+RULE PumpControl2
+IF NODE WetWell1 DEPTH < 1.0
+THEN PUMP Pump1 STATUS = OFF
+PRIORITY 1
+`;
+    setRulesText(prev => prev + '\n' + template);
+  };
+
+  return (
+    <div className="subdialog-overlay" onClick={e => {
+      if (e.target === e.currentTarget) onClose();
+    }}>
+      <div className="subdialog-modal subdialog-large">
+        <div className="sd-header">
+          <span className="sd-title">🔧 Control Rules Editor</span>
+          <button className="sd-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="sd-body sd-rules-body">
+          <div className="sd-help-text">
+            Define operational rules for pumps, orifices, and weirs.
+            Syntax: RULE name / IF condition / THEN action / PRIORITY n
+          </div>
+
+          <div className="sd-toolbar">
+            <button className="sd-tool-btn" onClick={insertTemplate}>📝 Insert Template</button>
+            <span className="sd-row-count">
+              {errors.length === 0 ? '✅ No errors' :`⚠️ ${errors.length} issue(s)`}
+            </span>
+          </div>
+
+          <div className="sd-rules-editor">
+            <div className="sd-line-numbers">
+              {rulesText.split('\n').map((_, i) => {
+                const hasError = errors.some(e => e.line === i + 1);
+                return (
+                  <div key={i} className={`sd-line-num ${hasError ? 'sd-line-error' : ''}`}>
+                    {i + 1}
+                  </div>
+                );
+              })}
+            </div>
+            <textarea
+              ref={textareaRef}
+              className="sd-rules-textarea"
+              value={rulesText}
+              onChange={handleTextChange}
+              spellCheck={false}
+              placeholder="Enter control rules here..."
+            />
+          </div>
+
+          {errors.length > 0 && (
+            <div className="sd-error-list">
+              {errors.map((err, i) => (
+                <div key={i} className="sd-error-item"
+                  onClick={() => {
+                    // Jump to line
+                    const lines = rulesText.split('\n');
+                    let pos = 0;
+                    for (let j = 0; j < err.line - 1 && j < lines.length; j++) {
+                      pos += lines[j].length + 1;
+                    }
+                    textareaRef.current?.setSelectionRange(pos, pos);
+                    textareaRef.current?.focus();
+                  }}>
+                  <span className="sd-error-line">Line {err.line}:</span>
+                  <span className="sd-error-msg">{err.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="sd-keywords">
+            <span className="sd-keywords-label">Keywords:</span>
+            {KEYWORDS.slice(0, 20).map(kw => (
+              <span key={kw} className="sd-keyword-chip"
+                onClick={() => {
+                  const ta = textareaRef.current;
+                  if (ta) {
+                    const start = ta.selectionStart;
+                    const newText = rulesText.slice(0, start) + kw + ' ' + rulesText.slice(start);
+                    setRulesText(newText);
+                  }
+                }}>
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="sd-footer">
+          <button className="sd-btn sd-btn-cancel" onClick={onClose}>Cancel</button>
+          <button className="sd-btn sd-btn-save" onClick={handleSave}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ControlRulesEditor;
+</file_content>
+
+### 1H. Shared Sub-Dialog CSS
+
+<file_path>src/components/SubDialogs/SubDialogs.css</file_path>
+<file_content>
+/* ─── MODAL OVERLAY ────────────────────────────── */
+.subdialog-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.subdialog-modal {
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  min-width: 400px;
+  overflow: hidden;
+}
+
+.subdialog-wide {
+  width: 700px;
+  max-width: 90vw;
+}
+
+.subdialog-large {
+  width: 800px;
+  max-width: 90vw;
+  max-height: 85vh;
+}
+
+/* ─── HEADER ───────────────────────────────────── */
+.sd-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #181825;
+  border-bottom: 1px solid #333;
+}
+
+.sd-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #cdd6f4;
+}
+
+.sd-close {
+  background: none;
+  border: none;
+  color: #6c7086;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.sd-close:hover {
+  background: #333;
+  color: #f38ba8;
+}
+
+/* ─── BODY ─────────────────────────────────────── */
+.sd-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.sd-ts-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sd-help-text {
+  font-size: 11px;
+  color: #6c7086;
+  padding: 6px 10px;
+  background: rgba(137, 180, 250, 0.05);
+  border-radius: 4px;
+  border-left: 3px solid #89b4fa;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+/* ─── FIELD ROWS ───────────────────────────────── */
+.sd-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.sd-field-row label {
+  font-size: 11px;
+  color: #a6adc8;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sd-input {
+  padding: 4px 8px;
+  background: #11111b;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  color: #cdd6f4;
+  font-size: 12px;
+  width: 180px;
+}
+
+.sd-input:focus {
+  border-color: #89b4fa;
+  outline: none;
+}
+
+.sd-input-wide {
+  flex: 1;
+}
+
+.sd-select {
+  padding: 4px 8px;
+  background: #11111b;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  color: #cdd6f4;
+  font-size: 11px;
+}
+
+.sd-radio-group {
+  display: flex;
+  gap: 12px;
+}
+
+.sd-radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.sd-radio-group input {
+  accent-color: #89b4fa;
+}
+
+/* ─── TABLE ────────────────────────────────────── */
+.sd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.sd-table th {
+  background: #181825;
+  color: #a6adc8;
+  padding: 5px 8px;
+  text-align: left;
+  border-bottom: 1px solid #333;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.sd-table td {
+  padding: 3px 4px;
+  border-bottom: 1px solid #1e1e2e;
+}
+
+.sd-table select, .sd-table input {
+  width: 100%;
+  padding: 3px 4px;
+  background: #11111b;
+  border: 1px solid #333;
+  border-radius: 3px;
+  color: #cdd6f4;
+  font-size: 11px;
+}
+
+.sd-table select:focus, .sd-table input:focus {
+  border-color: #89b4fa;
+  outline: none;
+}
+
+.sd-table-compact td {
+  padding: 2px 3px;
+}
+
+.sd-table-scroll {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.sd-table-short {
+  max-height: 180px;
+}
+
+.sd-cell-input {
+  font-family: 'Courier New', monospace;
+}
+
+.sd-cell-number {
+  text-align: right;
+}
+
+.sd-row-num {
+  color: #6c7086;
+  text-align: center;
+  font-size: 9px;
+  width: 30px;
+}
+
+.sd-row-delete {
+  background: none;
+  border: none;
+  color: #6c7086;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.sd-row-delete:hover {
+  background: #f38ba8;
+  color: #11111b;
+}
+
+.sd-add-row {
+  width: 100%;
+  padding: 6px;
+  background: #313244;
+  border: 1px dashed #45475a;
+  color: #89b4fa;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.sd-add-row:hover {
+  background: #45475a;
+  border-style: solid;
+}
+
+.sd-empty-msg {
+  text-align: center;
+  padding: 20px;
+  color: #6c7086;
+  font-style: italic;
+  font-size: 11px;
+}
+
+/* ─── TOOLBAR ──────────────────────────────────── */
+.sd-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.sd-tool-btn {
+  background: #313244;
+  border: 1px solid #45475a;
+  color: #cdd6f4;
+  padding: 4px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.sd-tool-btn:hover {
+  background: #45475a;
+}
+
+.sd-row-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: #6c7086;
+}
+
+/* ─── GRAPH PREVIEW ────────────────────────────── */
+.sd-graph-wrapper {
+  height: 160px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sd-graph-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ─── PATTERN GRID ─────────────────────────────── */
+.sd-pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.sd-pattern-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.sd-pattern-label {
+  font-size: 8px;
+  color: #6c7086;
+  text-transform: uppercase;
+}
+
+.sd-pattern-input {
+  width: 60px;
+  padding: 3px 4px;
+  background: #11111b;
+  border: 1px solid #333;
+  border-radius: 3px;
+  color: #cdd6f4;
+  font-size: 11px;
+  text-align: center;
+  font-family: 'Courier New', monospace;
+}
+
+.sd-pattern-input:focus {
+  border-color: #89b4fa;
+  outline: none;
+}
+
+/* ─── RULES EDITOR ─────────────────────────────── */
+.sd-rules-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sd-rules-editor {
+  display: flex;
+  border: 1px solid #333;
+  border-radius: 4px;
+  overflow: hidden;
+  height: 250px;
+}
+
+.sd-line-numbers {
+  background: #181825;
+  padding: 8px 0;
+  min-width: 36px;
+  border-right: 1px solid #333;
+  overflow-y: hidden;
+  user-select: none;
+}
+
+.sd-line-num {
+  padding: 0 8px;
+  font-size: 10px;
+  color: #6c7086;
+  line-height: 1.65;
+  text-align: right;
+  font-family: 'Courier New', monospace;
+}
+
+.sd-line-error {
+  background: rgba(243, 139, 168, 0.15);
+  color: #f38ba8;
+}
+
+.sd-rules-textarea {
+  flex: 1;
+  padding: 8px;
+  background: #11111b;
+  border: none;
+  color: #cdd6f4;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  resize: none;
+  outline: none;
+}
+
+.sd-error-list {
+  max-height: 100px;
+  overflow-y: auto;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.sd-error-item {
+  display: flex;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #1e1e2e;
+}
+
+.sd-error-item:hover {
+  background: rgba(243, 139, 168, 0.1);
+}
+
+.sd-error-line {
+  color: #f38ba8;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sd-error-msg {
+  color: #cdd6f4;
+}
+
+.sd-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.sd-keywords-label {
+  font-size: 9px;
+  color: #6c7086;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.sd-keyword-chip {
+  background: #313244;
+  color: #89b4fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-family: 'Courier New', monospace;
+  cursor: pointer;
+}
+
+.sd-keyword-chip:hover {
+  background: #45475a;
+}
+
+/* ─── FOOTER ───────────────────────────────────── */
+.sd-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #181825;
+  border-top: 1px solid #333;
+}
+
+.sd-btn {
+  padding: 6px 20px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.sd-btn-cancel {
+  background: #313244;
+  color: #a6adc8;
+}
+
+.sd-btn-cancel:hover {
+  background: #45475a;
+}
+
+.sd-btn-save {
+  background: #89b4fa;
+  color: #11111b;
+}
+
+.sd-btn-save:hover {
+  background: #74c7ec;
+}
+</file_content>
+
+---
+
+## 2. PRIORITY MATRIX — Detailed Explanation
+
+The priority matrix uses two axes to rank every feature:
+
+### Impact Score (1-5)
+
+```
+5 = CRITICAL — Without this, the app is fundamentally incomplete
+    Users cannot perform basic tasks that EPA SWMM5 desktop handles
+    
+4 = HIGH — Missing this blocks important workflows
+    Users frequently need this but can work around it
+    
+3 = MEDIUM — Useful but not blocking
+    Improves efficiency but alternative paths exist
+    
+2 = LOW — Nice to have
+    Enhances experience but rarely needed
+    
+1 = MINIMAL — Edge case feature
+    Only needed by advanced users in specific scenarios
+```
+
+### Effort Score (1-5)
+
+```
+5 = VERY HIGH — Multiple weeks of complex development
+    New architecture patterns, complex algorithms, external integrations
+    
+4 = HIGH — 1-2 weeks of focused work
+    Significant new UI components, complex state management
+    
+3 = MEDIUM — 3-5 days
+    New component with moderate complexity, uses existing patterns
+    
+2 = LOW — 1-2 days
+    Small addition, follows established patterns, mainly UI
+    
+1 = MINIMAL — Hours
+    Configuration change, copy-paste from existing code, CSS tweaks
+```
+
+### Priority Assignment Logic
+
+```
+P1 (DO FIRST) = Impact 4-5 AND Effort 1-3
+    → High value, achievable quickly
+    → "Quick wins" and "table stakes"
+
+P2 (DO NEXT)  = Impact 4-5 AND Effort 4-5
+    OR Impact 3 AND Effort 1-2
+    → Either high-value hard things or easy medium-value things
+
+P3 (DO LATER) = Impact 2-3 AND Effort 3-4
+    → Medium value, moderate effort
+    → Schedule when P1/P2 are done
+
+P4 (BACKLOG)  = Impact 1-2 AND Effort 4-5
+    → Low value, high effort
+    → Only if time permits
+```
+
+### Complete Matrix with Reasoning
+
+| Feature | Impact | Why | Effort | Why | Priority |
+|---|---|---|---|---|---|
+| **Sub-dialog modals** | 5 | Without these, 40% of fields are uneditable. Inflows, curves, patterns ALL need these | 3 | Follow established modal pattern, 7 dialogs to build | **P1** |
+| **Undo/Redo** | 4 | Users WILL make mistakes. No undo = fear of editing. Desktop SWMM has implicit undo via "don't save" | 3 | Command pattern: store {type, id, key, old, new}, stack of 50 | **P1** |
+| **Time Series Editor** | 5 | Rain data = time series. Without this editor, users can't define rainfall. Blocks ALL simulation | 3 | Table + canvas graph, CSV import. Pattern already built for Curve/Pattern editors | **P1** |
+| **Curve Editor** | 4 | 17 storage units + 5 pumps need curves. Without this, storage/pump models are broken | 3 | Already coded above. Table + graph, same pattern as TS editor | **P1** |
+| **Control Rules Editor** | 3 | 5 pumps in model need rules. But can use default on/off. Some models have no rules | 3 | Text editor + syntax check. Already coded above | **P2** |
+| **Add objects on map** | 5 | THE feature that makes it a full model builder vs. a model modifier. EPA SWMM's core workflow | 4 | Click-to-place nodes, click-click for links, polygon draw for subcatchments. New interaction modes | **P2** |
+| **proj4js basemap** | 3 | Basemap only works with lat/lon coords currently. Most real models use State Plane | 2 | Import proj4js library, add EPSG selector dropdown | **P2** |
+| **Calibration workflow** | 4 | Engineers need to validate models against measured data. Key professional workflow | 4 | Load .dat files, overlay on graphs, calculate NSE/RMSE/R². New data pipeline | **P2** |
+| **Scatter plots** | 2 | Useful for sensitivity analysis but rarely the first thing users need | 3 | New chart type, X/Y variable selectors | **P3** |
+| **Cloud storage** | 3 | Great for collaboration and access from any device. Not needed for core functionality | 4 | Backend server, authentication, database, file storage API | **P3** |
+| **Collaborative editing** | 3 | Amazing feature, but complex. Desktop SWMM doesn't have it. Low user expectation | 5 | WebSocket server, operational transforms or CRDT, cursor presence | **P3** |
+| **AI auto-delineation** | 4 | Would revolutionize model building. But complex and no existing equivalent | 5 | DEM processing, watershed delineation algorithms, GIS integration | **P4** |
+| **WebGL renderer** | 2 | Only needed for very large models (10,000+ objects). Canvas is fine for 95% of models | 4 | Rewrite rendering pipeline to WebGL shaders | **P4** |
+| **Mobile responsive** | 2 | Useful for field review but not primary workflow. Engineers use desktops | 3 | Responsive CSS, collapsible panels, touch handlers | **P3** |
+
+---
+
+## 3. PHASE COMPLETION ESTIMATES
+
+### Phase 1: Complete Editing Loop
+**Duration: 2-3 weeks**
+
+```
+Week 1:
+├── Day 1-2: Wire sub-dialog system into PropertyGrid
+│   - Add SubDialogManager component
+│   - Connect [...] buttons to appropriate editors
+│   - Handle onSave callbacks that update model + trigger map redraw
+│
+├── Day 3-4: Direct Inflow Editor + DWF Editor
+│   - Both are table-based editors (already coded above)
+│   - Test with Greenville model's existing inflow data
+│   - Verify round-trip: load .inp → edit inflow → save .inp → reload
+│
+├── Day 5: Time Series Editor
+│   - Table + graph preview (already coded above)
+│   - CSV import, clipboard paste
+│   - Test: create new rain series, assign to rain gage
+
+Week 2:
+├── Day 1-2: Curve Editor + Pattern Editor
+│   - Both already coded above
+│   - Test: edit storage curves for 17 storage units
+│   - Test: edit pump curves for 5 pumps
+│   - Test: create DWF patterns
+│
+├── Day 3: LID Usage Editor
+│   - Table of LID assignments per subcatchment
+│   - Already coded above
+│
+├── Day 4: Control Rules Editor
+│   - Text editor with syntax validation
+│   - Already coded above
+│   - Test with pump control rules
+│
+├── Day 5: Undo/Redo system
+│   - UndoManager class with command stack
+│   - Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts
+│   - Wire into model.setProperty()
+
+Week 3 (if needed):
+├── Day 1-2: Testing and bug fixes
+│   - Test all 12 sub-dialogs with Greenville model
+│   - Verify .inp round-trip for every section
+│   - Fix edge cases (empty fields, null values, etc.)
+│
+├── Day 3-4: Right-click context menu
+│   - Properties, Delete, Copy ID, Find Connected
+│   - Reverse Direction (for links)
+│
+├── Day 5: Design Queries
+│   - "Show all conduits with capacity > 80%"
+│   - Highlight on map, list in panel
+
+DELIVERABLE: Users can edit EVERY field of EVERY object
+             and save back to .inp with full fidelity.
+             
+RISK: Medium — most code is already written, main risk is 
+      integration bugs and edge cases in the .inp parser.
+```
+
+### Phase 2: Complete Data Editors
+**Duration: 2 weeks**
+
+```
+Week 4:
+├── Day 1-2: Groundwater Parameter Editor
+│   - Aquifer reference, coefficients
+│   - Not used in Greenville model but needed for completeness
+│
+├── Day 3-4: Treatment Expression Editor
+│   - Simple text expression editor
+│   - R = C * (1 - 0.5) format
+│   - Used for water quality simulations
+│
+├── Day 5: Analysis Options as full dialog
+│   - Currently displays in status bar
+│   - Need proper tabbed dialog (General, Dates, Time Steps, DynWave)
+│   - Schema already defined in schemas.js
+
+Week 5:
+├── Day 1-2: Climatology editors
+│   - Evaporation (constant, monthly, time series)
+│   - Temperature data source
+│   - Wind speed (monthly or file)
+│
+├── Day 3-4: Project Defaults dialog
+│   - Default properties for new objects
+│   - ID prefix and numbering settings
+│
+├── Day 5: Polish and integration testing
+│   - Ensure all editors save correctly
+│   - Test with multiple .inp files (not just Greenville)
+
+DELIVERABLE: 100% of EPA SWMM5's data editors implemented.
+             Every property of every object can be edited.
+             
+RISK: Low — all follow established patterns from Phase 1.
+```
+
+### Phase 3: Interactive Model Building
+**Duration: 3-4 weeks**
+
+```
+Week 6-7:
+├── Day 1-3: Add nodes by clicking on map
+│   - Click → place junction at coordinates
+│   - Dialog for initial properties (invert, max depth)
+│   - Auto-assign ID (J1, J2, J3...)
+│   - Visual feedback: ghost node follows cursor
+│
+├── Day 4-7: Draw conduits between nodes
+│   - Click node1 → click node2 = new conduit
+│   - Auto-calculate length from coordinates
+│   - Click intermediate points for vertices
+│   - Dialog for cross-section properties
+│   - Visual feedback: rubber-band line from node1 to cursor
+
+Week 8:
+├── Day 1-3: Draw subcatchment polygons
+│   - Click vertices to define polygon
+│   - Double-click or Enter to close
+│   - Auto-calculate area from polygon
+│   - Dialog for subcatchment properties
+│
+├── Day 4-5: Move objects by dragging
+│   - Drag node → update coordinates
+│   - Connected conduit lengths auto-update
+│   - Drag subcatchment vertices
+
+Week 9:
+├── Day 1-2: proj4js basemap alignment
+│   - Import proj4js library
+│   - EPSG code selector (common US State Plane zones)
+│   - Auto-detect coordinate system from value ranges
+│   - Transform model coords → lat/lon for tile rendering
+│
+├── Day 3-5: Calibration workflow
+│   - Load observed data (.dat format or CSV)
+│   - Store as calibration time series
+│   - Overlay on time series graphs (scatter points)
+│   - Calculate statistics: NSE, RMSE, R², percent error
+
+DELIVERABLE: Users can build a model from scratch entirely
+             in the web app. Basemap shows satellite imagery
+             aligned to model coordinates. Calibration data
+             can be compared to simulation results.
+             
+RISK: High — map interaction is the most complex feature.
+      Click detection, visual feedback, polygon closing
+      all need careful implementation. Budget extra time.
+```
+
+### Phase 4: Advanced & Cloud Features
+**Duration: 4+ weeks (ongoing)**
+
+```
+Week 10-11:
+├── Scenario comparison tool
+│   - Store multiple model versions
+│   - Side-by-side animation
+│   - Difference maps (ΔDepth, ΔFlow)
+│
+├── Cloud storage backend
+│   - User accounts (auth)
+│   - Model database (PostgreSQL)
+│   - File upload/download API
+│   - Shareable URLs
+
+Week 12+:
+├── Collaborative editing (WebSocket)
+├── AI-powered delineation
+├── GIS import/export (GeoJSON, Shapefile)
+├── Mobile-responsive layout
+├── WebGL renderer for large models
+
+DELIVERABLE: The app SURPASSES EPA SWMM5 desktop in
+             collaboration, AI assistance, and web access.
+             
+RISK: Very High — these are complex features that may
+      require significant architectural changes.
+```
+
+### Overall Timeline Summary
+
+```
+                Feature Parity with EPA SWMM5 Desktop
+Week:  1   2   3   4   5   6   7   8   9   10  11  12
+       ├───────────┤───────┤───────────────┤──────────→
+       Phase 1     Phase 2  Phase 3         Phase 4
+       
+Parity: 80%        85%     90%             95%+
+        ↑           ↑       ↑               ↑
+        Full        All     Build from      Cloud +
+        editing     data    scratch +       Collab +
+        + undo      editors  calibration    AI
+        
+CURRENT: ~75%
+
+CRITICAL PATH:
+Phase 1 alone makes the app genuinely useful for engineers.
+Phase 2 makes it complete.  
+Phase 3 makes it a full replacement for desktop SWMM.
+Phase 4 makes it BETTER than desktop SWMM.
+```
+
+### Resource Estimates
+
+```
+Phase 1: 1 developer × 2-3 weeks = 80-120 hours
+Phase 2: 1 developer × 2 weeks   = 60-80 hours
+Phase 3: 1 developer × 3-4 weeks = 120-160 hours  
+Phase 4: 1-2 developers × 4+ weeks = 160-320 hours
+
+TOTAL TO 90% PARITY: ~260-360 developer hours
+TOTAL TO 95%+ (surpass desktop): ~420-680 developer hours
+
+For a solo developer working full-time: 2-4 months to 90%
+For a team of 2: 1-2 months to 90%
+```

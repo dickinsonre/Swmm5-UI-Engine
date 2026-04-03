@@ -47,8 +47,8 @@ function getOutfallFields(): FieldDef[] {
     { key: 'elevation', label: 'Invert Elevation', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, required: true },
     { key: 'type', label: 'Type', type: 'select', section: 'Hydraulic', options: ['FREE', 'NORMAL', 'FIXED', 'TIDAL', 'TIMESERIES'] },
     { key: 'stageData', label: 'Fixed Stage', type: 'number', unit: 'ft', section: 'Hydraulic', precision: 2, visibleWhen: { field: 'type', values: ['FIXED'] } },
-    { key: 'stageData', label: 'Tidal Curve', type: 'text', section: 'Hydraulic', visibleWhen: { field: 'type', values: ['TIDAL'] } },
-    { key: 'stageData', label: 'Time Series', type: 'text', section: 'Hydraulic', visibleWhen: { field: 'type', values: ['TIMESERIES'] } },
+    { key: 'stageData', label: 'Tidal Curve', type: 'subdialog', section: 'Hydraulic', subdialogType: 'curve', visibleWhen: { field: 'type', values: ['TIDAL'] } },
+    { key: 'stageData', label: 'Time Series', type: 'subdialog', section: 'Hydraulic', subdialogType: 'timeSeries', visibleWhen: { field: 'type', values: ['TIMESERIES'] } },
     { key: 'gated', label: 'Tide Gate', type: 'select', section: 'Hydraulic', options: ['YES', 'NO'] },
     { key: 'routeTo', label: 'Route To', type: 'text', section: 'Hydraulic' },
   ];
@@ -115,7 +115,7 @@ function getPumpFields(): FieldDef[] {
     { key: 'id', label: 'Name', type: 'readonly', section: 'General' },
     { key: 'fromNode', label: 'From Node', type: 'text', section: 'General' },
     { key: 'toNode', label: 'To Node', type: 'text', section: 'General' },
-    { key: 'pumpCurve', label: 'Pump Curve', type: 'text', section: 'Pump' },
+    { key: 'pumpCurve', label: 'Pump Curve', type: 'subdialog', section: 'Pump', subdialogType: 'curve' },
     { key: 'status', label: 'Initial Status', type: 'select', section: 'Pump', options: ['ON', 'OFF'] },
     { key: 'startupDepth', label: 'Startup Depth', type: 'number', unit: 'ft', section: 'Pump', precision: 2, min: 0 },
     { key: 'shutoffDepth', label: 'Shutoff Depth', type: 'number', unit: 'ft', section: 'Pump', precision: 2, min: 0 },
@@ -158,7 +158,7 @@ function getOutletFields(): FieldDef[] {
     { key: 'toNode', label: 'To Node', type: 'text', section: 'General' },
     { key: 'offset', label: 'Inlet Offset', type: 'number', unit: 'ft', section: 'Outlet', precision: 2, min: 0 },
     { key: 'type', label: 'Type', type: 'select', section: 'Outlet', options: ['FUNCTIONAL/DEPTH', 'FUNCTIONAL/HEAD', 'TABULAR/DEPTH', 'TABULAR/HEAD'] },
-    { key: 'curveOrTable', label: 'Curve/Table', type: 'text', section: 'Outlet' },
+    { key: 'curveOrTable', label: 'Curve/Table', type: 'subdialog', section: 'Outlet', subdialogType: 'curve' },
   ];
 }
 
@@ -206,7 +206,7 @@ function getSubcatchmentFields(infiltMethod?: string): FieldDef[] {
     { key: 'snowPack', label: 'Snow Pack', type: 'text', section: 'Snow' },
     { key: '_groundwater', label: 'Groundwater', type: 'subdialog', section: 'Groundwater', subdialogType: 'groundwater' },
     { key: '_lidControls', label: 'LID Controls', type: 'subdialog', section: 'LID Controls', subdialogType: 'lidUsage' },
-    { key: '_landUses', label: 'Land Uses', type: 'subdialog', section: 'Land Uses', subdialogType: 'landUse' },
+    { key: '_landUses', label: 'Land Uses', type: 'readonly', section: 'Land Uses' },
   ];
 }
 
@@ -219,7 +219,8 @@ function getRaingageFields(): FieldDef[] {
     { key: 'interval', label: 'Interval', type: 'text', section: 'Rainfall' },
     { key: 'scf', label: 'Snow Catch Factor', type: 'number', section: 'Rainfall', precision: 3 },
     { key: 'sourceType', label: 'Data Source', type: 'select', section: 'Data Source', options: ['TIMESERIES', 'FILE'] },
-    { key: 'sourceName', label: 'Series/File Name', type: 'text', section: 'Data Source' },
+    { key: 'sourceName', label: 'Series/File Name', type: 'subdialog', section: 'Data Source', subdialogType: 'timeSeries', visibleWhen: { field: 'sourceType', values: ['TIMESERIES'] } },
+    { key: 'sourceName', label: 'File Name', type: 'text', section: 'Data Source', visibleWhen: { field: 'sourceType', values: ['FILE'] } },
     { key: 'stationId', label: 'Station ID', type: 'text', section: 'Data Source' },
     { key: 'units', label: 'Rain Units', type: 'text', section: 'Data Source' },
   ];
@@ -380,11 +381,12 @@ interface PropertyEditorProps {
   selectedObj: SelectedObject;
   onUpdateProject: (updater: (prev: SwmmProject) => SwmmProject) => void;
   onClose: () => void;
+  onSubdialog?: (type: string, objId: string) => void;
   results?: any;
   timeStep?: number;
 }
 
-export default function PropertyEditor({ project, selectedObj, onUpdateProject, onClose, results, timeStep }: PropertyEditorProps) {
+export default function PropertyEditor({ project, selectedObj, onUpdateProject, onClose, onSubdialog, results, timeStep }: PropertyEditorProps) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
   const objType = selectedObj?.objType || '';
@@ -613,6 +615,12 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
                     field={field}
                     value={data[field.key]}
                     onChange={(val) => handleFieldChange(field.key, val)}
+                    onSubdialogClick={field.type === 'subdialog' && field.subdialogType && onSubdialog ? () => {
+                      const sdType = field.subdialogType!;
+                      const refTypes = ['curve', 'timeSeries', 'pattern'];
+                      const sdObjId = refTypes.includes(sdType) && data[field.key] ? String(data[field.key]) : objId;
+                      onSubdialog(sdType, sdObjId);
+                    } : undefined}
                   />
                 ))}
               </div>
@@ -632,7 +640,7 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
   );
 }
 
-function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; onChange: (val: any) => void }) {
+function PropertyRow({ field, value, onChange, onSubdialogClick }: { field: FieldDef; value: any; onChange: (val: any) => void; onSubdialogClick?: () => void }) {
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState('');
 
@@ -695,14 +703,16 @@ function PropertyRow({ field, value, onChange }: { field: FieldDef; value: any; 
   ) : null;
 
   if (field.type === 'subdialog') {
+    const sdDisplay = value && typeof value === 'string' && value !== 'NO' && value !== 'NONE' ? value : '[...]';
     return (
       <div className="flex items-center px-2.5 py-[3px] hover:bg-[#f0f4ff] transition-colors group" data-testid={`prop-${field.key}`}>
         {labelEl}
         <button
           className="flex-1 text-[9px] text-left font-mono text-[#2c6eb5] bg-[#f0f4ff] hover:bg-[#e0ecff] border border-[#d0d8e8] rounded px-1.5 py-0 h-[18px] cursor-pointer transition-colors"
           data-testid={`prop-subdialog-${field.key}`}
+          onClick={() => onSubdialogClick?.()}
         >
-          [...]
+          {sdDisplay}
         </button>
       </div>
     );
