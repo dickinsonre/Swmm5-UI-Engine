@@ -123,27 +123,41 @@ export function LegendPanel({
   const [showLegendNodes, setShowLegendNodes] = useState(true);
   const [showLegendLinks, setShowLegendLinks] = useState(true);
 
-  const nodeLabels = nodeTheme === 'depth'
-    ? ['< 1.5', '1.5-3.0', '3.0-4.0', '4.0-5.0', '> 5.0']
-    : ['< 92', '92-95', '95-97', '97-100', '> 100'];
+  const nodeLegend: Record<string, { title: string; labels: string[] }> = {
+    none: { title: 'Nodes', labels: [] },
+    elevation: { title: 'Invert El. (ft)', labels: ['Low', '', '', '', 'High'] },
+    maxDepth: { title: 'Max Depth (ft)', labels: ['< 2', '2-5', '5-10', '10-15', '> 15'] },
+    depth: { title: 'Depth (ft)', labels: ['< 1.5', '1.5-3.0', '3.0-4.0', '4.0-5.0', '> 5.0'] },
+    head: { title: 'Head (ft)', labels: ['< 92', '92-95', '95-97', '97-100', '> 100'] },
+  };
+  const linkLegend: Record<string, { title: string; labels: string[] }> = {
+    none: { title: 'Links', labels: [] },
+    maxDepth: { title: 'Max Depth (ft)', labels: ['< 1', '1-2.5', '2.5-5', '5-7.5', '> 7.5'] },
+    roughness: { title: "Manning's N", labels: ['< 0.010', '0.010-0.015', '0.015-0.025', '0.025-0.035', '> 0.035'] },
+    length: { title: 'Length (ft)', labels: ['Short', '', '', '', 'Long'] },
+    slope: { title: 'Slope (ft/ft)', labels: ['< 0.005', '0.005-0.01', '0.01-0.02', '0.02-0.04', '> 0.04'] },
+    flow: { title: 'Flow (CFS)', labels: ['< 1.0', '1.0-2.5', '2.5-4.0', '4.0-6.0', '> 6.0'] },
+    velocity: { title: 'Velocity (fps)', labels: ['< 1.0', '1.0-2.0', '2.0-3.0', '3.0-5.0', '> 5.0'] },
+    depth: { title: 'Depth (ft)', labels: ['< 0.5', '0.5-1.0', '1.0-1.5', '1.5-2.0', '> 2.0'] },
+  };
+  const subcatchLegend: Record<string, { title: string; labels: string[] }> = {
+    none: { title: 'Subcatchments', labels: [] },
+    imperv: { title: '% Imperv', labels: ['< 20%', '20-40%', '40-60%', '60-80%', '> 80%'] },
+    area: { title: 'Area (ac)', labels: ['Small', '', '', '', 'Large'] },
+    width: { title: 'Width (ft)', labels: ['Narrow', '', '', '', 'Wide'] },
+    slope: { title: 'Slope (%)', labels: ['Flat', '', '', '', 'Steep'] },
+    runoff: { title: 'Runoff (CFS)', labels: ['< 2', '2-5', '5-10', '10-15', '> 15'] },
+    rainfall: { title: 'Rainfall (in/hr)', labels: ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-3.0', '> 3.0'] },
+    infiltration: { title: 'Infiltration', labels: ['< 0.2', '0.2-0.5', '0.5-1.0', '1.0-2.0', '> 2.0'] },
+  };
 
-  const linkLabels = linkTheme === 'flow'
-    ? ['< 1.0', '1.0-2.5', '2.5-4.0', '4.0-6.0', '> 6.0']
-    : linkTheme === 'velocity'
-    ? ['< 1.0', '1.0-2.0', '2.0-3.0', '3.0-5.0', '> 5.0']
-    : ['< 0.5', '0.5-1.0', '1.0-1.5', '1.5-2.0', '> 2.0'];
+  const nodeLabels = (nodeLegend[nodeTheme] || nodeLegend.none).labels;
+  const linkLabels = (linkLegend[linkTheme] || linkLegend.none).labels;
+  const subcatchLabels = (subcatchLegend[subcatchTheme] || subcatchLegend.none).labels;
 
-  const subcatchLabels = subcatchTheme === 'imperv'
-    ? ['< 25%', '25-50%', '50-75%', '75-90%', '> 90%']
-    : subcatchTheme === 'runoff'
-    ? ['< 2', '2-5', '5-10', '10-15', '> 15']
-    : subcatchTheme === 'infiltration'
-    ? ['< 0.2', '0.2-0.5', '0.5-1.0', '1.0-2.0', '> 2.0']
-    : ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-3.0', '> 3.0'];
-
-  const subcatchTitle = subcatchTheme === 'imperv' ? '% Imperv' : subcatchTheme === 'runoff' ? 'Runoff (CFS)' : subcatchTheme === 'infiltration' ? 'Infiltration' : 'Rainfall (in/hr)';
-  const nodeTitle = nodeTheme === 'depth' ? 'Depth (ft)' : 'Head (ft)';
-  const linkTitle = linkTheme === 'flow' ? 'Flow (CFS)' : linkTheme === 'velocity' ? 'Velocity (fps)' : 'Depth (ft)';
+  const subcatchTitle = (subcatchLegend[subcatchTheme] || subcatchLegend.none).title;
+  const nodeTitle = (nodeLegend[nodeTheme] || nodeLegend.none).title;
+  const linkTitle = (linkLegend[linkTheme] || linkLegend.none).title;
 
   const layers = [
     { key: 'subcatchments', label: 'Subcatchments', color: '#7092BE' },

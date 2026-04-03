@@ -304,7 +304,26 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       if (queryMatchIds.has(nodeId)) return '#ff4444';
       return '#555566';
     }
-    if (results && results.timeSteps[timeStep]) {
+    if (nodeTheme === 'elevation' || nodeTheme === 'maxDepth') {
+      const j = project.junctions.find(n => n.id === nodeId);
+      const s = project.storageUnits.find(n => n.id === nodeId);
+      const o = project.outfalls.find(n => n.id === nodeId);
+      const elev = j?.elevation ?? s?.elevation ?? o?.elevation;
+      const maxD = j?.maxDepth ?? s?.maxDepth ?? 0;
+      if (nodeTheme === 'elevation' && elev != null) {
+        const allElevs = [...project.junctions.map(n => n.elevation), ...project.storageUnits.map(n => n.elevation), ...project.outfalls.map(n => n.elevation)];
+        const mn = Math.min(...allElevs);
+        const mx = Math.max(...allElevs);
+        const range = mx - mn || 1;
+        const t = Math.min(1, Math.max(0, (elev - mn) / range));
+        return COLORS.legend[Math.min(4, Math.floor(t * 5))];
+      }
+      if (nodeTheme === 'maxDepth') {
+        const t = Math.min(1, Math.max(0, maxD / 20));
+        return COLORS.legend[Math.min(4, Math.floor(t * 5))];
+      }
+    }
+    if (results && results.timeSteps[timeStep] && (nodeTheme === 'depth' || nodeTheme === 'head')) {
       const nr = results.timeSteps[timeStep].nodes[nodeId];
       if (nr) {
         const val = nodeTheme === 'depth' ? nr.depth : nr.head;
@@ -315,10 +334,15 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         return COLORS.legend[idx];
       }
     }
+    if (nodeTheme === 'none') {
+      if (nodeType === 'outfall') return '#2a8a4a';
+      if (nodeType === 'storage') return '#c08820';
+      return COLORS.nodeDefault;
+    }
     if (nodeType === 'outfall') return '#2a8a4a';
     if (nodeType === 'storage') return '#c08820';
     return COLORS.nodeDefault;
-  }, [results, timeStep, nodeTheme, queryMatchIds, queryObjectType, groupSelectedIds, multiSelectIds]);
+  }, [results, timeStep, nodeTheme, queryMatchIds, queryObjectType, groupSelectedIds, multiSelectIds, project.junctions, project.storageUnits, project.outfalls]);
 
   const getLinkColor = useCallback((linkId: string) => {
     if (multiSelectIds && multiSelectIds.has(linkId)) return '#338aff';
@@ -328,7 +352,32 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       return '#555566';
     }
     if (cflFlaggedIds && cflFlaggedIds.has(linkId)) return '#ff5555';
-    if (results && results.timeSteps[timeStep]) {
+    if (linkTheme === 'maxDepth' || linkTheme === 'roughness' || linkTheme === 'length' || linkTheme === 'slope') {
+      const c = project.conduits.find(cc => cc.id === linkId);
+      if (c) {
+        let val = 0, maxVal = 1;
+        if (linkTheme === 'roughness') { val = c.roughness; maxVal = 0.05; }
+        else if (linkTheme === 'length') { val = c.length; maxVal = Math.max(1, ...project.conduits.map(cc => cc.length)); }
+        else if (linkTheme === 'slope') {
+          const fn = [...project.junctions, ...project.storageUnits, ...project.outfalls, ...project.dividers].find(n => n.id === c.fromNode);
+          const tn = [...project.junctions, ...project.storageUnits, ...project.outfalls, ...project.dividers].find(n => n.id === c.toNode);
+          if (fn && tn && c.length > 0) {
+            val = Math.abs(fn.elevation - tn.elevation) / c.length;
+          }
+          maxVal = 0.05;
+        } else {
+          const xs = Array.isArray(project.xsections)
+            ? project.xsections.find((x: any) => x.linkId === linkId)
+            : (project.xsections as Record<string, any>)[linkId];
+          val = xs && typeof xs.geom1 === 'number' ? xs.geom1 : 0;
+          maxVal = 10;
+        }
+        const t = Math.min(1, Math.max(0, val / maxVal));
+        return COLORS.legend[Math.min(4, Math.floor(t * 5))];
+      }
+      return COLORS.linkDefault;
+    }
+    if (results && results.timeSteps[timeStep] && (linkTheme === 'flow' || linkTheme === 'velocity' || linkTheme === 'depth')) {
       const lr = results.timeSteps[timeStep].links[linkId];
       if (lr) {
         const val = linkTheme === 'flow' ? lr.flow : linkTheme === 'velocity' ? lr.velocity : lr.depth;
@@ -339,7 +388,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
     return COLORS.linkDefault;
-  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds, multiSelectIds, cflFlaggedIds]);
+  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds, multiSelectIds, cflFlaggedIds, project.conduits, project.xsections, project.junctions, project.storageUnits, project.outfalls, project.dividers]);
 
   const getLinkWidth = useCallback((linkId: string) => {
     if (results && results.timeSteps[timeStep]) {
@@ -357,6 +406,19 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       if (queryMatchIds.has(scId)) return 'rgba(255,68,68,0.35)';
       return 'rgba(85,85,102,0.15)';
     }
+    if (subcatchTheme === 'imperv' || subcatchTheme === 'area' || subcatchTheme === 'width' || subcatchTheme === 'slope') {
+      const sc = project.subcatchments.find(s => s.id === scId);
+      if (sc) {
+        let val = 0, maxVal = 1;
+        if (subcatchTheme === 'imperv') { val = sc.pctImperv / 100; maxVal = 1; }
+        else if (subcatchTheme === 'area') { val = sc.area; maxVal = Math.max(1, ...project.subcatchments.map(s => s.area)); }
+        else if (subcatchTheme === 'width') { val = sc.width; maxVal = Math.max(1, ...project.subcatchments.map(s => s.width)); }
+        else if (subcatchTheme === 'slope') { val = sc.slope; maxVal = Math.max(0.1, ...project.subcatchments.map(s => s.slope)); }
+        const t = Math.min(1, Math.max(0, val / maxVal));
+        return COLORS.legend[Math.min(4, Math.floor(t * 5))] + '40';
+      }
+      return COLORS.subcatchFill;
+    }
     if (results && results.timeSteps[timeStep]) {
       const sr = results.timeSteps[timeStep].subcatchments[scId];
       if (sr) {
@@ -365,11 +427,6 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         if (subcatchTheme === 'runoff') { val = sr.runoff; maxVal = 20; }
         else if (subcatchTheme === 'rainfall') { val = sr.rainfall; maxVal = 5; }
         else if (subcatchTheme === 'infiltration') { val = sr.infiltration; maxVal = 3; }
-        else {
-          const sc = project.subcatchments.find(s => s.id === scId);
-          val = sc ? sc.pctImperv / 100 : 0;
-          maxVal = 1;
-        }
         const t = Math.min(1, Math.max(0, val / maxVal));
         const idx = Math.min(4, Math.floor(t * 5));
         const c = COLORS.legend[idx];
@@ -1025,19 +1082,24 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       const d = Math.sqrt((sx - nsx) ** 2 + (sy - nsy) ** 2);
       if (d < hitRadius) {
         let info = '';
-        if (results && results.timeSteps[timeStep]) {
+        const junc = project.junctions.find(j => j.id === nodeId);
+        const outf = project.outfalls.find(o => o.id === nodeId);
+        const stor = project.storageUnits.find(s => s.id === nodeId);
+        if (nodeTheme === 'elevation') {
+          const el = junc?.elevation ?? outf?.elevation ?? stor?.elevation;
+          if (el != null) info = `Elev: ${el}`;
+        } else if (nodeTheme === 'maxDepth') {
+          const md = junc?.maxDepth ?? stor?.maxDepth ?? 0;
+          info = `Max Depth: ${md}`;
+        } else if (results && results.timeSteps[timeStep]) {
           const nr = results.timeSteps[timeStep].nodes[nodeId];
           if (nr) {
             info = nodeTheme === 'depth' ? `Depth: ${nr.depth.toFixed(2)}` : `Head: ${nr.head.toFixed(2)}`;
           }
         }
         if (!info) {
-          const junc = project.junctions.find(j => j.id === nodeId);
-          const outf = project.outfalls.find(o => o.id === nodeId);
-          const stor = project.storageUnits.find(s => s.id === nodeId);
-          if (junc) info = `Elev: ${junc.elevation}`;
-          else if (outf) info = `Elev: ${outf.elevation}`;
-          else if (stor) info = `Elev: ${stor.elevation}`;
+          const el = junc?.elevation ?? outf?.elevation ?? stor?.elevation;
+          if (el != null) info = `Elev: ${el}`;
         }
         setTooltip({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top - 8, id: nodeId, info });
         return;
@@ -1068,7 +1130,21 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       for (let i = 0; i < pts.length - 1; i++) {
         if (distToSegment(sx, sy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 8) {
           let info = '';
-          if (results && results.timeSteps[timeStep]) {
+          const conduit = project.conduits.find(c => c.id === link.id);
+          if (linkTheme === 'roughness' && conduit) {
+            info = `N: ${conduit.roughness}`;
+          } else if (linkTheme === 'length' && conduit) {
+            info = `Length: ${conduit.length}`;
+          } else if (linkTheme === 'slope' && conduit) {
+            const fn = [...project.junctions, ...project.storageUnits, ...project.outfalls, ...project.dividers].find(n => n.id === conduit.fromNode);
+            const tn = [...project.junctions, ...project.storageUnits, ...project.outfalls, ...project.dividers].find(n => n.id === conduit.toNode);
+            if (fn && tn && conduit.length > 0) info = `Slope: ${(Math.abs(fn.elevation - tn.elevation) / conduit.length).toFixed(4)}`;
+          } else if (linkTheme === 'maxDepth') {
+            const xs = Array.isArray(project.xsections)
+              ? project.xsections.find((x: any) => x.linkId === link.id)
+              : (project.xsections as Record<string, any>)[link.id];
+            if (xs && typeof xs.geom1 === 'number') info = `Max Depth: ${xs.geom1}`;
+          } else if (results && results.timeSteps[timeStep]) {
             const lr = results.timeSteps[timeStep].links[link.id];
             if (lr) {
               info = linkTheme === 'flow' ? `Flow: ${lr.flow.toFixed(2)}`
@@ -1077,7 +1153,6 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
             }
           }
           if (!info) {
-            const conduit = project.conduits.find(c => c.id === link.id);
             if (conduit) info = `Length: ${conduit.length}`;
             else info = link.type;
           }
@@ -1092,18 +1167,26 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         const screenPts = pts.map(p => worldToScreen(p[0], p[1]));
         if (pointInPolygon(sx, sy, screenPts)) {
           let info = '';
-          if (results && results.timeSteps[timeStep]) {
+          const sc = project.subcatchments.find(s => s.id === scId);
+          if (subcatchTheme === 'imperv' && sc) {
+            info = `Imperv: ${sc.pctImperv.toFixed(1)}%`;
+          } else if (subcatchTheme === 'area' && sc) {
+            info = `Area: ${sc.area}`;
+          } else if (subcatchTheme === 'width' && sc) {
+            info = `Width: ${sc.width}`;
+          } else if (subcatchTheme === 'slope' && sc) {
+            info = `Slope: ${sc.slope}%`;
+          } else if (results && results.timeSteps[timeStep]) {
             const sr = results.timeSteps[timeStep].subcatchments[scId];
             if (sr) {
               info = subcatchTheme === 'runoff' ? `Runoff: ${sr.runoff.toFixed(2)}`
                 : subcatchTheme === 'rainfall' ? `Rain: ${sr.rainfall.toFixed(2)}`
                 : subcatchTheme === 'infiltration' ? `Infil: ${sr.infiltration.toFixed(2)}`
-                : `Imperv: ${(project.subcatchments.find(s => s.id === scId)?.pctImperv || 0).toFixed(1)}%`;
+                : '';
             }
           }
-          if (!info) {
-            const sc = project.subcatchments.find(s => s.id === scId);
-            if (sc) info = `Area: ${sc.area}`;
+          if (!info && sc) {
+            info = `Area: ${sc.area}`;
           }
           setTooltip({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top - 8, id: scId, info });
           return;
