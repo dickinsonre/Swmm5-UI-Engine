@@ -19,6 +19,7 @@ import TableViewDialog from '@/components/swmm/TableViewDialog';
 import PropertyEditor from '@/components/swmm/PropertyEditor';
 import { SubDialogRouter, type SubDialogState } from '@/components/swmm/SubDialogs';
 import AIAssistPanel from '@/components/swmm/AIAssistPanel';
+import { HelpTopicsDialog, HelpTutorialDialog, HelpErrorsDialog } from '@/components/swmm/HelpDialogs';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
@@ -128,7 +129,7 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | null>(null);
   const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
@@ -1615,9 +1616,9 @@ export default function SwmmUI() {
         )}
         {activeMenu === 'Help' && (
           <div className="flex items-center gap-0.5">
-            <ToolbarButton icon={<HelpCircle className="w-4 h-4" />} label="Topics" testId="btn-topics" />
-            <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Tutorial" testId="btn-tutorial" />
-            <ToolbarButton icon={<AlertTriangle className="w-4 h-4" />} label="Errors" testId="btn-errors" />
+            <ToolbarButton icon={<HelpCircle className="w-4 h-4" />} label="Topics" onClick={() => setOpenDialog('helpTopics')} testId="btn-topics" />
+            <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Tutorial" onClick={() => setOpenDialog('helpTutorial')} testId="btn-tutorial" />
+            <ToolbarButton icon={<AlertTriangle className="w-4 h-4" />} label="Errors" onClick={() => setOpenDialog('helpErrors')} testId="btn-errors" />
             <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about-help" />
           </div>
         )}
@@ -3080,6 +3081,28 @@ export default function SwmmUI() {
       <AboutDialog
         open={openDialog === 'about'}
         onOpenChange={v => !v && setOpenDialog(null)}
+      />
+
+      <HelpTopicsDialog
+        open={openDialog === 'helpTopics'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+      />
+
+      <HelpTutorialDialog
+        open={openDialog === 'helpTutorial'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+      />
+
+      <HelpErrorsDialog
+        open={openDialog === 'helpErrors'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        onSelectObject={(id, type) => {
+          const validTypes = ['junction','outfall','divider','storage','conduit','pump','orifice','weir','outlet','subcatchment','raingage'] as const;
+          const objType = validTypes.find(t => t === type);
+          if (objType) setSelectedObj({ id, objType });
+          setOpenDialog(null);
+        }}
       />
 
       <ProjectDefaultsDialog
