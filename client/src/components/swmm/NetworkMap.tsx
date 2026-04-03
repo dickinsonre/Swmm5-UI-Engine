@@ -106,6 +106,8 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   const movingNode = useRef<string | null>(null);
   const backdropImgRef = useRef<HTMLImageElement | null>(null);
   const [backdropLoaded, setBackdropLoaded] = useState(false);
+  const [minimapPos, setMinimapPos] = useState<{ x: number; y: number } | null>(null);
+  const draggingMinimap = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const isLayerVisible = useCallback((layer: string) => layerVisibility[layer] !== false, [layerVisibility]);
 
   const nodeSizeFactor = preferences?.nodeSize ?? 1.0;
@@ -820,8 +822,10 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       const mmW = 160;
       const mmH = 120;
       const mmPad = 8;
-      const mmX = canvasSize.w - mmW - mmPad;
-      const mmY = canvasSize.h - mmH - mmPad;
+      const defaultX = canvasSize.w - mmW - mmPad;
+      const defaultY = canvasSize.h - mmH - mmPad;
+      const mmX = minimapPos ? Math.max(0, Math.min(minimapPos.x, canvasSize.w - mmW)) : defaultX;
+      const mmY = minimapPos ? Math.max(0, Math.min(minimapPos.y, canvasSize.h - mmH)) : defaultY;
 
       ctx.save();
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
@@ -829,6 +833,14 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       ctx.lineWidth = 1;
       ctx.fillRect(mmX, mmY, mmW, mmH);
       ctx.strokeRect(mmX, mmY, mmW, mmH);
+
+      ctx.fillStyle = 'rgba(44,62,107,0.15)';
+      ctx.fillRect(mmX, mmY, mmW, 10);
+      for (let gi = 0; gi < 3; gi++) {
+        ctx.fillStyle = 'rgba(44,62,107,0.25)';
+        ctx.fillRect(mmX + mmW / 2 - 8 + gi * 6, mmY + 3.5, 4, 1);
+        ctx.fillRect(mmX + mmW / 2 - 8 + gi * 6, mmY + 6, 4, 1);
+      }
 
       const ext = getExtent();
       const dataW = ext.maxX - ext.minX;
@@ -894,7 +906,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       ctx.restore();
     }
 
-  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, screenToWorld, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences, linkDrawState, rubberBandPos, groupSelectPoints, groupSelectedIds, interactionMode, cflFlaggedIds, discretizedJunctionIds, nodeSizeFactor, backdropLoaded, getExtent]);
+  }, [project, selectedObj, showSubcatchments, subcatchTheme, nodeTheme, linkTheme, timeStep, results, mapState, canvasSize, worldToScreen, screenToWorld, getNodeColor, getLinkColor, getLinkWidth, getSubcatchColor, isLayerVisible, preferences, linkDrawState, rubberBandPos, groupSelectPoints, groupSelectedIds, interactionMode, cflFlaggedIds, discretizedJunctionIds, nodeSizeFactor, backdropLoaded, getExtent, minimapPos]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -910,17 +922,39 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     }));
   }, []);
 
+  const getMinimapRect = useCallback(() => {
+    if (preferences?.showMinimap === false) return null;
+    const mmW = 160, mmH = 120, mmPad = 8;
+    const defaultX = canvasSize.w - mmW - mmPad;
+    const defaultY = canvasSize.h - mmH - mmPad;
+    const mmX = minimapPos ? Math.max(0, Math.min(minimapPos.x, canvasSize.w - mmW)) : defaultX;
+    const mmY = minimapPos ? Math.max(0, Math.min(minimapPos.y, canvasSize.h - mmH)) : defaultY;
+    return { x: mmX, y: mmY, w: mmW, h: mmH };
+  }, [canvasSize, minimapPos, preferences?.showMinimap]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 0 || e.button === 1) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect && e.button === 0) {
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const mm = getMinimapRect();
+        if (mm && sx >= mm.x && sx <= mm.x + mm.w && sy >= mm.y && sy <= mm.y + mm.h) {
+          draggingMinimap.current = { offsetX: sx - mm.x, offsetY: sy - mm.y };
+          e.preventDefault();
+          return;
+        }
+      }
+
       mouseDownPos.current = { x: e.clientX, y: e.clientY };
       hasDragged.current = false;
       mouseButton.current = e.button;
 
       if (e.button === 0 && e.ctrlKey && interactionMode === 'select' && selectedObj) {
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (rect) {
-          const sx = e.clientX - rect.left;
-          const sy = e.clientY - rect.top;
+        const rect2 = canvasRef.current?.getBoundingClientRect();
+        if (rect2) {
+          const sx = e.clientX - rect2.left;
+          const sy = e.clientY - rect2.top;
           const hit = hitTestNode(sx, sy);
           if (hit && hit.nodeId === selectedObj.id) {
             movingNode.current = hit.nodeId;
@@ -930,13 +964,21 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
 
       e.preventDefault();
     }
-  }, [interactionMode, selectedObj, hitTestNode]);
+  }, [interactionMode, selectedObj, hitTestNode, getMinimapRect]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+
+    if (draggingMinimap.current) {
+      setMinimapPos({
+        x: sx - draggingMinimap.current.offsetX,
+        y: sy - draggingMinimap.current.offsetY,
+      });
+      return;
+    }
 
     if (linkDrawState || (interactionMode === 'groupSelect' && groupSelectPoints && groupSelectPoints.length > 0)) {
       setRubberBandPos([sx, sy]);
@@ -1073,6 +1115,10 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   }, [project, worldToScreen, screenToWorld, isLayerVisible, showSubcatchments, results, timeStep, nodeTheme, linkTheme, subcatchTheme, linkDrawState, interactionMode, groupSelectPoints, onMoveNode]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    if (draggingMinimap.current) {
+      draggingMinimap.current = null;
+      return;
+    }
     const wasClick = mouseDownPos.current && !hasDragged.current && mouseButton.current === 0;
     const wasMoving = movingNode.current !== null;
     mouseDownPos.current = null;
@@ -1202,6 +1248,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   const handleMouseLeave = useCallback(() => {
     mouseDownPos.current = null;
     movingNode.current = null;
+    draggingMinimap.current = null;
     setTooltip(null);
   }, []);
 
