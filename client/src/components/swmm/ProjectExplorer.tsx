@@ -754,18 +754,26 @@ const GRID_EDITABLE_COLS: Record<string, Record<string, EditableDef>> = {
   outfall: {
     elev: { field: 'elevation', collection: 'outfalls' },
     type: { field: 'type', collection: 'outfalls', type: 'string' },
+    stageData: { field: 'stageData', collection: 'outfalls', type: 'string' },
     gated: { field: 'gated', collection: 'outfalls', type: 'string' },
+    routeTo: { field: 'routeTo', collection: 'outfalls', type: 'string' },
   },
   storage: {
     elev: { field: 'elevation', collection: 'storageUnits' },
     maxDepth: { field: 'maxDepth', collection: 'storageUnits' },
+    initDepth: { field: 'initDepth', collection: 'storageUnits' },
     shape: { field: 'shape', collection: 'storageUnits', type: 'string' },
+    evapFrac: { field: 'fevap', collection: 'storageUnits' },
   },
   conduit: {
     from: { field: 'fromNode', collection: 'conduits', type: 'string' },
     to: { field: 'toNode', collection: 'conduits', type: 'string' },
     length: { field: 'length', collection: 'conduits' },
     roughness: { field: 'roughness', collection: 'conduits' },
+    inOffset: { field: 'inOffset', collection: 'conduits' },
+    outOffset: { field: 'outOffset', collection: 'conduits' },
+    initFlow: { field: 'initFlow', collection: 'conduits' },
+    maxFlow: { field: 'maxFlow', collection: 'conduits' },
   },
   subcatchment: {
     raingage: { field: 'rainGage', collection: 'subcatchments', type: 'string' },
@@ -774,12 +782,21 @@ const GRID_EDITABLE_COLS: Record<string, Record<string, EditableDef>> = {
     pctImperv: { field: 'pctImperv', collection: 'subcatchments' },
     width: { field: 'width', collection: 'subcatchments' },
     slope: { field: 'slope', collection: 'subcatchments' },
+    curbLen: { field: 'curbLen', collection: 'subcatchments' },
+    snowPack: { field: 'snowPack', collection: 'subcatchments', type: 'string' },
+    nImperv: { field: 'nImperv', collection: 'subareas' },
+    nPerv: { field: 'nPerv', collection: 'subareas' },
+    sImperv: { field: 'sImperv', collection: 'subareas' },
+    sPerv: { field: 'sPerv', collection: 'subareas' },
+    pctZero: { field: 'pctZero', collection: 'subareas' },
   },
   pump: {
     from: { field: 'fromNode', collection: 'pumps', type: 'string' },
     to: { field: 'toNode', collection: 'pumps', type: 'string' },
     curve: { field: 'pumpCurve', collection: 'pumps', type: 'string' },
     status: { field: 'status', collection: 'pumps', type: 'string' },
+    startup: { field: 'startupDepth', collection: 'pumps' },
+    shutoff: { field: 'shutoffDepth', collection: 'pumps' },
   },
   weir: {
     from: { field: 'fromNode', collection: 'weirs', type: 'string' },
@@ -787,6 +804,8 @@ const GRID_EDITABLE_COLS: Record<string, Record<string, EditableDef>> = {
     type: { field: 'type', collection: 'weirs', type: 'string' },
     crest: { field: 'crestHeight', collection: 'weirs' },
     cd: { field: 'cd', collection: 'weirs' },
+    ec: { field: 'ec', collection: 'weirs' },
+    flapGate: { field: 'gated', collection: 'weirs', type: 'string' },
   },
   orifice: {
     from: { field: 'fromNode', collection: 'orifices', type: 'string' },
@@ -794,23 +813,28 @@ const GRID_EDITABLE_COLS: Record<string, Record<string, EditableDef>> = {
     type: { field: 'type', collection: 'orifices', type: 'string' },
     offset: { field: 'offset', collection: 'orifices' },
     cd: { field: 'cd', collection: 'orifices' },
+    flapGate: { field: 'gated', collection: 'orifices', type: 'string' },
   },
   outlet: {
     from: { field: 'fromNode', collection: 'outlets', type: 'string' },
     to: { field: 'toNode', collection: 'outlets', type: 'string' },
     offset: { field: 'offset', collection: 'outlets' },
     type: { field: 'type', collection: 'outlets', type: 'string' },
+    curve: { field: 'curveOrTable', collection: 'outlets', type: 'string' },
   },
   divider: {
     elev: { field: 'elevation', collection: 'dividers' },
     divertedLink: { field: 'divertedLink', collection: 'dividers', type: 'string' },
     type: { field: 'type', collection: 'dividers', type: 'string' },
     maxDepth: { field: 'maxDepth', collection: 'dividers' },
+    initDepth: { field: 'initDepth', collection: 'dividers' },
   },
   raingage: {
     format: { field: 'format', collection: 'raingages', type: 'string' },
     interval: { field: 'interval', collection: 'raingages', type: 'string' },
     scf: { field: 'scf', collection: 'raingages' },
+    source: { field: 'sourceType', collection: 'raingages', type: 'string' },
+    tsName: { field: 'sourceName', collection: 'raingages', type: 'string' },
   },
 };
 
@@ -842,12 +866,18 @@ function DataGridRow({ obj, idx, category, columns, project, results, timeStep, 
     if (isStr && !trimmed) { setEditCell(null); return; }
     const { field, collection } = editable;
     onUpdateProject(prev => {
-      const arr = (prev as any)[collection];
-      if (!Array.isArray(arr)) return prev;
-      const updated = arr.map((item: any) =>
-        item.id === obj.id ? { ...item, [field]: val } : item
-      );
-      return { ...prev, [collection]: updated };
+      const target = (prev as any)[collection];
+      if (Array.isArray(target)) {
+        const updated = target.map((item: any) =>
+          item.id === obj.id ? { ...item, [field]: val } : item
+        );
+        return { ...prev, [collection]: updated };
+      }
+      if (target && typeof target === 'object') {
+        const entry = target[obj.id] || {};
+        return { ...prev, [collection]: { ...target, [obj.id]: { ...entry, [field]: val } } };
+      }
+      return prev;
     });
     setEditCell(null);
   }, [editValue, category, obj.id, onUpdateProject]);
@@ -935,14 +965,18 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
       base.push(
         { key: 'elev', label: 'Elevation', getValue: o => o.elevation?.toFixed(2) ?? '' },
         { key: 'type', label: 'Type', getValue: o => o.type ?? '' },
+        { key: 'stageData', label: 'Stage Data', getValue: o => o.stageData ?? '' },
         { key: 'gated', label: 'Gated', getValue: o => o.gated ?? '' },
+        { key: 'routeTo', label: 'Route To', getValue: o => o.routeTo ?? '' },
       );
       break;
     case 'storage':
       base.push(
         { key: 'elev', label: 'Elevation', getValue: o => o.elevation?.toFixed(2) ?? '' },
         { key: 'maxDepth', label: 'Max Depth', getValue: o => o.maxDepth?.toFixed(2) ?? '' },
+        { key: 'initDepth', label: 'Init Depth', getValue: o => o.initDepth?.toFixed(2) ?? '0' },
         { key: 'shape', label: 'Shape', getValue: o => o.shape ?? '' },
+        { key: 'evapFrac', label: 'Evap Frac', getValue: o => o.fevap?.toFixed(2) ?? '0' },
       );
       break;
     case 'conduit':
@@ -951,6 +985,10 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'to', label: 'To', getValue: o => o.toNode ?? '' },
         { key: 'length', label: 'Length', getValue: o => o.length?.toFixed(2) ?? '' },
         { key: 'roughness', label: 'Roughness', getValue: o => o.roughness?.toFixed(4) ?? '' },
+        { key: 'inOffset', label: 'In Offset', getValue: o => o.inOffset?.toFixed(2) ?? '0' },
+        { key: 'outOffset', label: 'Out Offset', getValue: o => o.outOffset?.toFixed(2) ?? '0' },
+        { key: 'initFlow', label: 'Init Flow', getValue: o => o.initFlow?.toFixed(2) ?? '0' },
+        { key: 'maxFlow', label: 'Max Flow', getValue: o => o.maxFlow?.toFixed(0) ?? '0' },
         { key: 'shape', label: 'Shape', getValue: (o, p) => p.xsections[o.id]?.shape ?? '' },
         { key: 'geom1', label: 'Geom1', getValue: (o, p) => { const g = p.xsections[o.id]?.geom1; return g == null ? '' : typeof g === 'string' ? g : g.toFixed(2); } },
       );
@@ -967,6 +1005,8 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'to', label: 'To', getValue: o => o.toNode ?? '' },
         { key: 'curve', label: 'Curve', getValue: o => o.pumpCurve ?? '' },
         { key: 'status', label: 'Status', getValue: o => o.status ?? '' },
+        { key: 'startup', label: 'Startup Depth', getValue: o => o.startupDepth?.toFixed(2) ?? '' },
+        { key: 'shutoff', label: 'Shutoff Depth', getValue: o => o.shutoffDepth?.toFixed(2) ?? '' },
       );
       break;
     case 'weir':
@@ -976,6 +1016,8 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'type', label: 'Type', getValue: o => o.type ?? '' },
         { key: 'crest', label: 'Crest Ht', getValue: o => o.crestHeight?.toFixed(2) ?? '' },
         { key: 'cd', label: 'Disch Coef', getValue: o => o.cd?.toFixed(2) ?? '' },
+        { key: 'ec', label: 'End Coef', getValue: o => o.ec?.toFixed(2) ?? '' },
+        { key: 'flapGate', label: 'Flap Gate', getValue: o => o.gated ?? 'NO' },
       );
       break;
     case 'orifice':
@@ -985,6 +1027,7 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'type', label: 'Type', getValue: o => o.type ?? '' },
         { key: 'offset', label: 'Offset', getValue: o => o.offset?.toFixed(2) ?? '' },
         { key: 'cd', label: 'Disch Coef', getValue: o => o.cd?.toFixed(2) ?? '' },
+        { key: 'flapGate', label: 'Flap Gate', getValue: o => o.gated ?? 'NO' },
       );
       break;
     case 'subcatchment':
@@ -995,6 +1038,12 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'pctImperv', label: '% Imperv', getValue: o => o.pctImperv?.toFixed(1) ?? '' },
         { key: 'width', label: 'Width', getValue: o => o.width?.toFixed(0) ?? '' },
         { key: 'slope', label: 'Slope %', getValue: o => o.slope?.toFixed(2) ?? '' },
+        { key: 'curbLen', label: 'Curb Len', getValue: o => o.curbLen?.toFixed(0) ?? '0' },
+        { key: 'nImperv', label: 'N-Imperv', getValue: (o, p) => p.subareas[o.id]?.nImperv?.toFixed(3) ?? '' },
+        { key: 'nPerv', label: 'N-Perv', getValue: (o, p) => p.subareas[o.id]?.nPerv?.toFixed(3) ?? '' },
+        { key: 'sImperv', label: 'S-Imperv', getValue: (o, p) => p.subareas[o.id]?.sImperv?.toFixed(2) ?? '' },
+        { key: 'sPerv', label: 'S-Perv', getValue: (o, p) => p.subareas[o.id]?.sPerv?.toFixed(2) ?? '' },
+        { key: 'pctZero', label: '% Zero', getValue: (o, p) => p.subareas[o.id]?.pctZero?.toFixed(0) ?? '' },
       );
       break;
     case 'outlet':
@@ -1003,6 +1052,7 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'to', label: 'To', getValue: o => o.toNode ?? '' },
         { key: 'offset', label: 'Offset', getValue: o => o.offset?.toFixed(2) ?? '' },
         { key: 'type', label: 'Type', getValue: o => o.type ?? '' },
+        { key: 'curve', label: 'Curve', getValue: o => o.curveOrTable ?? '' },
       );
       if (results) {
         base.push(
@@ -1016,6 +1066,7 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'divertedLink', label: 'Div. Link', getValue: o => o.divertedLink ?? '' },
         { key: 'type', label: 'Type', getValue: o => o.type ?? '' },
         { key: 'maxDepth', label: 'Max Depth', getValue: o => o.maxDepth?.toFixed(2) ?? '' },
+        { key: 'initDepth', label: 'Init Depth', getValue: o => o.initDepth?.toFixed(2) ?? '0' },
       );
       if (results) {
         base.push(
@@ -1028,7 +1079,8 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'format', label: 'Format', getValue: o => o.format ?? '' },
         { key: 'interval', label: 'Interval', getValue: o => o.interval ?? '' },
         { key: 'scf', label: 'SCF', getValue: o => o.scf?.toString() ?? '' },
-        { key: 'source', label: 'Source', getValue: o => `${o.sourceType ?? ''} ${o.sourceName ?? ''}` },
+        { key: 'source', label: 'Source', getValue: o => o.source ?? o.sourceType ?? '' },
+        { key: 'tsName', label: 'TS Name', getValue: o => o.tsName ?? o.sourceName ?? '' },
       );
       break;
   }
@@ -1158,12 +1210,18 @@ function PropertyTable({ properties, selectedObj, project, onUpdateProject }: {
     const id = selectedObj.id;
 
     onUpdateProject(prev => {
-      const arr = (prev as any)[collection];
-      if (!Array.isArray(arr)) return prev;
-      const updated = arr.map((item: any) =>
-        item.id === id ? { ...item, [field]: val } : item
-      );
-      return { ...prev, [collection]: updated };
+      const target = (prev as any)[collection];
+      if (Array.isArray(target)) {
+        const updated = target.map((item: any) =>
+          item.id === id ? { ...item, [field]: val } : item
+        );
+        return { ...prev, [collection]: updated };
+      }
+      if (target && typeof target === 'object') {
+        const entry = target[id] || {};
+        return { ...prev, [collection]: { ...target, [id]: { ...entry, [field]: val } } };
+      }
+      return prev;
     });
     setEditingRow(null);
   }, [editingRow, editValue, properties, selectedObj, onUpdateProject]);
