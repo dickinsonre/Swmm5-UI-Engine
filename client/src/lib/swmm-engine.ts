@@ -554,147 +554,406 @@ function parseRptToResults(rptText: string, project: SwmmProject): SimulationRes
 }
 
 export function computeExtendedVariables(project: SwmmProject, results: SimulationResults): void {
-  const g = 32.174;
+  const flowUnits = (project.options?.FLOW_UNITS || '').toUpperCase();
+  const isSI = ['CMS', 'LPS', 'MLD'].includes(flowUnits);
+  const g = isSI ? 9.81 : 32.174;
+  const phi = isSI ? 1.0 : 1.4859;
+  const HEAD_TOL = 0.005;
+  const MIN_SURF_AREA = 12.566;
+
   const allNodes = [
-    ...project.junctions.map(j => ({ id: j.id, elev: j.elevation, maxD: j.maxDepth })),
-    ...project.outfalls.map(o => ({ id: o.id, elev: o.elevation, maxD: 0 })),
-    ...project.storageUnits.map(s => ({ id: s.id, elev: s.elevation, maxD: s.maxDepth })),
+    ...project.junctions.map(j => ({ id: j.id, elev: j.elevation, maxD: j.maxDepth, surD: j.surDepth, type: 'junction' as const })),
+    ...project.outfalls.map(o => ({ id: o.id, elev: o.elevation, maxD: 0, surD: 0, type: 'outfall' as const })),
+    ...project.storageUnits.map(s => ({ id: s.id, elev: s.elevation, maxD: s.maxDepth, surD: 0, type: 'storage' as const })),
+    ...project.dividers.map(d => ({ id: d.id, elev: d.elevation, maxD: d.maxDepth, surD: 0, type: 'divider' as const })),
   ];
   const nodeMap = new Map(allNodes.map(n => [n.id, n]));
 
+  interface ConduitData {
+    id: string; from: string; to: string; len: number; n: number;
+    shape: string; geom1: number; geom2: number; geom3: number; geom4: number; barrels: number;
+    invertUp: number; invertDn: number; slope: number;
+    entryLoss: number; exitLoss: number; avgLoss: number;
+    aFull: number; rFull: number; qFull: number;
+  }
+  const conduitMap = new Map<string, ConduitData>();
+
+  interface XSParams { shape: string; geom1: number; geom2: number; geom3: number; geom4: number; }
+
+  function xsArea(xs: XSParams, depth: number): number {
+    const D = xs.geom1 || 1;
+    const d = Math.max(0, Math.min(depth, D));
+    if (d <= 0) return 0;
+    switch (xs.shape.toUpperCase()) {
+      case 'CIRCULAR': {
+        if (d >= D) return Math.PI * D * D / 4;
+        const r = D / 2;
+        const th = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - d / r)));
+        return r * r / 2 * (th - Math.sin(th));
+      }
+      case 'RECT_CLOSED': case 'RECT_OPEN': return d * (xs.geom2 || D);
+      case 'TRAPEZOIDAL': {
+        const botW = xs.geom2 || D;
+        const sL = xs.geom3 || 0;
+        const sR = xs.geom4 || sL;
+        return d * (botW + 0.5 * (sL + sR) * d);
+      }
+      case 'TRIANGULAR': return (xs.geom2 || 1) * d * d;
+      case 'HORIZ_ELLIPSE': {
+        const a = (xs.geom2 || D * 1.5) / 2, b = D / 2;
+        if (d >= D) return Math.PI * a * b;
+        const t = Math.asin(Math.max(-1, Math.min(1, (d - b) / b)));
+        return a * b * (t + Math.PI / 2 + Math.sin(2 * t) / 2);
+      }
+      case 'VERT_ELLIPSE': {
+        const aR = D / 2, bR = (xs.geom2 || D * 0.67) / 2;
+        if (d >= D) return Math.PI * aR * bR;
+        const r2 = D / 2;
+        const th2 = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - d / r2)));
+        return r2 * r2 / 2 * (th2 - Math.sin(th2)) * (bR / r2);
+      }
+      default: {
+        if (d >= D) return Math.PI * D * D / 4;
+        const r = D / 2;
+        const th = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - d / r)));
+        return r * r / 2 * (th - Math.sin(th));
+      }
+    }
+  }
+
+  function xsWettedP(xs: XSParams, depth: number): number {
+    const D = xs.geom1 || 1;
+    const d = Math.max(0, Math.min(depth, D));
+    if (d <= 0) return 0;
+    switch (xs.shape.toUpperCase()) {
+      case 'CIRCULAR': {
+        if (d >= D) return Math.PI * D;
+        const r = D / 2;
+        return r * 2 * Math.acos(Math.max(-1, Math.min(1, 1 - d / r)));
+      }
+      case 'RECT_CLOSED': case 'RECT_OPEN': return (xs.geom2 || D) + 2 * d;
+      case 'TRAPEZOIDAL': {
+        const sL = xs.geom3 || 0;
+        const sR = xs.geom4 || sL;
+        return (xs.geom2 || D) + d * (Math.sqrt(1 + sL * sL) + Math.sqrt(1 + sR * sR));
+      }
+      case 'TRIANGULAR': {
+        const ss = xs.geom2 || 1;
+        return 2 * d * Math.sqrt(1 + ss * ss);
+      }
+      default: {
+        if (d >= D) return Math.PI * D;
+        const r = D / 2;
+        return r * 2 * Math.acos(Math.max(-1, Math.min(1, 1 - d / r)));
+      }
+    }
+  }
+
+  function xsTopW(xs: XSParams, depth: number): number {
+    const D = xs.geom1 || 1;
+    const d = Math.max(0.0001, Math.min(depth, D - 0.0001));
+    switch (xs.shape.toUpperCase()) {
+      case 'CIRCULAR': {
+        const r = D / 2;
+        return 2 * Math.sqrt(Math.max(0, r * r - (r - d) * (r - d)));
+      }
+      case 'RECT_CLOSED': case 'RECT_OPEN': return xs.geom2 || D;
+      case 'TRAPEZOIDAL': {
+        const sL = xs.geom3 || 0;
+        const sR = xs.geom4 || sL;
+        return (xs.geom2 || D) + (sL + sR) * d;
+      }
+      case 'TRIANGULAR': return 2 * (xs.geom2 || 1) * d;
+      default: {
+        const r = D / 2;
+        return 2 * Math.sqrt(Math.max(0, r * r - (r - d) * (r - d)));
+      }
+    }
+  }
+
+  function xsHydR(xs: XSParams, depth: number): number {
+    const A = xsArea(xs, depth);
+    const P = xsWettedP(xs, depth);
+    return P > 0 ? A / P : 0;
+  }
+
+  for (const c of project.conduits) {
+    const fromN = nodeMap.get(c.fromNode);
+    const toN = nodeMap.get(c.toNode);
+    const xs = project.xsections[c.id];
+    const loss = project.losses[c.id];
+    const shape = xs ? xs.shape.toUpperCase() : 'CIRCULAR';
+    const geom1 = xs ? (typeof xs.geom1 === 'number' ? xs.geom1 : parseFloat(xs.geom1 as string) || 1) : 1;
+    const geom2 = xs ? xs.geom2 : 0;
+    const geom3 = xs ? xs.geom3 : 0;
+    const geom4 = xs ? xs.geom4 : 0;
+    const barrels = xs ? xs.barrels : 1;
+    const invertUp = (fromN?.elev || 0) + (c.inOffset || 0);
+    const invertDn = (toN?.elev || 0) + (c.outOffset || 0);
+    const len = c.length || 1;
+    const slope = (invertUp - invertDn) / len;
+    const n = c.roughness || 0.013;
+    const xsp: XSParams = { shape, geom1, geom2, geom3, geom4 };
+    const aFullSingle = xsArea(xsp, geom1);
+    const rFull = xsHydR(xsp, geom1);
+    const aFull = aFullSingle * barrels;
+    const qFull = barrels * (phi / n) * aFullSingle * Math.pow(rFull || 0.01, 2 / 3) * Math.sqrt(Math.abs(slope) || 0.001);
+    conduitMap.set(c.id, {
+      id: c.id, from: c.fromNode, to: c.toNode, len, n, shape, geom1, geom2, geom3, geom4, barrels,
+      invertUp, invertDn, slope,
+      entryLoss: loss?.entryLoss || 0, exitLoss: loss?.exitLoss || 0, avgLoss: loss?.avgLoss || 0,
+      aFull, rFull, qFull,
+    });
+  }
+
   const allLinks = [
-    ...project.conduits.map(c => ({ id: c.id, from: c.fromNode, to: c.toNode, len: c.length, n: c.roughness })),
-    ...project.pumps.map(p => ({ id: p.id, from: p.fromNode, to: p.toNode, len: 0, n: 0 })),
-    ...project.weirs.map(w => ({ id: w.id, from: w.fromNode, to: w.toNode, len: 0, n: 0 })),
-    ...project.orifices.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, len: 0, n: 0 })),
-    ...project.outlets.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, len: 0, n: 0 })),
+    ...project.conduits.map(c => ({ id: c.id, from: c.fromNode, to: c.toNode })),
+    ...project.pumps.map(p => ({ id: p.id, from: p.fromNode, to: p.toNode })),
+    ...project.weirs.map(w => ({ id: w.id, from: w.fromNode, to: w.toNode })),
+    ...project.orifices.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode })),
+    ...project.outlets.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode })),
   ];
   const linkMap = new Map(allLinks.map(l => [l.id, l]));
 
+  const nodeDegree = new Map<string, number>();
+  const nodeUpLinks = new Map<string, string[]>();
+  const nodeDnLinks = new Map<string, string[]>();
+  for (const l of allLinks) {
+    nodeDegree.set(l.from, (nodeDegree.get(l.from) || 0) + 1);
+    nodeDegree.set(l.to, (nodeDegree.get(l.to) || 0) + 1);
+    if (!nodeUpLinks.has(l.to)) nodeUpLinks.set(l.to, []);
+    nodeUpLinks.get(l.to)!.push(l.id);
+    if (!nodeDnLinks.has(l.from)) nodeDnLinks.set(l.from, []);
+    nodeDnLinks.get(l.from)!.push(l.id);
+  }
+
+  const nodeCrown = new Map<string, number>();
+  for (const nd of allNodes) {
+    let crown = nd.elev + nd.maxD;
+    for (const [, cd] of conduitMap) {
+      if (cd.from === nd.id) { const c = cd.invertUp + cd.geom1; if (c > crown) crown = c; }
+      if (cd.to === nd.id) { const c = cd.invertDn + cd.geom1; if (c > crown) crown = c; }
+    }
+    nodeCrown.set(nd.id, crown);
+  }
+
+  const cumInfil = new Map<string, number>();
+  const cumRain = new Map<string, number>();
   let prevStorage = 0;
-  for (const ts of results.timeSteps) {
-    const dt = 30;
+  const dt = results.timeSteps.length > 1
+    ? Math.max(1, (results.timeSteps[1].time - results.timeSteps[0].time))
+    : 30;
+
+  for (let tIdx = 0; tIdx < results.timeSteps.length; tIdx++) {
+    const ts = results.timeSteps[tIdx];
+    const prevTs = tIdx > 0 ? results.timeSteps[tIdx - 1] : null;
+
     for (const [nodeId, nr] of Object.entries(ts.nodes)) {
       const nd = nodeMap.get(nodeId);
       if (!nr.extended) nr.extended = {};
       const ext = nr.extended;
       const maxD = nd?.maxD || 6;
-      ext.surfaceArea = maxD > 0 ? (nr.depth / maxD) * 50 + 5 : 12.5;
+      const invert = nd?.elev || 0;
+      const crown = nodeCrown.get(nodeId) || (invert + maxD);
+
+      ext.surfaceArea = nd?.type === 'storage' ? Math.max(MIN_SURF_AREA, maxD > 0 ? (nr.depth / maxD) * 200 + 50 : MIN_SURF_AREA) : MIN_SURF_AREA;
       ext.nodeTimestep = dt;
-      const inSum = nr.totalInflow;
-      const outSum = Math.max(0, inSum - nr.flooding);
-      ext.nodeCE = inSum > 0 ? Math.abs(inSum - outSum) / (inSum + 0.001) : 0;
-      ext.dqdh = inSum > 0.01 ? inSum / (nr.depth + 0.01) : 0;
-      ext.nrDenom = ext.surfaceArea / dt + ext.dqdh;
-      ext.fResidual = Math.abs(inSum - outSum - nr.flooding);
-      ext.crownElev = (nd?.elev || 0) + maxD;
-      ext.prevArea = ext.surfaceArea * 0.98;
-      ext.headCorrection = ext.nrDenom > 0 ? ext.fResidual / ext.nrDenom : 0;
-      ext.nodeIterations = ext.headCorrection > 0.1 ? Math.ceil(ext.headCorrection * 8) : 1;
-      ext.nodeConvergence = ext.headCorrection < 0.5 ? 1 : 0;
+      ext.crownElev = crown;
+
+      const prevVol = prevTs ? (prevTs.nodes[nodeId]?.volume ?? nr.volume) : nr.volume;
+      const dVdt = (nr.volume - prevVol) / dt;
+      const estimatedOutflow = Math.max(0, nr.totalInflow - nr.flooding - dVdt);
+
+      ext.nodeCE = nr.totalInflow > 0.001 ? Math.abs(nr.totalInflow - estimatedOutflow - nr.flooding - dVdt) / (nr.totalInflow + 0.001) : 0;
+
+      let dqdh = 0;
+      const upLinks = nodeUpLinks.get(nodeId) || [];
+      const dnLinks = nodeDnLinks.get(nodeId) || [];
+      for (const lid of [...upLinks, ...dnLinks]) {
+        const cd = conduitMap.get(lid);
+        if (cd && cd.len > 0) {
+          const linkDepth = ts.links[lid]?.depth || 0;
+          const cdXS: XSParams = { shape: cd.shape, geom1: cd.geom1, geom2: cd.geom2, geom3: cd.geom3, geom4: cd.geom4 };
+          const aMidEst = xsArea(cdXS, Math.max(0.001, linkDepth));
+          dqdh += g * aMidEst * dt / cd.len;
+        }
+      }
+      ext.dqdh = dqdh;
+      ext.nrDenom = dqdh + ext.surfaceArea / dt;
+      const fRes = nr.totalInflow - estimatedOutflow - dVdt;
+      ext.fResidual = fRes;
+      ext.prevArea = ext.surfaceArea;
+      ext.headCorrection = ext.nrDenom > 0 ? -fRes / ext.nrDenom : 0;
+      const absHC = Math.abs(ext.headCorrection);
+      ext.nodeIterations = absHC < HEAD_TOL ? 1 : absHC < 0.05 ? 3 : absHC < 0.5 ? 5 : 8;
+      ext.nodeConvergence = absHC < HEAD_TOL ? 1 : 0;
       ext.nodeInfil = 0;
       ext.nodeEvap = 0;
-      ext.nodeDegree = 2;
-      ext.oldAreaByDt = ext.prevArea / dt;
+      ext.nodeDegree = nodeDegree.get(nodeId) || 0;
+      ext.oldAreaByDt = ext.surfaceArea / dt;
       ext.rdiiTotal = 0;
       ext.rdiiUH1 = 0;
       ext.rdiiUH2 = 0;
       ext.rdiiUH3 = 0;
-      ext.dwfInflow = nr.lateralInflow * 0.1;
-      ext.totalOutflow = outSum;
+      ext.dwfInflow = nr.lateralInflow > 0 ? nr.lateralInflow * 0.1 : 0;
+      ext.totalOutflow = estimatedOutflow;
     }
 
     for (const [linkId, lr] of Object.entries(ts.links)) {
       const lk = linkMap.get(linkId);
+      const cd = conduitMap.get(linkId);
       if (!lr.extended) lr.extended = {};
       const ext = lr.extended;
-      const xs = project.xsections[linkId];
-      const maxDia = xs ? (typeof xs.geom1 === 'number' ? xs.geom1 : 2) : 2;
-      const roughness = lk?.n || 0.013;
-      const len = lk?.len || 100;
+
+      const geom1 = cd?.geom1 || 2;
+      const barrels = cd?.barrels || 1;
+      const roughness = cd?.n || 0.013;
+      const len = cd?.len || 100;
+      const lxs: XSParams = cd
+        ? { shape: cd.shape, geom1: cd.geom1, geom2: cd.geom2, geom3: cd.geom3, geom4: cd.geom4 }
+        : { shape: 'CIRCULAR', geom1: 2, geom2: 0, geom3: 0, geom4: 0 };
       const fromN = lk ? nodeMap.get(lk.from) : undefined;
       const toN = lk ? nodeMap.get(lk.to) : undefined;
       const fromNr = lk ? ts.nodes[lk.from] : undefined;
       const toNr = lk ? ts.nodes[lk.to] : undefined;
 
-      const depthRatio = maxDia > 0 ? lr.depth / maxDia : 0;
-      const theta = 2 * Math.acos(1 - 2 * Math.min(depthRatio, 1));
-      const aMid = (maxDia * maxDia / 8) * (theta - Math.sin(theta)) || 0.01;
-      const pWet = (maxDia / 2) * theta || 0.01;
-      const rMid = pWet > 0 ? aMid / pWet : 0;
-      const wMid = maxDia * Math.sin(theta / 2) || 0;
+      const h1 = fromNr ? fromNr.head : (fromN?.elev || 0);
+      const h2 = toNr ? toNr.head : (toN?.elev || 0);
+      const invertUp = cd?.invertUp || (fromN?.elev || 0);
+      const invertDn = cd?.invertDn || (toN?.elev || 0);
+      const y1 = Math.max(0, h1 - invertUp);
+      const y2 = Math.max(0, h2 - invertDn);
+      const slope = cd?.slope || (len > 0 ? (invertUp - invertDn) / len : 0.01);
 
-      ext.froude = (aMid > 0.001 && wMid > 0.001) ? Math.abs(lr.velocity) / Math.sqrt(g * aMid / wMid) : 0;
-      const slopeFrac = len > 0 && fromN && toN ? Math.min(Math.abs(fromN.elev - toN.elev) / len, 0.05) : 0.01;
-      ext.f1Area = aMid * (1 + slopeFrac);
-      ext.f2Area = aMid * (1 - slopeFrac);
-      ext.v1 = lr.velocity * (1 + slopeFrac * 2);
-      ext.v2 = lr.velocity * (1 - slopeFrac * 2);
-      const slope = len > 0 && fromN && toN ? (fromN.elev - toN.elev) / len : 0.01;
-      const sf = roughness > 0 && rMid > 0 ? (roughness * lr.velocity / (1.486 * Math.pow(rMid, 2/3))) ** 2 : 0;
-      ext.dq1Inertia = aMid * (lr.velocity - lr.velocity * 0.95) / dt;
-      ext.dq2Pressure = g * aMid * (slope) * len / len;
-      ext.dq3Friction = g * aMid * sf * len / len;
-      ext.dq4Losses = 0;
-      ext.dq5Lateral = 0;
-      ext.dq6Convect = 0;
-      ext.upHLoss = 0;
-      ext.dnHLoss = 0;
-      ext.frictionHLoss = sf * len;
+      const flowPerBarrel = barrels > 1 ? lr.flow / barrels : lr.flow;
+      const dMid = Math.max(0.001, Math.min(lr.depth, geom1));
+      const aMid = xsArea(lxs, dMid) || 0.01;
+      const rMid = xsHydR(lxs, dMid) || 0.001;
+      const wMid = xsTopW(lxs, dMid) || 0.001;
+
+      const a1 = xsArea(lxs, Math.max(0.001, Math.min(y1, geom1)));
+      const a2 = xsArea(lxs, Math.max(0.001, Math.min(y2, geom1)));
+      const r1 = xsHydR(lxs, Math.max(0.001, Math.min(y1, geom1)));
+      const r2 = xsHydR(lxs, Math.max(0.001, Math.min(y2, geom1)));
+      const w1 = xsTopW(lxs, Math.max(0.001, Math.min(y1, geom1)));
+      const w2 = xsTopW(lxs, Math.max(0.001, Math.min(y2, geom1)));
+      const v1 = a1 > 0.001 ? flowPerBarrel / a1 : 0;
+      const v2 = a2 > 0.001 ? flowPerBarrel / a2 : 0;
+      const vMid = aMid > 0.001 ? flowPerBarrel / aMid : lr.velocity;
+
+      const celerity = wMid > 0 ? Math.sqrt(g * aMid / wMid) : 1;
+      const froude = celerity > 0 ? Math.abs(vMid) / celerity : 0;
+      ext.froude = froude;
+      ext.f1Area = a1;
+      ext.f2Area = a2;
+      ext.v1 = v1;
+      ext.v2 = v2;
+
+      let sf = 0;
+      if (aMid > 0 && rMid > 0 && roughness > 0) {
+        const qn = roughness * Math.abs(flowPerBarrel) / (phi * aMid * Math.pow(rMid, 2 / 3));
+        sf = qn * qn;
+      }
       ext.hwFrictionSlope = sf;
-      ext.qNormal = rMid > 0 ? (1.486 / roughness) * aMid * Math.pow(rMid, 2/3) * Math.sqrt(Math.abs(slope)) : 0;
-      const dqSum = Math.abs(ext.dq1Inertia) + Math.abs(ext.dq2Pressure) + Math.abs(ext.dq3Friction);
-      ext.stVenantBalance = dqSum > 0 ? Math.abs(ext.dq1Inertia) / dqSum : 0;
-      ext.linkDqdh = lr.depth > 0.01 ? lr.flow / lr.depth : 0;
+
+      let sigma: number;
+      if (froude <= 0.5) sigma = 1.0;
+      else if (froude >= 1.0) sigma = 0.0;
+      else sigma = 2.0 * (1.0 - froude);
+
+      const qOldTotal = prevTs ? (prevTs.links[linkId]?.flow ?? 0) : 0;
+      const qOld = barrels > 1 ? qOldTotal / barrels : qOldTotal;
+      const DQ1 = sigma * qOld;
+      const DQ2 = sigma * dt * g * aMid * (h1 - h2) / len;
+      const sfDq = roughness > 0 && aMid > 0 && rMid > 0
+        ? dt * g * roughness * roughness * Math.abs(flowPerBarrel) / (phi * phi * aMid * Math.pow(rMid, 4 / 3))
+        : 0;
+      const entryHL = (cd?.entryLoss || 0) * v1 * v1 / (2 * g);
+      const exitHL = (cd?.exitLoss || 0) * v2 * v2 / (2 * g);
+      const avgHL = (cd?.avgLoss || 0) * vMid * vMid / (2 * g) * len;
+      const DQ4 = entryHL + exitHL + avgHL;
+      const latUS = fromNr?.lateralInflow || 0;
+      const latDS = toNr?.lateralInflow || 0;
+      const DQ5 = len > 0 ? 0.5 * dt * (latUS + latDS) * vMid / len : 0;
+      const beta = 1.0;
+      const convA1 = a1 > 0.001 ? beta * flowPerBarrel * flowPerBarrel / a1 : 0;
+      const convA2 = a2 > 0.001 ? beta * flowPerBarrel * flowPerBarrel / a2 : 0;
+      const DQ6 = len > 0 ? sigma * dt * (convA2 - convA1) / len : 0;
+      const DQ3 = dt * g * aMid * sf * Math.sign(flowPerBarrel);
+
+      ext.dq1Inertia = DQ1;
+      ext.dq2Pressure = DQ2;
+      ext.dq3Friction = DQ3;
+      ext.dq4Losses = DQ4;
+      ext.dq5Lateral = DQ5;
+      ext.dq6Convect = DQ6;
+
+      ext.upHLoss = entryHL;
+      ext.dnHLoss = exitHL;
+      ext.frictionHLoss = sf * len;
+
+      const qNormal = (rMid > 0 && slope > 0) ? (phi / roughness) * aMid * Math.pow(rMid, 2 / 3) * Math.sqrt(slope) : 0;
+      ext.qNormal = qNormal;
+
+      const denom = 1.0 + sfDq;
+      const qRecon = denom > 0 ? (DQ1 + DQ2 + DQ5 - DQ6) / denom : 0;
+      const momResidual = flowPerBarrel - qRecon;
+      const totalMag = Math.abs(DQ1) + Math.abs(DQ2) + Math.abs(DQ3) + Math.abs(DQ4) + Math.abs(DQ5) + Math.abs(DQ6);
+      ext.stVenantBalance = Math.abs(flowPerBarrel) > 0.001 ? Math.abs(momResidual / flowPerBarrel) : 0;
+      ext.linkDqdh = lr.depth > 0.01 ? flowPerBarrel / lr.depth : 0;
 
       ext.aMid = aMid;
       ext.aWeighted = aMid;
-      ext.a1 = ext.f1Area;
-      ext.a2 = ext.f2Area;
+      ext.a1 = a1;
+      ext.a2 = a2;
       ext.rMid = rMid;
       ext.rWeighted = rMid;
-      ext.r1 = rMid * (1 + slopeFrac);
-      ext.r2 = rMid * (1 - slopeFrac);
-      ext.w1 = wMid * (1 + slopeFrac * 1.5);
-      ext.w2 = wMid * (1 - slopeFrac * 1.5);
-      ext.y1 = lr.depth * (1 + slopeFrac);
-      ext.y2 = lr.depth * (1 - slopeFrac);
+      ext.r1 = r1;
+      ext.r2 = r2;
+      ext.w1 = w1;
+      ext.w2 = w2;
+      ext.y1 = Math.min(y1, geom1);
+      ext.y2 = Math.min(y2, geom1);
 
-      const h1 = fromNr ? fromNr.head : (fromN?.elev || 0);
-      const h2 = toNr ? toNr.head : (toN?.elev || 0);
       ext.hgl = (h1 + h2) / 2;
       ext.h1Head = h1;
       ext.h2Head = h2;
-      ext.vhUp = (ext.v1 ** 2) / (2 * g);
-      ext.vhMid = (lr.velocity ** 2) / (2 * g);
-      ext.vhDn = (ext.v2 ** 2) / (2 * g);
-      ext.frictionLossHf = ext.frictionHLoss;
-      ext.bernoulliLHS = h1 + ext.vhUp;
-      ext.bernoulliRHS = h2 + ext.vhDn + ext.frictionLossHf;
+      ext.vhUp = v1 * v1 / (2 * g);
+      ext.vhMid = vMid * vMid / (2 * g);
+      ext.vhDn = v2 * v2 / (2 * g);
+      ext.frictionLossHf = sf * len;
+      ext.bernoulliLHS = h1 + ext.vhUp + entryHL;
+      ext.bernoulliRHS = h2 + ext.vhDn + exitHL + sf * len;
       ext.rho = 1.0;
-      ext.sigma = ext.froude > 1 ? 0.5 : 1.0;
+      ext.sigma = sigma;
 
       ext.areaSWMM3 = aMid;
       ext.areaSWMM4 = aMid;
       ext.areaSWMM5 = aMid;
 
-      ext.usNormalArea = aMid;
-      ext.dsNormalArea = aMid;
+      const aFullEst = cd?.aFull || aMid;
+      ext.usNormalArea = aFullEst;
+      ext.dsNormalArea = aFullEst;
       ext.linkTimestep = dt;
-      ext.linkIterations = 2;
-      ext.akon = roughness > 0 ? 1.486 / roughness : 114;
-      ext.fasnh = roughness > 0 ? roughness * Math.pow(len, 1/3) : 1;
+      ext.linkIterations = sfDq > 0.5 ? 4 : 2;
+      ext.akon = roughness > 0 ? phi / roughness : 114;
+      ext.fasnh = roughness > 0 ? roughness * Math.pow(len, 1 / 3) : 1;
       ext.actualLength = len;
       ext.modLength = len;
       ext.actualRoughness = roughness;
       ext.roughFactor = 1.0;
       ext.bedSlope = slope;
-      ext.qMax = rMid > 0 ? (1.486 / roughness) * (Math.PI * (maxDia / 2) ** 2 / 4) * Math.pow(maxDia / 4, 2/3) * Math.sqrt(Math.abs(slope)) : 0;
-      ext.beta = 1.0;
+      ext.qMax = cd?.qFull || 0;
+      ext.beta = beta;
       ext.setting = 1.0;
       ext.targetSetting = 1.0;
       ext.timeOpen = 0;
-      ext.flowClass = ext.froude < 0.01 ? 0 : ext.froude < 1 ? 1 : ext.froude < 1.001 ? 3 : 2;
+
+      if (lr.depth <= 0.001) ext.flowClass = 0;
+      else if (dOverD >= 0.97) ext.flowClass = 4;
+      else if (froude < 0.95) ext.flowClass = 1;
+      else if (froude > 1.05) ext.flowClass = 2;
+      else ext.flowClass = 3;
     }
 
     for (const [scId, sr] of Object.entries(ts.subcatchments)) {
@@ -704,78 +963,129 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
       const pctImperv = sc?.pctImperv || 50;
       const area = sc?.area || 5;
       const impFrac = pctImperv / 100;
+      const subarea = project.subareas?.[scId];
+      const sImperv = subarea?.sImperv || 0.05;
+      const sPerv = subarea?.sPerv || 0.1;
+      const pctZero = subarea?.pctZero || 25;
+      const pctZeroFrac = pctZero / 100;
 
-      ext.runoffImperv0 = sr.runoff * impFrac * 0.3;
-      ext.runoffImperv1 = sr.runoff * impFrac * 0.7;
-      ext.runoffPerv = sr.runoff * (1 - impFrac);
-      ext.depthImperv0 = sr.rainfall > 0 ? 0.01 : 0;
-      ext.depthImperv1 = sr.rainfall > 0 ? 0.02 : 0;
-      ext.depthPerv = sr.rainfall > 0 ? sr.infiltration * 0.1 : 0;
-      ext.avgSurfDepth = (ext.depthImperv0 * impFrac * 0.3 + ext.depthImperv1 * impFrac * 0.7 + ext.depthPerv * (1 - impFrac));
+      const netRainImperv = Math.max(0, sr.rainfall - sr.evap);
+      const netRainPerv = Math.max(0, sr.rainfall - sr.evap - sr.infiltration);
+      ext.runoffImperv0 = netRainImperv > sImperv ? sr.runoff * impFrac * pctZeroFrac : 0;
+      ext.runoffImperv1 = netRainImperv > sImperv ? sr.runoff * impFrac * (1 - pctZeroFrac) : 0;
+      ext.runoffPerv = netRainPerv > sPerv ? sr.runoff * (1 - impFrac) : 0;
+      ext.depthImperv0 = sr.rainfall > 0 ? Math.min(netRainImperv * dt / 3600, sImperv) : 0;
+      ext.depthImperv1 = sr.rainfall > 0 ? Math.min(netRainImperv * dt / 3600, sImperv * 1.5) : 0;
+      ext.depthPerv = sr.rainfall > 0 ? Math.min(netRainPerv * dt / 3600, sPerv) : 0;
+      ext.avgSurfDepth = ext.depthImperv0 * impFrac * pctZeroFrac + ext.depthImperv1 * impFrac * (1 - pctZeroFrac) + ext.depthPerv * (1 - impFrac);
       ext.runon = 0;
       ext.subArea = area;
-      ext.impAreaDS = area * impFrac * 0.7;
-      ext.impAreaNoDS = area * impFrac * 0.3;
+      ext.impAreaDS = area * impFrac * (1 - pctZeroFrac);
+      ext.impAreaNoDS = area * impFrac * pctZeroFrac;
+      ext.pervArea = area * (1 - impFrac);
+      ext.nonLidArea = area;
 
-      ext.lidDrain = 0;
-      ext.lidInfil = 0;
-      ext.lidRunoff = 0;
-      ext.lidEvap = 0;
-      ext.lidPerc = 0;
-      ext.lidStorVol = 0;
-      ext.lidSurfVol = 0;
-      ext.lidPaveVol = 0;
-      ext.lidSoilVol = 0;
-      ext.lidStorVol2 = 0;
-      ext.lidBypass = 0;
-      ext.lidSurfInflow = 0;
-      ext.lidSurfDepth = 0;
+      ext.lidArea = 0; ext.lidCaptureArea = 0; ext.impToLidFlow = 0; ext.lidCount = 0;
+      ext.lidSurfInflow = 0; ext.lidEvap = 0; ext.lidSurfInfil = 0;
+      ext.lidPavePerc = 0; ext.lidSoilPerc = 0; ext.lidStorExfil = 0;
+      ext.lidSurfOverflow = 0; ext.lidStorDrain = 0;
+      ext.lidSurfDepth = 0; ext.lidPaveDepth = 0; ext.lidSoilMoist = 0;
+      ext.lidStorDepth = 0; ext.lidTotalInflow = 0;
 
-      ext.gwUpper = sr.moisture * 2;
-      ext.gwLower = sr.gwElev > 0 ? 0.8 : 0.5;
-      ext.gwLateral = sr.gwOutflow * 0.6;
-      ext.gwDeep = sr.gwOutflow * 0.4;
-      ext.gwElev2 = sr.gwElev;
-      ext.gwTheta = sr.moisture;
-      ext.gwPerc = sr.infiltration * 0.3;
-      ext.gwET = sr.evap * 0.5;
-      ext.gwMaxInfil = 3.0;
-      ext.gwHeadDiff = sr.gwElev > 0 ? sr.gwElev - 80 : 0;
-      ext.gwCoeffA = 0.01;
-      ext.gwCoeffB = 0.5;
-      ext.gwBoundaryH = 80;
-      ext.gwChannelH = 85;
-      ext.gwTailwater = 82;
+      ext.gwFlowA1 = sr.gwOutflow > 0 ? sr.gwOutflow * 0.6 : 0;
+      ext.gwFlowA2 = sr.gwOutflow > 0 ? sr.gwOutflow * 0.3 : 0;
+      ext.gwFlowA3 = sr.gwOutflow > 0 ? sr.gwOutflow * 0.1 : 0;
+      ext.gwPercolation = sr.infiltration > 0 ? sr.infiltration * 0.2 : 0;
+      ext.gwEvapLoss = sr.evap > 0 ? sr.evap * 0.3 : 0;
+      ext.gwHstar = sr.gwElev > 0 ? sr.gwElev + 2 : 0;
+      ext.gwHsw = sr.gwElev;
+      ext.gwLowerDepth = sr.gwElev > 0 ? 5 : 0;
+      ext.gwTotalDepth = sr.gwElev > 0 ? sr.moisture * 20 : 0;
+      ext.aqBottomElev = sr.gwElev > 0 ? sr.gwElev - 10 : 0;
+      ext.aqPorosity = 0.4;
+      ext.gwMaxFlow = sr.gwOutflow > 0 ? sr.gwOutflow * 3 : 0;
+      ext.gwMaxNegFlow = 0;
+      ext.waterTableLevel = sr.gwElev;
+      ext.gwNodeFlow = sr.gwOutflow;
+      ext.gwOldFlow = prevTs ? (prevTs.subcatchments[scId]?.gwOutflow ?? 0) : 0;
 
-      ext.snowSWE = sr.snowDepth * 0.3;
-      ext.snowCold = sr.snowDepth > 0 ? 0.5 : 0;
-      ext.snowLiquid = sr.snowDepth > 0 ? sr.snowDepth * 0.05 : 0;
-      ext.snowMelt = sr.snowDepth > 0 ? sr.snowDepth * 0.01 : 0;
-      ext.snowCover = sr.snowDepth > 0 ? 1.0 : 0;
-      ext.snowTemp = sr.snowDepth > 0 ? 30 : 50;
+      ext.snowmelt = sr.snowDepth > 0 ? sr.snowDepth * 0.01 : 0;
+      ext.immediateMelt = 0;
+      ext.rainOnSnowMelt = sr.snowDepth > 0 && sr.rainfall > 0 ? sr.rainfall * 0.05 : 0;
+      ext.snowFreeWater = sr.snowDepth > 0 ? sr.snowDepth * 0.05 : 0;
+      ext.snowColdContent = sr.snowDepth > 0 ? 0.5 : 0;
+      ext.snowCoverage = sr.snowDepth > 0 ? 1.0 : 0;
 
-      ext.infilRate = sr.infiltration;
-      ext.infilCumul = sr.infiltration * 0.5;
-      ext.infilFp = 3.0;
-      ext.infilFc = 0.5;
-      ext.infilF0 = 4.0;
-      ext.infilKsat = 0.5;
-      ext.infilPsi = 6.0;
-      ext.infilIMD = 0.25;
-      ext.infilFu = sr.infiltration * 0.4;
-      ext.infilLu = 12;
-      ext.infilSat = sr.moisture;
-      ext.infilTP = 0;
-      ext.infilRecov = 0;
-      ext.infilKs = 0.5;
-      ext.infilSavg = 4.0;
-      ext.infilDtheta = 0.15;
-      ext.infilMaxRate = 4.0;
-      ext.infilDecay = 0.001;
-      ext.infilDryTime = 0;
-      ext.infilPrevRain = sr.rainfall;
-      ext.infilAMC = sr.moisture > 0.3 ? 3 : sr.moisture > 0.15 ? 2 : 1;
-      ext.infilCN = 75 + pctImperv * 0.2;
+      const prevCumI = cumInfil.get(scId) || 0;
+      const prevCumR = cumRain.get(scId) || 0;
+      const stepInfil = sr.infiltration * dt / 3600;
+      const stepRain = sr.rainfall * dt / 3600;
+      const cumI = prevCumI + stepInfil;
+      const cumR = prevCumR + stepRain;
+      cumInfil.set(scId, cumI);
+      cumRain.set(scId, cumR);
+
+      const infilData = project.infiltration?.[scId];
+      const method = infilData?.method || 'GREEN_AMPT';
+      const vals = infilData?.values || [];
+
+      ext.ulThickness = sr.moisture > 0 ? sr.moisture * 10 : 1;
+      ext.fTotal = cumI;
+      ext.fUpper = cumI * 0.6;
+      ext.fUpperMax = 5;
+      ext.currentMoisture = sr.moisture;
+
+      if (method.includes('GREEN') || method.includes('GA')) {
+        const Ks = vals[0] || 0.5;
+        const psi = vals[1] || 6;
+        const IMD = vals[2] || 0.25;
+        ext.imd = IMD;
+        ext.imdByEvent = IMD;
+        ext.satFlag = cumI > psi * IMD ? 1 : 0;
+        ext.currentInfilRate = sr.infiltration;
+        ext.gaIMD = IMD;
+        ext.gaF = cumI;
+        ext.gaFu = cumI * 0.6;
+        ext.gaLu = IMD > 0 ? cumI / IMD : cumI;
+        ext.gaT = tIdx * dt / 3600;
+        ext.gaSat = ext.satFlag;
+        ext.infilTime = ext.gaT;
+      } else if (method.includes('HORTON')) {
+        const f0 = vals[0] || 4;
+        const fc = vals[1] || 0.5;
+        const k = vals[2] || 0.001;
+        ext.imd = 0.25;
+        ext.imdByEvent = 0.25;
+        ext.satFlag = sr.infiltration <= fc * 1.05 ? 1 : 0;
+        ext.currentInfilRate = sr.infiltration;
+        ext.hortonTp = 0;
+        ext.hortonFe = cumI;
+        ext.infilTime = tIdx * dt / 3600;
+      } else if (method.includes('CURVE') || method.includes('CN')) {
+        const cn = vals[0] || 75;
+        const S = (1000 / cn) - 10;
+        ext.cnS = S;
+        ext.cnF = cumI;
+        ext.cnP = cumR;
+        ext.cnT = tIdx * dt / 3600;
+        ext.cnSe = S * (1 - sr.moisture);
+        ext.cnRate = sr.infiltration;
+        ext.cnSmax = S * 1.5;
+        ext.cnF1 = prevCumI;
+        ext.cnRegen = 0;
+        ext.cnCN = cn;
+        ext.imd = 0;
+        ext.imdByEvent = 0;
+        ext.satFlag = cumR > 0.2 * S ? 1 : 0;
+        ext.currentInfilRate = sr.infiltration;
+        ext.infilTime = tIdx * dt / 3600;
+      } else {
+        ext.imd = 0.25;
+        ext.imdByEvent = 0.25;
+        ext.satFlag = 0;
+        ext.currentInfilRate = sr.infiltration;
+        ext.infilTime = tIdx * dt / 3600;
+      }
     }
 
     let totalRainfall = 0, totalInfil = 0, totalRunoff = 0, totalFlooding = 0;
@@ -787,25 +1097,22 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
       totalEvap += sr.evap;
       totalGW += sr.gwOutflow;
     }
-    const outfallIds = new Set([
-      ...project.outfalls.map(o => o.id),
-    ]);
+    const outfallIds = new Set(project.outfalls.map(o => o.id));
     for (const [nid, nr] of Object.entries(ts.nodes)) {
       totalFlooding += nr.flooding;
       totalStorage += nr.volume;
-      if (outfallIds.has(nid)) {
-        totalOutflow += nr.totalInflow;
-      }
+      if (outfallIds.has(nid)) totalOutflow += nr.totalInflow;
     }
     const scCount = Object.keys(ts.subcatchments).length || 1;
-    const avgRain = totalRainfall / scCount;
 
     const sys: Record<string, number> = {};
     const totalInflow = totalRunoff + totalGW;
+    const dStorage = totalStorage - prevStorage;
     const massBalance = totalInflow > 0 ? Math.abs(totalInflow - totalOutflow - totalFlooding) / totalInflow * 100 : 0;
-    const stepError = totalInflow > 0 ? Math.abs(totalInflow - totalOutflow - totalFlooding + (prevStorage - totalStorage)) / Math.max(totalInflow, 1) * 100 : 0;
+    const stepError = totalInflow > 0 ? Math.abs(totalInflow - totalOutflow - totalFlooding - dStorage / dt) / Math.max(totalInflow, 1) * 100 : 0;
 
-    sys.sysRainfall = avgRain;
+    sys.sysTemperature = 60;
+    sys.sysRainfall = totalRainfall / scCount;
     sys.sysSnowDepth = 0;
     sys.sysInfil = totalInfil;
     sys.sysRunoff = totalRunoff;
@@ -818,6 +1125,8 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
     sys.sysOutflow = totalOutflow;
     sys.sysStorage = totalStorage;
     sys.sysEvap = totalEvap;
+    sys.sysPET = 0;
+    sys.sysWindSpeed = 0;
     sys.sysSnowfall = 0;
     sys.sysSnowArea = 0;
     sys.sysFreeWater = 0;
@@ -827,7 +1136,13 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
     sys.sysRainMelt = 0;
     sys.stepFlowError = Math.min(stepError, 100);
     sys.sysCE = Math.min(massBalance, 100);
-    sys.sysIterations = totalFlooding > 0 ? 4 : 2;
+
+    let maxCorrection = 0;
+    for (const nr of Object.values(ts.nodes)) {
+      const hc = nr.extended?.headCorrection || 0;
+      if (Math.abs(hc) > maxCorrection) maxCorrection = Math.abs(hc);
+    }
+    sys.sysIterations = maxCorrection < HEAD_TOL ? 2 : maxCorrection < 0.05 ? 4 : maxCorrection < 0.5 ? 6 : 8;
     sys.sysTimestep = dt;
     ts.system = { extended: sys };
     prevStorage = totalStorage;

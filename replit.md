@@ -70,7 +70,12 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 ## Extended Variables (200+)
 - `client/src/lib/swmm-variables.ts` — Variable catalog with 200+ SWMM inner-workings variables across scopes: NODE_SOLVER, NODE_RDII, LINK_MOMENTUM, LINK_GEOMETRY, LINK_ENERGY, LINK_COMPAT, LINK_PROPS, SUB_RUNOFF, SUB_LID, SUB_GW, SUB_SNOW, SUB_INFIL, SYS, SYS_QA, FLOW_CLASS. Exports `getNodeVarByKey()`, `getLinkVarByKey()`, `getSubVarByKey()`, `getSystemVarByKey()`, `getNodeCategories()`, `getLinkCategories()`, `getSubCategories()`, `getSystemCategories()`.
 - Extended var access: `nodeResult.extended?.[key]`, `linkResult.extended?.[key]`, `subcatchResult.extended?.[key]`, `timeStep.system?.extended?.[key]`
-- `computeExtendedVariables()` in swmm-engine.ts derives Froude, momentum, geometry, energy, GW, snow, LID, infiltration, system vars — called in all 4 engines after simulation
+- `computeExtendedVariables()` in swmm-engine.ts implements proper three-level SWMM5 hydraulic diagnostics:
+  - **Level 2**: Cross-section geometry (CIRCULAR, RECT_CLOSED/OPEN, TRAPEZOIDAL with geom2=bottom width/geom3+geom4=side slopes, TRIANGULAR, HORIZ/VERT_ELLIPSE), proper Froude from celerity, friction slope from Manning inversion, Bernoulli energy balance (LHS/RHS with entry/exit/friction losses), head losses, node crown elevation, surcharge detection, dV/dt continuity
+  - **Level 3**: DQ1-DQ6 momentum terms (inertia, pressure gradient, friction, minor losses, lateral, convective acceleration), sigma damping from Froude (1.0 at Fr<=0.5, 0.0 at Fr>=1.0, linear transition), momentum equation reconstruction (qRecon), node solver state (dQ/dH Jacobian from connected link sensitivities, NR denominator, signed F(H) residual, signed head correction), Green-Ampt/Horton/Curve Number infiltration state, subcatchment runoff breakdown
+  - SI/US unit detection from project FLOW_UNITS option (g=9.81/32.174, phi=1.0/1.4859)
+  - Multi-barrel conduit support (per-barrel flow for velocity/Froude/friction, barrel-scaled qFull)
+  - Called in all 4 engines after simulation
 - Floating System Variables panel in map UI shows all system vars grouped by category, clickable to set theme variable
 - View toolbar has System dropdown for system variable theming
 
