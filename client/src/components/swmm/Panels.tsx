@@ -1,9 +1,104 @@
 import { useState, useMemo } from 'react';
-import type { SwmmProject, SelectedObject } from '@/lib/swmm-types';
+import type { SwmmProject, SelectedObject, XSection } from '@/lib/swmm-types';
 import { ChevronDown, ChevronRight, Droplets, CircleDot, Minus, CloudRain, Triangle, Square, ArrowLeftRight, X, Search, List } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 const LEGEND_COLORS = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
+
+function CrossSectionSvg({ xs, size = 80 }: { xs: XSection; size?: number }) {
+  const s = size;
+  const cx = s / 2, cy = s / 2;
+  const pad = 6;
+  const g1 = typeof xs.geom1 === 'number' ? xs.geom1 : 1;
+  const g2 = xs.geom2 || g1;
+
+  const getPath = (): string => {
+    const shape = xs.shape.toUpperCase();
+    const r = (s - 2 * pad) / 2;
+
+    if (shape === 'CIRCULAR') {
+      return `M ${cx} ${pad} A ${r} ${r} 0 1 1 ${cx} ${s - pad} A ${r} ${r} 0 1 1 ${cx} ${pad} Z`;
+    }
+    if (shape === 'FORCE_MAIN') {
+      return `M ${cx} ${pad} A ${r} ${r} 0 1 1 ${cx} ${s - pad} A ${r} ${r} 0 1 1 ${cx} ${pad} Z`;
+    }
+    if (shape === 'FILLED_CIRCULAR') {
+      const fillRatio = g2 / g1;
+      const fillH = r * 2 * fillRatio;
+      const outerPath = `M ${cx} ${pad} A ${r} ${r} 0 1 1 ${cx} ${s - pad} A ${r} ${r} 0 1 1 ${cx} ${pad}`;
+      const sedY = s - pad - fillH;
+      return outerPath + ` M ${pad} ${s - pad} L ${pad} ${sedY} L ${s - pad} ${sedY} L ${s - pad} ${s - pad} Z`;
+    }
+    if (shape === 'RECT_CLOSED' || shape === 'RECT_OPEN') {
+      const hw = Math.min(r, (g2 / g1) * r);
+      const hh = r;
+      const top = shape === 'RECT_OPEN' ? '' : `L ${cx + hw} ${cy - hh}`;
+      return `M ${cx - hw} ${cy + hh} L ${cx - hw} ${cy - hh} ${top} L ${cx + hw} ${cy - hh} L ${cx + hw} ${cy + hh} ${shape === 'RECT_OPEN' ? '' : 'Z'}`;
+    }
+    if (shape === 'RECT_TRIANGULAR' || shape === 'RECT_ROUND') {
+      const hw = Math.min(r, (g2 / g1) * r);
+      const hh = r;
+      if (shape === 'RECT_TRIANGULAR') {
+        return `M ${cx - hw} ${cy + hh} L ${cx - hw} ${cy - hh} L ${cx + hw} ${cy - hh} L ${cx + hw} ${cy + hh} L ${cx} ${cy + hh * 0.5} Z`;
+      }
+      return `M ${cx - hw} ${cy + hh} L ${cx - hw} ${cy - hh} L ${cx + hw} ${cy - hh} L ${cx + hw} ${cy + hh} Q ${cx} ${cy + hh + 10} ${cx - hw} ${cy + hh} Z`;
+    }
+    if (shape === 'TRAPEZOIDAL') {
+      const botW = r * 0.6;
+      const topW = r;
+      return `M ${cx - botW} ${cy + r} L ${cx - topW} ${cy - r} L ${cx + topW} ${cy - r} L ${cx + botW} ${cy + r} Z`;
+    }
+    if (shape === 'TRIANGULAR') {
+      return `M ${cx} ${cy - r} L ${cx + r} ${cy + r} L ${cx - r} ${cy + r} Z`;
+    }
+    if (shape === 'HORIZ_ELLIPSE' || shape === 'VERT_ELLIPSE') {
+      const rx = shape === 'HORIZ_ELLIPSE' ? r : r * 0.6;
+      const ry = shape === 'HORIZ_ELLIPSE' ? r * 0.6 : r;
+      return `M ${cx} ${cy - ry} A ${rx} ${ry} 0 1 1 ${cx} ${cy + ry} A ${rx} ${ry} 0 1 1 ${cx} ${cy - ry} Z`;
+    }
+    if (shape === 'ARCH') {
+      return `M ${cx - r} ${cy + r * 0.3} L ${cx - r} ${cy - r * 0.3} A ${r} ${r} 0 0 1 ${cx + r} ${cy - r * 0.3} L ${cx + r} ${cy + r * 0.3} Z`;
+    }
+    if (shape === 'PARABOLIC') {
+      return `M ${cx - r} ${cy + r} Q ${cx} ${cy - r * 1.5} ${cx + r} ${cy + r}`;
+    }
+    if (shape === 'POWER') {
+      return `M ${cx - r} ${cy + r} Q ${cx - r * 0.3} ${cy - r} ${cx} ${cy - r} Q ${cx + r * 0.3} ${cy - r} ${cx + r} ${cy + r}`;
+    }
+    if (shape === 'CATENARY') {
+      return `M ${cx - r} ${cy - r * 0.5} Q ${cx} ${cy + r * 1.2} ${cx + r} ${cy - r * 0.5}`;
+    }
+    if (shape === 'SEMIELLIPTICAL') {
+      return `M ${cx - r} ${cy} A ${r} ${r * 0.7} 0 0 1 ${cx + r} ${cy} L ${cx - r} ${cy}`;
+    }
+    if (shape === 'BASKETHANDLE') {
+      return `M ${cx - r} ${cy} L ${cx - r} ${cy - r * 0.5} A ${r * 0.7} ${r * 0.7} 0 0 1 ${cx + r} ${cy - r * 0.5} L ${cx + r} ${cy} A ${r} ${r * 0.4} 0 0 1 ${cx - r} ${cy} Z`;
+    }
+    if (shape === 'SEMICIRCULAR') {
+      return `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy} L ${cx - r} ${cy}`;
+    }
+    if (shape === 'GOTHIC') {
+      return `M ${cx - r * 0.8} ${cy + r} L ${cx - r * 0.8} ${cy - r * 0.3} A ${r * 1.2} ${r * 1.2} 0 0 1 ${cx} ${cy - r} A ${r * 1.2} ${r * 1.2} 0 0 1 ${cx + r * 0.8} ${cy - r * 0.3} L ${cx + r * 0.8} ${cy + r} A ${r} ${r * 0.3} 0 0 1 ${cx - r * 0.8} ${cy + r} Z`;
+    }
+    if (shape === 'HORSESHOE') {
+      return `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy} L ${cx + r} ${cy + r * 0.5} A ${r * 0.5} ${r * 0.5} 0 0 1 ${cx - r} ${cy + r * 0.5} Z`;
+    }
+    if (shape === 'EGGSHAPED') {
+      return `M ${cx} ${cy - r} A ${r * 0.5} ${r * 0.7} 0 0 1 ${cx + r * 0.5} ${cy} A ${r * 0.7} ${r} 0 0 1 ${cx} ${cy + r} A ${r * 0.7} ${r} 0 0 1 ${cx - r * 0.5} ${cy} A ${r * 0.5} ${r * 0.7} 0 0 1 ${cx} ${cy - r} Z`;
+    }
+    if (shape === 'CUSTOM' || shape === 'IRREGULAR') {
+      return `M ${cx - r} ${cy + r} L ${cx - r} ${cy - r} L ${cx - r * 0.3} ${cy - r * 0.7} L ${cx + r * 0.3} ${cy - r * 0.7} L ${cx + r} ${cy - r} L ${cx + r} ${cy + r} Z`;
+    }
+    return `M ${cx} ${pad} A ${r} ${r} 0 1 1 ${cx} ${s - pad} A ${r} ${r} 0 1 1 ${cx} ${pad} Z`;
+  };
+
+  return (
+    <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} data-testid="xsection-svg">
+      <path d={getPath()} fill="#dde8f4" stroke="#2c6eb5" strokeWidth={1.5} />
+      <text x={cx} y={s - 2} textAnchor="middle" fontSize={8} fill="#6b6b7b">{xs.shape}</text>
+    </svg>
+  );
+}
 
 interface LegendProps {
   subcatchTheme: string;
@@ -24,38 +119,59 @@ export function LegendPanel({
   layerVisibility,
   setLayerVisibility,
 }: LegendProps) {
+  const [showLegendSubcatch, setShowLegendSubcatch] = useState(true);
+  const [showLegendNodes, setShowLegendNodes] = useState(true);
+  const [showLegendLinks, setShowLegendLinks] = useState(true);
+
   const nodeLabels = nodeTheme === 'depth'
     ? ['< 1.5', '1.5-3.0', '3.0-4.0', '4.0-5.0', '> 5.0']
     : ['< 92', '92-95', '95-97', '97-100', '> 100'];
 
   const linkLabels = linkTheme === 'flow'
     ? ['< 1.0', '1.0-2.5', '2.5-4.0', '4.0-6.0', '> 6.0']
+    : linkTheme === 'velocity'
+    ? ['< 1.0', '1.0-2.0', '2.0-3.0', '3.0-5.0', '> 5.0']
     : ['< 0.5', '0.5-1.0', '1.0-1.5', '1.5-2.0', '> 2.0'];
 
   const subcatchLabels = subcatchTheme === 'imperv'
     ? ['< 25%', '25-50%', '50-75%', '75-90%', '> 90%']
     : subcatchTheme === 'runoff'
     ? ['< 2', '2-5', '5-10', '10-15', '> 15']
+    : subcatchTheme === 'infiltration'
+    ? ['< 0.2', '0.2-0.5', '0.5-1.0', '1.0-2.0', '> 2.0']
     : ['< 0.5', '0.5-1.0', '1.0-2.0', '2.0-3.0', '> 3.0'];
 
-  const subcatchTitle = subcatchTheme === 'imperv' ? '% Imperv' : subcatchTheme === 'runoff' ? 'Runoff (CFS)' : 'Rainfall (in/hr)';
-  const nodeTitle = nodeTheme === 'depth' ? 'Depth (ft)' : 'Invert (ft)';
-  const linkTitle = linkTheme === 'flow' ? 'Flow (CFS)' : 'Depth (ft)';
+  const subcatchTitle = subcatchTheme === 'imperv' ? '% Imperv' : subcatchTheme === 'runoff' ? 'Runoff (CFS)' : subcatchTheme === 'infiltration' ? 'Infiltration' : 'Rainfall (in/hr)';
+  const nodeTitle = nodeTheme === 'depth' ? 'Depth (ft)' : 'Head (ft)';
+  const linkTitle = linkTheme === 'flow' ? 'Flow (CFS)' : linkTheme === 'velocity' ? 'Velocity (fps)' : 'Depth (ft)';
 
   const layers = [
-    { key: 'junctions', label: 'Junctions', icon: '○' },
-    { key: 'storage', label: 'Storage', icon: '◻' },
-    { key: 'outfalls', label: 'Outfalls', icon: '▽' },
-    { key: 'conduits', label: 'Conduits', icon: '—' },
-    { key: 'pumps', label: 'Pumps', icon: '⊙' },
-    { key: 'weirs', label: 'Weirs', icon: '═' },
-    { key: 'labels', label: 'Labels', icon: 'A' },
+    { key: 'subcatchments', label: 'Subcatchments', color: '#7092BE' },
+    { key: 'junctions', label: 'Junctions', color: '#4a90c2' },
+    { key: 'storage', label: 'Storage', color: '#3a8a3a' },
+    { key: 'outfalls', label: 'Outfalls', color: '#c05050' },
+    { key: 'dividers', label: 'Dividers', color: '#9060c0' },
+    { key: 'conduits', label: 'Conduits', color: '#2c6eb5' },
+    { key: 'pumps', label: 'Pumps', color: '#e88a1a' },
+    { key: 'orifices', label: 'Orifices', color: '#60a5fa' },
+    { key: 'weirs', label: 'Weirs', color: '#d06040' },
+    { key: 'outlets', label: 'Outlets', color: '#8b5cf6' },
+    { key: 'raingages', label: 'Rain Gages', color: '#06b6d4' },
+    { key: 'labels', label: 'Labels', color: '#6b6b7b' },
   ];
 
-  const layerItems = [
-    { key: 'subcatchments', label: 'Subcatchments', visible: showSubcatch, toggle: () => setShowSubcatch(!showSubcatch) },
-    ...layers.map(l => ({ key: l.key, label: l.label, visible: layerVisibility[l.key] !== false, toggle: () => setLayerVisibility({ ...layerVisibility, [l.key]: !layerVisibility[l.key] }) })),
-  ];
+  const toggleLayer = (key: string) => {
+    if (key === 'subcatchments') {
+      setShowSubcatch(!showSubcatch);
+    } else {
+      setLayerVisibility({ ...layerVisibility, [key]: layerVisibility[key] === false ? true : false });
+    }
+  };
+
+  const getLayerVisible = (key: string) => {
+    if (key === 'subcatchments') return showSubcatch;
+    return layerVisibility[key] !== false;
+  };
 
   return (
     <ScrollArea className="h-full" data-testid="legend-panel">
@@ -68,33 +184,50 @@ export function LegendPanel({
           title={subcatchTitle}
           labels={subcatchLabels}
           swatchType="rect"
-          checked={showSubcatch}
-          onCheckedChange={setShowSubcatch}
+          checked={showLegendSubcatch}
+          onCheckedChange={setShowLegendSubcatch}
         />
 
         <LegendSection
           title={nodeTitle}
           labels={nodeLabels}
           swatchType="circle"
+          checked={showLegendNodes}
+          onCheckedChange={setShowLegendNodes}
         />
 
         <LegendSection
           title={linkTitle}
           labels={linkLabels}
           swatchType="line"
+          checked={showLegendLinks}
+          onCheckedChange={setShowLegendLinks}
         />
 
         <div className="border-t border-[#d0d0d8] pt-2">
-          <div className="text-[10px] font-semibold text-[#4a4a5a] mb-1">Layers</div>
-          {layerItems.map(l => (
-            <label key={l.key} className="flex items-center gap-1.5 pl-1 py-[3px] cursor-pointer rounded hover:bg-black/[0.04] transition-colors" data-testid={`layer-toggle-${l.key}`}>
-              <input
-                type="checkbox"
-                checked={l.visible}
-                onChange={l.toggle}
-                className="w-3 h-3 accent-[#2c6eb5]"
-              />
-              <span className={`text-[10px] transition-colors ${l.visible ? 'text-[#2a2a3e]' : 'text-[#b0b0b8]'}`}>{l.label}</span>
+          <div className="text-[10px] font-semibold text-[#4a4a5a] mb-1.5">Layers</div>
+          {layers.map(l => (
+            <label key={l.key} className="flex items-center gap-2 pl-1 py-[3px] cursor-pointer rounded hover:bg-black/[0.04] transition-colors" data-testid={`layer-toggle-${l.key}`}>
+              <div className="relative w-[14px] h-[14px] shrink-0">
+                <input
+                  type="checkbox"
+                  checked={getLayerVisible(l.key)}
+                  onChange={() => toggleLayer(l.key)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <div
+                  className="w-[14px] h-[14px] rounded-sm border flex items-center justify-center transition-colors"
+                  style={{
+                    backgroundColor: getLayerVisible(l.key) ? l.color : '#ffffff',
+                    borderColor: getLayerVisible(l.key) ? l.color : '#c0c0cc',
+                  }}
+                >
+                  {getLayerVisible(l.key) && (
+                    <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5 L4 7 L8 3" stroke="#fff" strokeWidth="1.5" fill="none" /></svg>
+                  )}
+                </div>
+              </div>
+              <span className={`text-[10px] font-medium transition-colors ${getLayerVisible(l.key) ? 'text-[#2a2a3e]' : 'text-[#b0b0b8]'}`}>{l.label}</span>
             </label>
           ))}
         </div>
@@ -112,20 +245,16 @@ function LegendSection({ title, labels, swatchType, checked, onCheckedChange }: 
 }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-1">
-        {onCheckedChange !== undefined ? (
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={() => onCheckedChange?.(!checked)}
-            className="w-3 h-3 accent-[#2c6eb5]"
-          />
-        ) : (
-          <div className="w-3" />
-        )}
+      <div className="flex items-center gap-1 mb-1 cursor-pointer select-none" onClick={() => onCheckedChange?.(!checked)}>
+        <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0 text-[#8a8a9a]">
+          {checked
+            ? <path d="M2 3 L5 7 L8 3" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            : <path d="M3 2 L7 5 L3 8" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          }
+        </svg>
         <span className="text-[10px] font-semibold text-[#4a4a5a]">{title}</span>
       </div>
-      {labels.map((label, i) => (
+      {checked && labels.map((label, i) => (
         <div key={i} className="flex items-center gap-1.5 pl-5 py-px">
           <div
             style={{
@@ -134,7 +263,7 @@ function LegendSection({ title, labels, swatchType, checked, onCheckedChange }: 
               borderRadius: swatchType === 'circle' ? '50%' : swatchType === 'rect' ? 2 : 0,
               backgroundColor: LEGEND_COLORS[i],
               opacity: swatchType === 'rect' ? 0.6 : 1,
-              border: '1px solid rgba(0,0,0,0.3)',
+              border: '1px solid rgba(0,0,0,0.15)',
             }}
           />
           <span className="text-[9px] text-[#6b6b7b]">{label}</span>
@@ -272,6 +401,11 @@ export function ProjectExplorer({ project, selectedObj, onSelectObj, results, ti
               </tbody>
             </table>
           </ScrollArea>
+          {selectedObj && ['conduit', 'orifice', 'weir', 'outlet'].includes(selectedObj.objType) && project.xsections[selectedObj.id] && (
+            <div className="flex justify-center py-1 border-t border-[#d0d0d8] bg-[#f8f8fa]">
+              <CrossSectionSvg xs={project.xsections[selectedObj.id]} size={70} />
+            </div>
+          )}
           <div className="px-1.5 py-1 text-[9px] text-[#9090a0] bg-[rgba(44,110,181,0.06)] border-t border-[#d0d0d8]">
             Press Enter to edit, F1 for Help
           </div>

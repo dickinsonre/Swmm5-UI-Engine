@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
-import type { SwmmProject, CurvePoint, TimeSeriesPoint, PatternData, Pollutant, LandUse, LidControl } from '@/lib/swmm-types';
+import type { SwmmProject, CurvePoint, TimeSeriesPoint, PatternData, Pollutant, LandUse, LidControl, Transect, SnowPack, DWFEntry, Groundwater, Street, Inlet } from '@/lib/swmm-types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,19 +18,19 @@ interface DataEditorProps {
   initialItem?: string;
 }
 
-const TABS = ['Time Series', 'Curves', 'Patterns', 'Controls', 'Pollutants', 'Land Uses', 'LID Controls', 'Evaporation', 'Aquifers'] as const;
+const TABS = ['Time Series', 'Curves', 'Patterns', 'Controls', 'Pollutants', 'Land Uses', 'LID Controls', 'Evaporation', 'Aquifers', 'Transects', 'Snow Packs', 'Groundwater', 'DWF/Inflows', 'Treatment', 'Adjustments', 'Streets', 'Inlets'] as const;
 type Tab = typeof TABS[number];
 
+const SECTION_TAB_MAP: Record<string, Tab> = {
+  TIMESERIES: 'Time Series', CURVES: 'Curves', PATTERNS: 'Patterns', CONTROLS: 'Controls',
+  POLLUTANTS: 'Pollutants', LANDUSES: 'Land Uses', LID_CONTROLS: 'LID Controls',
+  EVAPORATION: 'Evaporation', AQUIFERS: 'Aquifers', TRANSECTS: 'Transects',
+  SNOWPACKS: 'Snow Packs', GROUNDWATER: 'Groundwater', DWF: 'DWF/Inflows',
+  TREATMENT: 'Treatment', ADJUSTMENTS: 'Adjustments', STREETS: 'Streets', INLETS: 'Inlets',
+};
+
 export default function DataEditorDialog({ open, onOpenChange, project, onUpdateProject, initialSection, initialItem }: DataEditorProps) {
-  const tabFromSection = initialSection === 'TIMESERIES' ? 'Time Series' :
-    initialSection === 'CURVES' ? 'Curves' :
-    initialSection === 'PATTERNS' ? 'Patterns' :
-    initialSection === 'CONTROLS' ? 'Controls' :
-    initialSection === 'POLLUTANTS' ? 'Pollutants' :
-    initialSection === 'LANDUSES' ? 'Land Uses' :
-    initialSection === 'LID_CONTROLS' ? 'LID Controls' :
-    initialSection === 'EVAPORATION' ? 'Evaporation' :
-    initialSection === 'AQUIFERS' ? 'Aquifers' : 'Time Series';
+  const tabFromSection = (initialSection && SECTION_TAB_MAP[initialSection]) || 'Time Series';
   const [tab, setTab] = useState<Tab>(tabFromSection as Tab);
 
   return (
@@ -64,6 +64,14 @@ export default function DataEditorDialog({ open, onOpenChange, project, onUpdate
           {tab === 'LID Controls' && <LidControlsEditor project={project} onUpdateProject={onUpdateProject} />}
           {tab === 'Evaporation' && <EvaporationEditor project={project} onUpdateProject={onUpdateProject} />}
           {tab === 'Aquifers' && <AquifersEditor project={project} onUpdateProject={onUpdateProject} />}
+          {tab === 'Transects' && <TransectsEditor project={project} onUpdateProject={onUpdateProject} />}
+          {tab === 'Snow Packs' && <SnowPacksEditor project={project} onUpdateProject={onUpdateProject} />}
+          {tab === 'Groundwater' && <GroundwaterEditor project={project} onUpdateProject={onUpdateProject} />}
+          {tab === 'DWF/Inflows' && <DWFEditor project={project} onUpdateProject={onUpdateProject} />}
+          {tab === 'Treatment' && <TreatmentEditor project={project} onUpdateProject={onUpdateProject} />}
+          {tab === 'Adjustments' && <AdjustmentsEditor project={project} onUpdateProject={onUpdateProject} />}
+          {tab === 'Streets' && <StreetsEditor project={project} onUpdateProject={onUpdateProject} />}
+          {tab === 'Inlets' && <InletsEditor project={project} onUpdateProject={onUpdateProject} />}
         </div>
       </DialogContent>
     </Dialog>
@@ -866,6 +874,582 @@ function AquifersEditor({ project, onUpdateProject }: { project: SwmmProject; on
             </div>
           </div>
         ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create an aquifer</div>}
+      </div>
+    </div>
+  );
+}
+
+type EditorProps = { project: SwmmProject; onUpdateProject: (u: (p: SwmmProject) => SwmmProject) => void };
+
+function TransectsEditor({ project, onUpdateProject }: EditorProps) {
+  const items = project.transects || [];
+  const [selected, setSelected] = useState('');
+  const sel = items.find(t => t.id === selected);
+
+  const addItem = useCallback(() => {
+    const id = `Transect${items.length + 1}`;
+    onUpdateProject(prev => ({
+      ...prev,
+      transects: [...prev.transects, { id, stations: [{ x: 0, y: 10 }, { x: 5, y: 0 }, { x: 10, y: 0 }, { x: 15, y: 10 }], roughness: { left: 0.04, right: 0.04, channel: 0.025 }, bankStations: { left: 5, right: 10 }, modifiers: [] }],
+    }));
+    setSelected(id);
+  }, [items, onUpdateProject]);
+
+  const updateRoughness = useCallback((field: string, value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      transects: prev.transects.map(t => t.id === selected ? { ...t, roughness: { ...t.roughness, [field]: Number(value) || 0 } } : t),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const updateBank = useCallback((field: string, value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      transects: prev.transects.map(t => t.id === selected ? { ...t, bankStations: { ...t.bankStations, [field]: Number(value) || 0 } } : t),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const updateStation = useCallback((idx: number, field: 'x' | 'y', value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      transects: prev.transects.map(t => {
+        if (t.id !== selected) return t;
+        const stations = [...t.stations];
+        stations[idx] = { ...stations[idx], [field]: Number(value) || 0 };
+        return { ...t, stations };
+      }),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const addStation = useCallback(() => {
+    if (!sel) return;
+    const lastX = sel.stations.length > 0 ? sel.stations[sel.stations.length - 1].x + 5 : 0;
+    onUpdateProject(prev => ({
+      ...prev,
+      transects: prev.transects.map(t => t.id === selected ? { ...t, stations: [...t.stations, { x: lastX, y: 0 }] } : t),
+    }));
+  }, [sel, selected, onUpdateProject]);
+
+  const chartData = sel ? sel.stations.map(s => ({ x: s.x, y: s.y })) : [];
+
+  return (
+    <div className="flex gap-3 min-h-[350px]">
+      <div className="w-36 border-r border-[#e0e0e8] pr-2">
+        <Button size="sm" onClick={addItem} className="h-6 w-full text-[10px] bg-[#2c6eb5] text-white mb-2" data-testid="btn-add-transect"><Plus className="w-3 h-3 mr-1" />Add Transect</Button>
+        <ScrollArea className="h-[300px]">
+          {items.map(t => (
+            <button key={t.id} onClick={() => setSelected(t.id)} className="block w-full text-left text-[11px] px-2 py-1 rounded transition-colors" style={{ backgroundColor: selected === t.id ? '#2c6eb5' : 'transparent', color: selected === t.id ? '#fff' : '#3a3a4a' }} data-testid={`transect-${t.id}`}>{t.id}</button>
+          ))}
+        </ScrollArea>
+      </div>
+      <div className="flex-1">
+        {sel ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div><Label className="text-[10px]">Left n</Label><Input className="h-7 text-xs" type="number" step={0.001} value={sel.roughness.left} onChange={e => updateRoughness('left', e.target.value)} data-testid="transect-n-left" /></div>
+              <div><Label className="text-[10px]">Channel n</Label><Input className="h-7 text-xs" type="number" step={0.001} value={sel.roughness.channel} onChange={e => updateRoughness('channel', e.target.value)} data-testid="transect-n-channel" /></div>
+              <div><Label className="text-[10px]">Right n</Label><Input className="h-7 text-xs" type="number" step={0.001} value={sel.roughness.right} onChange={e => updateRoughness('right', e.target.value)} data-testid="transect-n-right" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label className="text-[10px]">Left Bank Sta.</Label><Input className="h-7 text-xs" type="number" value={sel.bankStations.left} onChange={e => updateBank('left', e.target.value)} data-testid="transect-bank-left" /></div>
+              <div><Label className="text-[10px]">Right Bank Sta.</Label><Input className="h-7 text-xs" type="number" value={sel.bankStations.right} onChange={e => updateBank('right', e.target.value)} data-testid="transect-bank-right" /></div>
+            </div>
+            <div className="h-[120px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                  <XAxis dataKey="x" tick={{ fontSize: 9 }} />
+                  <YAxis tick={{ fontSize: 9 }} reversed />
+                  <Tooltip contentStyle={{ fontSize: 10 }} />
+                  <Line type="linear" dataKey="y" stroke="#2c6eb5" strokeWidth={2} dot={{ r: 3, fill: '#2c6eb5' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-semibold text-[#2c3e6b]">Stations</span>
+              <Button size="sm" variant="outline" className="h-5 text-[9px]" onClick={addStation} data-testid="btn-add-station"><Plus className="w-2.5 h-2.5 mr-0.5" />Add</Button>
+            </div>
+            <ScrollArea className="h-[100px]">
+              <table className="w-full text-[10px]">
+                <thead><tr><th className="text-left px-1">Station</th><th className="text-left px-1">Elevation</th></tr></thead>
+                <tbody>
+                  {sel.stations.map((s, i) => (
+                    <tr key={i}><td className="px-1"><Input className="h-6 text-[10px]" type="number" value={s.x} onChange={e => updateStation(i, 'x', e.target.value)} /></td>
+                    <td className="px-1"><Input className="h-6 text-[10px]" type="number" value={s.y} onChange={e => updateStation(i, 'y', e.target.value)} /></td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollArea>
+          </div>
+        ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create a transect</div>}
+      </div>
+    </div>
+  );
+}
+
+function SnowPacksEditor({ project, onUpdateProject }: EditorProps) {
+  const items = project.snowpacks || [];
+  const [selected, setSelected] = useState('');
+  const sel = items.find(s => s.id === selected);
+
+  const addItem = useCallback(() => {
+    const id = `SnowPack${items.length + 1}`;
+    onUpdateProject(prev => ({
+      ...prev,
+      snowpacks: [...prev.snowpacks, { id, parameters: { PLOWABLE: [0.001, 0.001, 32, 0.1, 0, 0, 0], IMPERVIOUS: [0.001, 0.001, 32, 0.1, 0, 0, 0], PERVIOUS: [0.001, 0.001, 32, 0.1, 0, 0, 0], REMOVAL: [1, 0, 0, 0, '', ''] } }],
+    }));
+    setSelected(id);
+  }, [items, onUpdateProject]);
+
+  const updateParam = useCallback((surface: string, idx: number, value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      snowpacks: prev.snowpacks.map(s => {
+        if (s.id !== selected) return s;
+        const params = { ...s.parameters };
+        const arr = [...(params[surface] || [])];
+        arr[idx] = isNaN(Number(value)) ? value as any : Number(value);
+        params[surface] = arr;
+        return { ...s, parameters: params };
+      }),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const surfaces = ['PLOWABLE', 'IMPERVIOUS', 'PERVIOUS'];
+  const paramLabels = ['Min Melt Coeff', 'Max Melt Coeff', 'Base Temp', 'Fraction FWF', 'SD100', 'Init Depth', 'Init FWF'];
+
+  return (
+    <div className="flex gap-3 min-h-[350px]">
+      <div className="w-36 border-r border-[#e0e0e8] pr-2">
+        <Button size="sm" onClick={addItem} className="h-6 w-full text-[10px] bg-[#2c6eb5] text-white mb-2" data-testid="btn-add-snowpack"><Plus className="w-3 h-3 mr-1" />Add Snow Pack</Button>
+        <ScrollArea className="h-[300px]">
+          {items.map(s => (
+            <button key={s.id} onClick={() => setSelected(s.id)} className="block w-full text-left text-[11px] px-2 py-1 rounded transition-colors" style={{ backgroundColor: selected === s.id ? '#2c6eb5' : 'transparent', color: selected === s.id ? '#fff' : '#3a3a4a' }} data-testid={`snowpack-${s.id}`}>{s.id}</button>
+          ))}
+        </ScrollArea>
+      </div>
+      <div className="flex-1">
+        {sel ? (
+          <ScrollArea className="h-[350px]">
+            {surfaces.map(surface => (
+              <div key={surface} className="mb-3">
+                <h4 className="text-[10px] font-semibold text-[#2c3e6b] mb-1 uppercase">{surface}</h4>
+                <div className="space-y-1">
+                  {paramLabels.map((label, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Label className="text-[10px] w-[120px]">{label}</Label>
+                      <Input className="h-6 text-[10px] flex-1" type="number" step={0.001} value={(sel.parameters[surface] || [])[i] ?? 0} onChange={e => updateParam(surface, i, e.target.value)} data-testid={`snow-${surface}-${i}`} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="mb-3">
+              <h4 className="text-[10px] font-semibold text-[#2c3e6b] mb-1">REMOVAL</h4>
+              {['Depth at which removal starts', 'Fraction transferred out', 'Fraction transferred to imperv', 'Fraction transferred to perv', 'Subcatchment for transfer', 'Fraction converted to immed. melt'].map((label, i) => (
+                <div key={i} className="flex items-center gap-2 mb-1">
+                  <Label className="text-[10px] w-[180px]">{label}</Label>
+                  <Input className="h-6 text-[10px] flex-1" value={(sel.parameters.REMOVAL || [])[i] ?? ''} onChange={e => updateParam('REMOVAL', i, e.target.value)} data-testid={`snow-removal-${i}`} />
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create a snow pack</div>}
+      </div>
+    </div>
+  );
+}
+
+function GroundwaterEditor({ project, onUpdateProject }: EditorProps) {
+  const items = project.groundwater || [];
+  const [selected, setSelected] = useState(0);
+  const sel = items[selected];
+  const subcatchIds = project.subcatchments.map(s => s.id);
+  const aquiferIds = (project.aquifers || []).map((a: any) => a.id || a.name);
+  const nodeIds = [...project.junctions.map(j => j.id), ...project.outfalls.map(o => o.id), ...project.storageUnits.map(s => s.id)];
+
+  const addItem = useCallback(() => {
+    const scId = subcatchIds.find(id => !items.some(g => g.subcatchId === id)) || subcatchIds[0] || 'S1';
+    onUpdateProject(prev => ({
+      ...prev,
+      groundwater: [...prev.groundwater, { subcatchId: scId, aquiferId: aquiferIds[0] || '', nodeId: nodeIds[0] || '', surfElev: 0, a1: 0.001, b1: 1, a2: 0, b2: 1, a3: 0, fixedDepth: 0, threshold: 0, params: [] }],
+    }));
+    setSelected(items.length);
+  }, [items, subcatchIds, aquiferIds, nodeIds, onUpdateProject]);
+
+  const updateField = useCallback((field: string, value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      groundwater: prev.groundwater.map((g, i) => i === selected ? { ...g, [field]: isNaN(Number(value)) ? value : Number(value) } : g),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const fields: [string, string][] = [
+    ['subcatchId', 'Subcatchment'], ['aquiferId', 'Aquifer'], ['nodeId', 'Receiving Node'],
+    ['surfElev', 'Surface Elev.'], ['a1', 'GW Flow Coeff (A1)'], ['b1', 'GW Flow Exponent (B1)'],
+    ['a2', 'SW Flow Coeff (A2)'], ['b2', 'SW Flow Exponent (B2)'], ['a3', 'GW-SW Interaction (A3)'],
+    ['fixedDepth', 'Fixed Surface Water Depth'], ['threshold', 'Threshold GW Elev.'],
+  ];
+
+  return (
+    <div className="flex gap-3 min-h-[350px]">
+      <div className="w-44 border-r border-[#e0e0e8] pr-2">
+        <Button size="sm" onClick={addItem} className="h-6 w-full text-[10px] bg-[#2c6eb5] text-white mb-2" data-testid="btn-add-gw"><Plus className="w-3 h-3 mr-1" />Add GW Link</Button>
+        <ScrollArea className="h-[300px]">
+          {items.map((g, i) => (
+            <button key={i} onClick={() => setSelected(i)} className="block w-full text-left text-[11px] px-2 py-1 rounded transition-colors" style={{ backgroundColor: selected === i ? '#2c6eb5' : 'transparent', color: selected === i ? '#fff' : '#3a3a4a' }} data-testid={`gw-${i}`}>{g.subcatchId} → {g.nodeId}</button>
+          ))}
+        </ScrollArea>
+      </div>
+      <div className="flex-1">
+        {sel ? (
+          <div className="space-y-2">
+            {fields.map(([key, label]) => (
+              <div key={key} className="flex items-center gap-2">
+                <Label className="text-[10px] w-[160px]">{label}</Label>
+                {key === 'subcatchId' ? (
+                  <Select value={sel.subcatchId} onValueChange={v => updateField('subcatchId', v)}>
+                    <SelectTrigger className="h-7 text-xs flex-1" data-testid="gw-subcatch"><SelectValue /></SelectTrigger>
+                    <SelectContent>{subcatchIds.map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}</SelectContent>
+                  </Select>
+                ) : key === 'aquiferId' ? (
+                  <Select value={sel.aquiferId} onValueChange={v => updateField('aquiferId', v)}>
+                    <SelectTrigger className="h-7 text-xs flex-1" data-testid="gw-aquifer"><SelectValue /></SelectTrigger>
+                    <SelectContent>{aquiferIds.map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}</SelectContent>
+                  </Select>
+                ) : key === 'nodeId' ? (
+                  <Select value={sel.nodeId} onValueChange={v => updateField('nodeId', v)}>
+                    <SelectTrigger className="h-7 text-xs flex-1" data-testid="gw-node"><SelectValue /></SelectTrigger>
+                    <SelectContent>{nodeIds.map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}</SelectContent>
+                  </Select>
+                ) : (
+                  <Input className="h-7 text-xs flex-1" type="number" value={(sel as any)[key] ?? ''} onChange={e => updateField(key, e.target.value)} data-testid={`gw-${key}`} />
+                )}
+              </div>
+            ))}
+          </div>
+        ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create a groundwater link</div>}
+      </div>
+    </div>
+  );
+}
+
+function DWFEditor({ project, onUpdateProject }: EditorProps) {
+  const items = project.dwf || [];
+  const [selected, setSelected] = useState(0);
+  const sel = items[selected];
+  const nodeIds = [...project.junctions.map(j => j.id), ...project.outfalls.map(o => o.id), ...project.storageUnits.map(s => s.id)];
+  const patternNames = Object.keys(project.patterns || {});
+
+  const addItem = useCallback(() => {
+    onUpdateProject(prev => ({
+      ...prev,
+      dwf: [...prev.dwf, { nodeId: nodeIds[0] || 'J1', constituent: 'FLOW', baseline: 0, patterns: ['', '', '', ''] }],
+    }));
+    setSelected(items.length);
+  }, [items, nodeIds, onUpdateProject]);
+
+  const updateField = useCallback((field: string, value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      dwf: prev.dwf.map((d, i) => i === selected ? { ...d, [field]: field === 'baseline' ? Number(value) || 0 : value } : d),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const updatePattern = useCallback((idx: number, value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      dwf: prev.dwf.map((d, i) => {
+        if (i !== selected) return d;
+        const patterns = [...d.patterns];
+        while (patterns.length <= idx) patterns.push('');
+        patterns[idx] = value;
+        return { ...d, patterns };
+      }),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const deleteItem = useCallback(() => {
+    onUpdateProject(prev => ({ ...prev, dwf: prev.dwf.filter((_, i) => i !== selected) }));
+    setSelected(Math.max(0, selected - 1));
+  }, [selected, onUpdateProject]);
+
+  const patternTypes = ['Monthly', 'Daily', 'Hourly', 'Weekend'];
+
+  return (
+    <div className="flex gap-3 min-h-[350px]">
+      <div className="w-44 border-r border-[#e0e0e8] pr-2">
+        <div className="flex gap-1 mb-2">
+          <Button size="sm" onClick={addItem} className="h-6 flex-1 text-[10px] bg-[#2c6eb5] text-white" data-testid="btn-add-dwf"><Plus className="w-3 h-3 mr-0.5" />Add</Button>
+          {items.length > 0 && <Button size="sm" variant="outline" onClick={deleteItem} className="h-6 text-[10px] border-[#d0d0d8]" data-testid="btn-del-dwf"><Trash2 className="w-3 h-3" /></Button>}
+        </div>
+        <ScrollArea className="h-[300px]">
+          {items.map((d, i) => (
+            <button key={i} onClick={() => setSelected(i)} className="block w-full text-left text-[11px] px-2 py-1 rounded transition-colors" style={{ backgroundColor: selected === i ? '#2c6eb5' : 'transparent', color: selected === i ? '#fff' : '#3a3a4a' }} data-testid={`dwf-${i}`}>{d.nodeId} — {d.constituent}</button>
+          ))}
+        </ScrollArea>
+      </div>
+      <div className="flex-1">
+        {sel ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-[10px] w-[100px]">Node</Label>
+              <Select value={sel.nodeId} onValueChange={v => updateField('nodeId', v)}>
+                <SelectTrigger className="h-7 text-xs flex-1" data-testid="dwf-node"><SelectValue /></SelectTrigger>
+                <SelectContent>{nodeIds.map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-[10px] w-[100px]">Constituent</Label>
+              <Select value={sel.constituent} onValueChange={v => updateField('constituent', v)}>
+                <SelectTrigger className="h-7 text-xs flex-1" data-testid="dwf-constituent"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FLOW">FLOW</SelectItem>
+                  {project.pollutants.map(p => <SelectItem key={p.id} value={p.id}>{p.id}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-[10px] w-[100px]">Baseline</Label>
+              <Input className="h-7 text-xs flex-1" type="number" value={sel.baseline} onChange={e => updateField('baseline', e.target.value)} data-testid="dwf-baseline" />
+            </div>
+            <h4 className="text-[10px] font-semibold text-[#2c3e6b] mt-3">Time Patterns</h4>
+            {patternTypes.map((pt, idx) => (
+              <div key={pt} className="flex items-center gap-2">
+                <Label className="text-[10px] w-[100px]">{pt}</Label>
+                <Select value={(sel.patterns || [])[idx] || ''} onValueChange={v => updatePattern(idx, v)}>
+                  <SelectTrigger className="h-7 text-xs flex-1" data-testid={`dwf-pattern-${idx}`}><SelectValue placeholder="(none)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value=" ">(none)</SelectItem>
+                    {patternNames.map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+        ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create a dry weather flow entry</div>}
+      </div>
+    </div>
+  );
+}
+
+function TreatmentEditor({ project, onUpdateProject }: EditorProps) {
+  const raw = (project.rawSections?.TREATMENT || []) as string[];
+  const [text, setText] = useState(raw.join('\n'));
+  const nodeIds = [...project.junctions.map(j => j.id), ...project.outfalls.map(o => o.id), ...project.storageUnits.map(s => s.id)];
+  const pollutantIds = project.pollutants.map(p => p.id);
+
+  const save = useCallback(() => {
+    const lines = text.split('\n').filter(l => l.trim());
+    onUpdateProject(prev => ({
+      ...prev,
+      rawSections: { ...prev.rawSections, TREATMENT: lines },
+    }));
+  }, [text, onUpdateProject]);
+
+  return (
+    <div className="min-h-[350px] space-y-3">
+      <div className="text-[10px] text-[#6b6b7b]">
+        Format: <code className="bg-[#f0f0f4] px-1 rounded">NodeID PollutantID Result = Expression</code><br />
+        Available functions: R (removal fraction), C (concentration), C0 (influent conc)
+      </div>
+      <div className="flex gap-2 text-[10px] text-[#6b6b7b]">
+        <span>Nodes: {nodeIds.slice(0, 5).join(', ')}{nodeIds.length > 5 ? '...' : ''}</span>
+        <span>Pollutants: {pollutantIds.join(', ') || '(none)'}</span>
+      </div>
+      <textarea
+        className="w-full h-[250px] text-[11px] font-mono p-2 border border-[#d0d0d8] rounded resize-none"
+        style={{ backgroundColor: '#fafafe' }}
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder="J1  TSS  R = 0.5 * (1 - EXP(-5*HRT))"
+        spellCheck={false}
+        data-testid="treatment-text"
+      />
+      <Button size="sm" onClick={save} className="bg-[#2c6eb5] text-white text-[10px] h-7" data-testid="btn-save-treatment">Apply Changes</Button>
+    </div>
+  );
+}
+
+function AdjustmentsEditor({ project, onUpdateProject }: EditorProps) {
+  const raw = project.rawSections?.ADJUSTMENTS || [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const adjustTypes = ['TEMPERATURE', 'EVAPORATION', 'RAINFALL', 'CONDUCTIVITY'];
+
+  const parseRow = (type: string): number[] => {
+    const line = raw.find(l => l.trim().toUpperCase().startsWith(type));
+    if (!line) return Array(12).fill(0);
+    const parts = line.trim().split(/\s+/).slice(1);
+    return Array.from({ length: 12 }, (_, i) => Number(parts[i]) || 0);
+  };
+
+  const [values, setValues] = useState<Record<string, number[]>>(() => {
+    const result: Record<string, number[]> = {};
+    for (const t of adjustTypes) result[t] = parseRow(t);
+    return result;
+  });
+
+  const updateValue = useCallback((type: string, month: number, value: string) => {
+    setValues(prev => {
+      const arr = [...prev[type]];
+      arr[month] = Number(value) || 0;
+      return { ...prev, [type]: arr };
+    });
+  }, []);
+
+  const save = useCallback(() => {
+    const lines = adjustTypes.map(type => `${type}  ${values[type].join('  ')}`);
+    onUpdateProject(prev => ({
+      ...prev,
+      rawSections: { ...prev.rawSections, ADJUSTMENTS: lines },
+    }));
+  }, [values, onUpdateProject]);
+
+  return (
+    <div className="min-h-[350px] space-y-3">
+      <div className="text-[10px] text-[#6b6b7b]">Monthly adjustment factors for climatology parameters.</div>
+      <ScrollArea className="h-[300px]">
+        {adjustTypes.map(type => (
+          <div key={type} className="mb-4">
+            <h4 className="text-[10px] font-semibold text-[#2c3e6b] mb-1">{type}</h4>
+            <div className="grid grid-cols-6 gap-1">
+              {monthNames.map((m, i) => (
+                <div key={m}>
+                  <Label className="text-[9px] text-[#6b6b7b]">{m}</Label>
+                  <Input className="h-6 text-[10px]" type="number" step={0.1} value={values[type][i]} onChange={e => updateValue(type, i, e.target.value)} data-testid={`adj-${type}-${i}`} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </ScrollArea>
+      <Button size="sm" onClick={save} className="bg-[#2c6eb5] text-white text-[10px] h-7" data-testid="btn-save-adjustments">Apply Changes</Button>
+    </div>
+  );
+}
+
+function StreetsEditor({ project, onUpdateProject }: EditorProps) {
+  const items = project.streets || [];
+  const [selected, setSelected] = useState('');
+  const sel = items.find(s => s.id === selected);
+  const paramLabels = ['Tcrown (ft)', 'Hcurb (ft)', 'Sx', 'nRoad', 'a', 'W', 'Sides', 'Tback (ft)', 'Sback', 'nBack'];
+
+  const addItem = useCallback(() => {
+    const id = `Street${items.length + 1}`;
+    onUpdateProject(prev => ({
+      ...prev,
+      streets: [...prev.streets, { id, params: ['40', '0.5', '0.04', '0.016', '0', '0', '2', '20', '0.02', '0.016'] }],
+    }));
+    setSelected(id);
+  }, [items, onUpdateProject]);
+
+  const updateParam = useCallback((idx: number, value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      streets: prev.streets.map(s => {
+        if (s.id !== selected) return s;
+        const params = [...s.params];
+        params[idx] = value;
+        return { ...s, params };
+      }),
+    }));
+  }, [selected, onUpdateProject]);
+
+  return (
+    <div className="flex gap-3 min-h-[350px]">
+      <div className="w-36 border-r border-[#e0e0e8] pr-2">
+        <Button size="sm" onClick={addItem} className="h-6 w-full text-[10px] bg-[#2c6eb5] text-white mb-2" data-testid="btn-add-street"><Plus className="w-3 h-3 mr-1" />Add Street</Button>
+        <ScrollArea className="h-[300px]">
+          {items.map(s => (
+            <button key={s.id} onClick={() => setSelected(s.id)} className="block w-full text-left text-[11px] px-2 py-1 rounded transition-colors" style={{ backgroundColor: selected === s.id ? '#2c6eb5' : 'transparent', color: selected === s.id ? '#fff' : '#3a3a4a' }} data-testid={`street-${s.id}`}>{s.id}</button>
+          ))}
+        </ScrollArea>
+      </div>
+      <div className="flex-1">
+        {sel ? (
+          <div className="space-y-2">
+            {paramLabels.map((label, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Label className="text-[10px] w-[120px]">{label}</Label>
+                <Input className="h-7 text-xs flex-1" value={(sel.params || [])[i] ?? ''} onChange={e => updateParam(i, e.target.value)} data-testid={`street-param-${i}`} />
+              </div>
+            ))}
+          </div>
+        ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create a street cross-section</div>}
+      </div>
+    </div>
+  );
+}
+
+function InletsEditor({ project, onUpdateProject }: EditorProps) {
+  const items = project.inlets || [];
+  const [selected, setSelected] = useState('');
+  const sel = items.find(s => s.id === selected);
+  const inletTypes = ['GRATE', 'CURB', 'SLOTTED', 'CUSTOM'];
+
+  const addItem = useCallback(() => {
+    const id = `Inlet${items.length + 1}`;
+    onUpdateProject(prev => ({
+      ...prev,
+      inlets: [...prev.inlets, { id, type: 'GRATE', params: ['2', '2', 'P_BAR-50', ''] }],
+    }));
+    setSelected(id);
+  }, [items, onUpdateProject]);
+
+  const updateType = useCallback((value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      inlets: prev.inlets.map(s => s.id === selected ? { ...s, type: value } : s),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const updateParam = useCallback((idx: number, value: string) => {
+    onUpdateProject(prev => ({
+      ...prev,
+      inlets: prev.inlets.map(s => {
+        if (s.id !== selected) return s;
+        const params = [...s.params];
+        params[idx] = value;
+        return { ...s, params };
+      }),
+    }));
+  }, [selected, onUpdateProject]);
+
+  const getParamLabels = (type: string): string[] => {
+    if (type === 'GRATE') return ['Length (ft)', 'Width (ft)', 'Grate Type', 'A-Open Frac'];
+    if (type === 'CURB') return ['Length (ft)', 'Height (ft)', 'Throat Type'];
+    if (type === 'SLOTTED') return ['Length (ft)', 'Width (ft)'];
+    return ['Curve Name'];
+  };
+
+  return (
+    <div className="flex gap-3 min-h-[350px]">
+      <div className="w-36 border-r border-[#e0e0e8] pr-2">
+        <Button size="sm" onClick={addItem} className="h-6 w-full text-[10px] bg-[#2c6eb5] text-white mb-2" data-testid="btn-add-inlet"><Plus className="w-3 h-3 mr-1" />Add Inlet</Button>
+        <ScrollArea className="h-[300px]">
+          {items.map(s => (
+            <button key={s.id} onClick={() => setSelected(s.id)} className="block w-full text-left text-[11px] px-2 py-1 rounded transition-colors" style={{ backgroundColor: selected === s.id ? '#2c6eb5' : 'transparent', color: selected === s.id ? '#fff' : '#3a3a4a' }} data-testid={`inlet-${s.id}`}>{s.id} ({s.type})</button>
+          ))}
+        </ScrollArea>
+      </div>
+      <div className="flex-1">
+        {sel ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-[10px] w-[100px]">Type</Label>
+              <Select value={sel.type} onValueChange={updateType}>
+                <SelectTrigger className="h-7 text-xs flex-1" data-testid="inlet-type"><SelectValue /></SelectTrigger>
+                <SelectContent>{inletTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            {getParamLabels(sel.type).map((label, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Label className="text-[10px] w-[100px]">{label}</Label>
+                <Input className="h-7 text-xs flex-1" value={(sel.params || [])[i] ?? ''} onChange={e => updateParam(i, e.target.value)} data-testid={`inlet-param-${i}`} />
+              </div>
+            ))}
+          </div>
+        ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create an inlet</div>}
       </div>
     </div>
   );

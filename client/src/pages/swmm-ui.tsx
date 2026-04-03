@@ -125,7 +125,7 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | null>(null);
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
   const [analysisOptionsTab, setAnalysisOptionsTab] = useState<string>('General');
@@ -158,6 +158,18 @@ export default function SwmmUI() {
     setPreferences(prev => {
       const next = { ...prev, [key]: value };
       savePreferences(next);
+      return next;
+    });
+  }, []);
+  const [recentFiles, setRecentFiles] = useState<{ name: string; source: string; timestamp: number }[]>(() => {
+    try { return JSON.parse(localStorage.getItem('swmm_recent_files') || '[]'); } catch { return []; }
+  });
+  const [showRecentMenu, setShowRecentMenu] = useState(false);
+  const addRecentFile = useCallback((name: string, source: string = 'local') => {
+    setRecentFiles(prev => {
+      const filtered = prev.filter(f => f.name !== name);
+      const next = [{ name, source, timestamp: Date.now() }, ...filtered].slice(0, 10);
+      try { localStorage.setItem('swmm_recent_files', JSON.stringify(next)); } catch {}
       return next;
     });
   }, []);
@@ -289,12 +301,13 @@ export default function SwmmUI() {
       setTimeStep(0);
       setSelectedObj(null);
       setMultiSelectIds(null);
+      addRecentFile(file.name, 'local');
       toast({ title: 'File Loaded', description: `${file.name} loaded successfully` });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
     setOpenDialog(null);
-  }, [toast]);
+  }, [toast, addRecentFile]);
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -349,13 +362,14 @@ export default function SwmmUI() {
       setTimeStep(0);
       setSelectedObj(null);
       setMultiSelectIds(null);
+      addRecentFile(name, 'github');
       toast({ title: 'File Loaded', description: `${name} loaded from GitHub` });
       setOpenDialog(null);
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
     setLoading(false);
-  }, [githubUrl, toast]);
+  }, [githubUrl, toast, addRecentFile]);
 
   const ghBrowse = useCallback(async (path: string) => {
     setGhBrowseLoading(true);
@@ -422,12 +436,13 @@ export default function SwmmUI() {
       setTimeStep(0);
       setSelectedObj(null);
       setMultiSelectIds(null);
+      addRecentFile(sampleName, 'sample');
       toast({ title: 'Sample Loaded', description: `${sampleName} loaded successfully` });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
     setLoading(false);
-  }, [toast]);
+  }, [toast, addRecentFile]);
 
   const handleSave = useCallback(async () => {
     const { projectToInp } = await import('@/lib/inp-parser');
@@ -450,7 +465,7 @@ export default function SwmmUI() {
       setOpenDialog('analysisOptions');
       return;
     }
-    const editorSections = ['TIMESERIES', 'CURVES', 'PATTERNS', 'CONTROLS', 'POLLUTANTS', 'LANDUSES', 'LID_CONTROLS', 'EVAPORATION', 'AQUIFERS'];
+    const editorSections = ['TIMESERIES', 'CURVES', 'PATTERNS', 'CONTROLS', 'POLLUTANTS', 'LANDUSES', 'LID_CONTROLS', 'EVAPORATION', 'AQUIFERS', 'TRANSECTS', 'SNOWPACKS', 'GROUNDWATER', 'DWF', 'TREATMENT', 'ADJUSTMENTS', 'STREETS', 'INLETS'];
     if (editorSections.includes(section)) {
       setDataEditorSection(section);
       setDataEditorItem('');
@@ -1335,6 +1350,24 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Folder className="w-4 h-4" />} label="Defaults" onClick={() => setOpenDialog('projectDefaults')} testId="btn-defaults" />
             <div className="w-px h-8 mx-1" style={{ backgroundColor: '#d0d0d8' }} />
             <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Samples" onClick={() => setShowSamplesMenu(v => !v)} testId="btn-samples" />
+            <div className="relative">
+              <ToolbarButton icon={<Clock className="w-4 h-4" />} label="Recent" onClick={() => setShowRecentMenu(v => !v)} testId="btn-recent" />
+              {showRecentMenu && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-[#d0d0d8] rounded-lg shadow-lg z-50 min-w-[200px] py-1" data-testid="recent-menu">
+                  {recentFiles.length === 0 ? (
+                    <div className="px-3 py-2 text-[11px] text-[#9090a0]">No recent files</div>
+                  ) : (
+                    recentFiles.map((f, i) => (
+                      <button key={i} className="w-full text-left px-3 py-1.5 text-[11px] text-[#2a2a3e] hover:bg-[#f0f0f4] flex items-center gap-2 transition-colors" data-testid={`recent-file-${i}`}
+                        onClick={() => { setShowRecentMenu(false); if (f.source === 'sample') handleLoadSample(f.name); else toast({ title: 'Recent File', description: `${f.name} — re-open via File > Open or GitHub` }); }}>
+                        <span className="flex-1 truncate">{f.name}</span>
+                        <span className="text-[9px] text-[#9090a0] shrink-0">{f.source}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
         {activeMenu === 'Edit' && (
@@ -1539,6 +1572,10 @@ export default function SwmmUI() {
             </button>
           </div>
         </>
+      )}
+
+      {showRecentMenu && (
+        <div className="fixed inset-0 z-40" onClick={() => setShowRecentMenu(false)} />
       )}
 
       {simStatus === 'running' && (

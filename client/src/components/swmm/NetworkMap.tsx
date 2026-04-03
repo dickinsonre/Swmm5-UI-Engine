@@ -258,6 +258,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       if (nType === 'junction' && !isLayerVisible('junctions')) continue;
       if (nType === 'outfall' && !isLayerVisible('outfalls')) continue;
       if (nType === 'storage' && !isLayerVisible('storage')) continue;
+      if (nType === 'divider' && !isLayerVisible('dividers')) continue;
 
       const [nsx, nsy] = worldToScreen(nx, ny);
       const d = Math.sqrt((sx - nsx) ** 2 + (sy - nsy) ** 2);
@@ -477,6 +478,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     }
 
     for (const [rgId, [rx, ry]] of Object.entries(project.symbols)) {
+      if (!isLayerVisible('raingages')) continue;
       const [sx, sy] = worldToScreen(rx, ry);
       ctx.fillStyle = '#4488cc';
       ctx.strokeStyle = '#6699dd';
@@ -504,9 +506,9 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     const allLinks = [
       ...(isLayerVisible('conduits') ? project.conduits.map(c => ({ id: c.id, from: c.fromNode, to: c.toNode, type: 'conduit' as const })) : []),
       ...(isLayerVisible('pumps') ? project.pumps.map(p => ({ id: p.id, from: p.fromNode, to: p.toNode, type: 'pump' as const })) : []),
-      ...project.orifices.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'orifice' as const })),
+      ...(isLayerVisible('orifices') ? project.orifices.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'orifice' as const })) : []),
       ...(isLayerVisible('weirs') ? project.weirs.map(w => ({ id: w.id, from: w.fromNode, to: w.toNode, type: 'weir' as const })) : []),
-      ...project.outlets.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'outlet' as const })),
+      ...(isLayerVisible('outlets') ? project.outlets.map(o => ({ id: o.id, from: o.fromNode, to: o.toNode, type: 'outlet' as const })) : []),
     ];
 
     for (const link of allLinks) {
@@ -606,6 +608,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       if (nType === 'junction' && !isLayerVisible('junctions')) continue;
       if (nType === 'outfall' && !isLayerVisible('outfalls')) continue;
       if (nType === 'storage' && !isLayerVisible('storage')) continue;
+      if (nType === 'divider' && !isLayerVisible('dividers')) continue;
       const [sx, sy] = worldToScreen(nx, ny);
       const isSelected = selectedObj?.id === nodeId;
       const r = Math.max(3, Math.min(12, mapState.zoom * 250 * nodeSizeFactor));
@@ -951,6 +954,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       if (nType === 'junction' && !isLayerVisible('junctions')) continue;
       if (nType === 'outfall' && !isLayerVisible('outfalls')) continue;
       if (nType === 'storage' && !isLayerVisible('storage')) continue;
+      if (nType === 'divider' && !isLayerVisible('dividers')) continue;
 
       const [nsx, nsy] = worldToScreen(nx, ny);
       const d = Math.sqrt((sx - nsx) ** 2 + (sy - nsy) ** 2);
