@@ -48,7 +48,7 @@ async function loadWasmModule(onProgress?: (pct: number, msg: string) => void): 
   if (wasmLoading) return wasmLoading;
 
   wasmLoading = (async () => {
-    if (onProgress) onProgress(5, 'Downloading SWMM 5.2.4 WASM engine...');
+    if (onProgress) onProgress(5, 'Downloading SWMM 5.1.015 WASM engine...');
 
     const [wasmResp, dataResp] = await Promise.all([
       fetch('/js.wasm'),
@@ -133,7 +133,7 @@ export function createWasmEngine(): SwmmEngine {
       try { mod.FS.writeFile('model.rpt', ''); } catch {}
       try { mod.FS.writeFile('model.out', ''); } catch {}
 
-      if (onProgress) onProgress(35, 'Running SWMM 5.2.4 (WASM)...');
+      if (onProgress) onProgress(35, 'Running SWMM 5.1.015 (WASM)...');
 
       const swmm_run = mod.cwrap('swmm_run', 'number', ['string', 'string', 'string']);
       const errCode = swmm_run('model.inp', 'model.rpt', 'model.out');
@@ -177,7 +177,7 @@ export function createWasmEngine(): SwmmEngine {
       return parsed;
     },
     getStatus() {
-      return 'EPA SWMM 5.2.4 (WASM In-Browser)';
+      return 'EPA SWMM 5.1.015 (WASM In-Browser)';
     },
   };
 }
@@ -189,7 +189,7 @@ export function createLocalEngine(): SwmmEngine {
     async run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults> {
       const inpText = projectToInp(project);
 
-      if (onProgress) onProgress(5, 'Sending model to SWMM 5.2.4 engine...');
+      if (onProgress) onProgress(5, 'Sending model to SWMM engine...');
 
       const resp = await fetch('/api/swmm/run-or-proxy', {
         method: 'POST',

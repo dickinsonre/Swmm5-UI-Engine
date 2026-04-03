@@ -575,7 +575,7 @@ export default function SwmmUI() {
       }
       setSimStatus('current');
       setTimeStep(0);
-      const engineLabel = engine.mode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engine.mode === 'wasm' ? 'EPA SWMM 5.2.4 (WASM)' : engine.mode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine';
+      const engineLabel = engine.mode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engine.mode === 'wasm' ? 'EPA SWMM 5.1.015 (WASM)' : engine.mode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine';
       toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed (${engineLabel})` });
     } catch (e: any) {
       if (progressInterval) clearInterval(progressInterval);
@@ -1633,7 +1633,7 @@ export default function SwmmUI() {
               data-testid="btn-engine-toggle"
             >
               <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
-              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
+              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.1.015' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
             </button>
           </div>
         )}
@@ -1731,7 +1731,7 @@ export default function SwmmUI() {
                     {simProgressMsg || 'Running simulation...'}
                   </div>
                   <div className="text-[10px] text-[#6b6b7b]">
-                    {engineMode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engineMode === 'wasm' ? 'EPA SWMM 5.2.4 (WASM In-Browser)' : engineMode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine'}
+                    {engineMode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engineMode === 'wasm' ? 'EPA SWMM 5.1.015 (WASM In-Browser)' : engineMode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine'}
                   </div>
                 </div>
                 <span className="text-xs text-[#2c6eb5] font-mono tabular-nums" data-testid="text-progress-pct">
@@ -2282,7 +2282,7 @@ export default function SwmmUI() {
           />
         )}
         <StatusItem
-          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
+          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.1.015' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
           color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
           icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
         />

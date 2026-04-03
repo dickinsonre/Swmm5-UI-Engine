@@ -14,7 +14,7 @@ Client-server architecture with client-side SWMM data management.
 
 ## Simulation Engines (4 modes)
 - **Local** (green `#2a8a4a`): EPA SWMM 5.2.4 binary at `/home/runner/workspace/swmm-engine/runswmm`. Uses `/api/swmm/run-or-proxy` endpoint. Auto-falls back to Remote if binary missing (production).
-- **WASM** (orange `#e88a1a`): In-browser SWMM engine compiled via Emscripten. Files in `client/public/`: `swmm_engine.js`, `js.wasm`, `js.data`. No server round-trip needed. Module loaded lazily on first run, cached for subsequent runs.
+- **WASM** (orange `#e88a1a`): EPA SWMM 5.1 (Build 5.1.015) in-browser engine compiled via Emscripten. Files in `client/public/`: `swmm_engine.js`, `js.wasm`, `js.data`. No server round-trip needed. Module loaded lazily on first run, cached for subsequent runs.
 - **Remote** (blue `#2c6eb5`): BatchSWMM cloud API at `https://batch-swmm-runner-robertdickinson.replit.app`. Upload → WebSocket progress → results.
 - **Mock** (gray): Synthetic results for testing, no engine needed.
 
@@ -76,7 +76,7 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 
 ## External Dependencies
 - EPA SWMM 5.2.4 Binary (local dev only)
-- SWMM WASM Engine (bundled in client/public/, from epanet-swmm-5-generate.replit.app)
+- SWMM WASM Engine v5.1.015 (bundled in client/public/, from epanet-swmm-5-generate.replit.app)
 - BatchSWMM cloud API (remote fallback)
 - GitHub API (file fetching via proxy)
 - Recharts (time series graphs, profile plots)
