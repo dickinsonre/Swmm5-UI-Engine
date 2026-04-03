@@ -2,9 +2,9 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-types';
 import { createEmptyProject } from '@/lib/swmm-types';
 import {
-  NODE_INPUT_VARS, NODE_VARS, LINK_INPUT_VARS, LINK_VARS, SUB_INPUT_VARS, SUB_VARS,
-  getNodeCategories, getLinkCategories, getSubCategories,
-  getNodeVarByKey, getLinkVarByKey, getSubVarByKey,
+  NODE_INPUT_VARS, NODE_VARS, LINK_INPUT_VARS, LINK_VARS, SUB_INPUT_VARS, SUB_VARS, SYS_VARS,
+  getNodeCategories, getLinkCategories, getSubCategories, getSystemCategories,
+  getNodeVarByKey, getLinkVarByKey, getSubVarByKey, getSystemVarByKey,
 } from '@/lib/swmm-variables';
 import { parseInpFile } from '@/lib/inp-parser';
 import { createMockEngine, createRemoteEngine, createLocalEngine, createWasmEngine, checkRemoteEngine, checkLocalEngine, checkWasmEngine } from '@/lib/swmm-engine';
@@ -34,7 +34,7 @@ import {
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
-  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap,
+  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
@@ -123,6 +123,8 @@ export default function SwmmUI() {
   const [subcatchTheme, setSubcatchTheme] = useState('imperv');
   const [nodeTheme, setNodeTheme] = useState('depth');
   const [linkTheme, setLinkTheme] = useState('flow');
+  const [systemTheme, setSystemTheme] = useState('sysRunoff');
+  const [showSystemPanel, setShowSystemPanel] = useState(false);
   const [timeStep, setTimeStep] = useState(0);
   const [simStatus, setSimStatus] = useState<'none' | 'running' | 'current' | 'outdated'>('none');
   const [simProgress, setSimProgress] = useState(0);
@@ -1515,6 +1517,10 @@ export default function SwmmUI() {
               options={LINK_INPUT_VARS.map(v => [v.key, v.name] as [string, string])}
               groups={getLinkCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-links" />
+            <ThemeCombo label="System" value={systemTheme} onChange={(v) => { setSystemTheme(v); setShowSystemPanel(true); }}
+              options={[]}
+              groups={getSystemCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
+              testId="combo-system" />
             <div className="flex-1 min-w-0" />
             {results && (
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -2073,6 +2079,48 @@ export default function SwmmUI() {
                 <div className="text-[8px] text-[#9090a0] leading-relaxed" data-testid="text-cfl-citation">
                   ReSWMM — J. Vasconcelos, R.L. Pachaly (Auburn University)
                 </div>
+              </div>
+            </div>
+          )}
+
+          {showSystemPanel && results && results.timeSteps[timeStep]?.system && (
+            <div
+              className="absolute top-2 left-2 w-[calc(100%-16px)] md:w-[300px] max-h-[calc(100%-16px)] overflow-y-auto z-20 rounded-lg shadow-xl"
+              style={{ backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid #d0d0d8' }}
+              data-testid="system-panel"
+            >
+              <div className="flex items-center justify-between px-3 py-2 border-b border-[#d0d0d8]">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-[#2c6eb5]" />
+                  <span className="text-[11px] font-semibold text-[#2a2a3e]">System Variables</span>
+                </div>
+                <button onClick={() => setShowSystemPanel(false)} className="text-[#6b6b7b] hover:text-[#2a2a3e]" data-testid="btn-sys-close">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="px-3 py-2 space-y-1.5">
+                {getSystemCategories().map(group => (
+                  <div key={group.label}>
+                    <div className="text-[9px] font-semibold text-[#6b6b7b] uppercase tracking-wide mb-0.5">{group.label}</div>
+                    {group.vars.map(v => {
+                      const val = results.timeSteps[timeStep]?.system?.extended?.[v.key];
+                      const isSelected = v.key === systemTheme;
+                      return (
+                        <div
+                          key={v.key}
+                          className={`flex items-center justify-between px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-colors ${isSelected ? 'bg-[#e0ecff]' : 'hover:bg-[#f4f4f8]'}`}
+                          onClick={() => setSystemTheme(v.key)}
+                          data-testid={`sys-var-${v.key}`}
+                        >
+                          <span className={isSelected ? 'text-[#2c6eb5] font-semibold' : 'text-[#2a2a3e]'}>{v.name}</span>
+                          <span className="font-mono text-[#6b6b7b]">
+                            {val !== undefined ? val.toFixed(3) : '—'} <span className="text-[8px]">{v.units}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             </div>
           )}

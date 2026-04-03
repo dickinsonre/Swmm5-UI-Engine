@@ -582,6 +582,7 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
   ];
   const linkMap = new Map(allLinks.map(l => [l.id, l]));
 
+  let prevStorage = 0;
   for (const ts of results.timeSteps) {
     const dt = 30;
     for (const [nodeId, nr] of Object.entries(ts.nodes)) {
@@ -635,10 +636,11 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
       const wMid = maxDia * Math.sin(theta / 2) || 0;
 
       ext.froude = (aMid > 0.001 && wMid > 0.001) ? Math.abs(lr.velocity) / Math.sqrt(g * aMid / wMid) : 0;
-      ext.f1Area = aMid * (1 + (Math.random() - 0.5) * 0.1);
-      ext.f2Area = aMid * (1 + (Math.random() - 0.5) * 0.1);
-      ext.v1 = lr.velocity * (1 + (Math.random() - 0.5) * 0.2);
-      ext.v2 = lr.velocity * (1 - (Math.random() - 0.5) * 0.2);
+      const slopeFrac = len > 0 && fromN && toN ? Math.min(Math.abs(fromN.elev - toN.elev) / len, 0.05) : 0.01;
+      ext.f1Area = aMid * (1 + slopeFrac);
+      ext.f2Area = aMid * (1 - slopeFrac);
+      ext.v1 = lr.velocity * (1 + slopeFrac * 2);
+      ext.v2 = lr.velocity * (1 - slopeFrac * 2);
       const slope = len > 0 && fromN && toN ? (fromN.elev - toN.elev) / len : 0.01;
       const sf = roughness > 0 && rMid > 0 ? (roughness * lr.velocity / (1.486 * Math.pow(rMid, 2/3))) ** 2 : 0;
       ext.dq1Inertia = aMid * (lr.velocity - lr.velocity * 0.95) / dt;
@@ -662,12 +664,12 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
       ext.a2 = ext.f2Area;
       ext.rMid = rMid;
       ext.rWeighted = rMid;
-      ext.r1 = rMid * (1 + (Math.random() - 0.5) * 0.1);
-      ext.r2 = rMid * (1 - (Math.random() - 0.5) * 0.1);
-      ext.w1 = wMid * (1 + (Math.random() - 0.5) * 0.15);
-      ext.w2 = wMid * (1 - (Math.random() - 0.5) * 0.15);
-      ext.y1 = lr.depth * (1 + (Math.random() - 0.5) * 0.1);
-      ext.y2 = lr.depth * (1 - (Math.random() - 0.5) * 0.1);
+      ext.r1 = rMid * (1 + slopeFrac);
+      ext.r2 = rMid * (1 - slopeFrac);
+      ext.w1 = wMid * (1 + slopeFrac * 1.5);
+      ext.w2 = wMid * (1 - slopeFrac * 1.5);
+      ext.y1 = lr.depth * (1 + slopeFrac);
+      ext.y2 = lr.depth * (1 - slopeFrac);
 
       const h1 = fromNr ? fromNr.head : (fromN?.elev || 0);
       const h2 = toNr ? toNr.head : (toN?.elev || 0);
@@ -786,6 +788,60 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
       ext.infilAMC = sr.moisture > 0.3 ? 3 : sr.moisture > 0.15 ? 2 : 1;
       ext.infilCN = 75 + pctImperv * 0.2;
     }
+
+    let totalRainfall = 0, totalInfil = 0, totalRunoff = 0, totalFlooding = 0;
+    let totalOutflow = 0, totalStorage = 0, totalEvap = 0, totalGW = 0;
+    for (const sr of Object.values(ts.subcatchments)) {
+      totalRainfall += sr.rainfall;
+      totalInfil += sr.infiltration;
+      totalRunoff += sr.runoff;
+      totalEvap += sr.evap;
+      totalGW += sr.gwOutflow;
+    }
+    const outfallIds = new Set([
+      ...project.outfalls.map(o => o.id),
+    ]);
+    for (const [nid, nr] of Object.entries(ts.nodes)) {
+      totalFlooding += nr.flooding;
+      totalStorage += nr.volume;
+      if (outfallIds.has(nid)) {
+        totalOutflow += nr.totalInflow;
+      }
+    }
+    const scCount = Object.keys(ts.subcatchments).length || 1;
+    const avgRain = totalRainfall / scCount;
+
+    const sys: Record<string, number> = {};
+    const totalInflow = totalRunoff + totalGW;
+    const massBalance = totalInflow > 0 ? Math.abs(totalInflow - totalOutflow - totalFlooding) / totalInflow * 100 : 0;
+    const stepError = totalInflow > 0 ? Math.abs(totalInflow - totalOutflow - totalFlooding + (prevStorage - totalStorage)) / Math.max(totalInflow, 1) * 100 : 0;
+
+    sys.sysRainfall = avgRain;
+    sys.sysSnowDepth = 0;
+    sys.sysInfil = totalInfil;
+    sys.sysRunoff = totalRunoff;
+    sys.sysDWF = 0;
+    sys.sysGWFlow = totalGW;
+    sys.sysRDII = 0;
+    sys.sysExtFlow = 0;
+    sys.sysTotalInflow = totalInflow;
+    sys.sysFlooding = totalFlooding;
+    sys.sysOutflow = totalOutflow;
+    sys.sysStorage = totalStorage;
+    sys.sysEvap = totalEvap;
+    sys.sysSnowfall = 0;
+    sys.sysSnowArea = 0;
+    sys.sysFreeWater = 0;
+    sys.sysColdContent = 0;
+    sys.sysSnowmelt = 0;
+    sys.sysImelt = 0;
+    sys.sysRainMelt = 0;
+    sys.stepFlowError = Math.min(stepError, 100);
+    sys.sysCE = Math.min(massBalance, 100);
+    sys.sysIterations = totalFlooding > 0 ? 4 : 2;
+    sys.sysTimestep = dt;
+    ts.system = { extended: sys };
+    prevStorage = totalStorage;
   }
 }
 

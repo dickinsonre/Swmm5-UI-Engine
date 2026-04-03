@@ -18,7 +18,7 @@ interface Props {
   timeStep: number;
 }
 
-type ObjCategory = 'node' | 'link' | 'subcatchment';
+type ObjCategory = 'node' | 'link' | 'subcatchment' | 'system';
 
 const NODE_VARS = ['depth', 'head', 'volume', 'lateralInflow', 'totalInflow', 'flooding'] as const;
 const NODE_VAR_LABELS: Record<string, string> = { depth: 'Depth', head: 'Head', volume: 'Volume', lateralInflow: 'Lat. Inflow', totalInflow: 'Tot. Inflow', flooding: 'Flooding' };
@@ -26,6 +26,22 @@ const LINK_VARS = ['flow', 'depth', 'velocity', 'volume', 'capacity'] as const;
 const LINK_VAR_LABELS: Record<string, string> = { flow: 'Flow', depth: 'Depth', velocity: 'Velocity', volume: 'Volume', capacity: 'Capacity' };
 const SUBCATCH_VARS = ['rainfall', 'snowDepth', 'evapLoss', 'infilLoss', 'runoff', 'gwOutflow', 'gwElev', 'soilMoisture'] as const;
 const SUBCATCH_VAR_LABELS: Record<string, string> = { rainfall: 'Rainfall', snowDepth: 'Snow Depth', evapLoss: 'Evaporation', infilLoss: 'Infiltration', runoff: 'Runoff', gwOutflow: 'GW Flow', gwElev: 'GW Elev', soilMoisture: 'Soil Moisture' };
+const SYSTEM_VARS = [
+  'sysTemperature', 'sysRainfall', 'sysSnowDepth', 'sysInfil', 'sysRunoff', 'sysDWF', 'sysGWFlow',
+  'sysRDII', 'sysExtFlow', 'sysTotalInflow', 'sysFlooding', 'sysOutflow', 'sysStorage', 'sysEvap',
+  'sysPET', 'sysWindSpeed', 'sysSnowfall', 'sysSnowArea', 'sysFreeWater', 'sysColdContent',
+  'sysSnowmelt', 'sysImelt', 'sysRainMelt', 'stepFlowError', 'sysCE', 'sysIterations', 'sysTimestep',
+] as const;
+const SYSTEM_VAR_LABELS: Record<string, string> = {
+  sysTemperature: 'Temperature', sysRainfall: 'Rainfall', sysSnowDepth: 'Snow Depth',
+  sysInfil: 'Infiltration', sysRunoff: 'Runoff', sysDWF: 'DWF', sysGWFlow: 'GW Flow',
+  sysRDII: 'RDII', sysExtFlow: 'External Flow', sysTotalInflow: 'Total Inflow',
+  sysFlooding: 'Flooding', sysOutflow: 'Outflow', sysStorage: 'Storage', sysEvap: 'Evaporation',
+  sysPET: 'PET', sysWindSpeed: 'Wind Speed', sysSnowfall: 'Snowfall', sysSnowArea: 'Snow Area',
+  sysFreeWater: 'Free Water', sysColdContent: 'Cold Content', sysSnowmelt: 'Snowmelt',
+  sysImelt: 'Immed. Melt', sysRainMelt: 'Rain Melt', stepFlowError: 'Step Error',
+  sysCE: 'Cont. Error', sysIterations: 'Iterations', sysTimestep: 'Timestep',
+};
 
 function getNodeIds(p: SwmmProject): string[] {
   return [
@@ -52,6 +68,11 @@ function getResultValue(results: SimulationResults, category: ObjCategory, id: s
   if (!results.timeSteps || step >= results.timeSteps.length) return '\u2014';
   const ts = results.timeSteps[step];
   if (!ts) return '\u2014';
+  if (category === 'system') {
+    const sysVal = ts.system?.extended?.[variable];
+    if (sysVal === undefined || sysVal === null) return '\u2014';
+    return Number(sysVal).toFixed(3);
+  }
   let obj: Record<string, number> | undefined;
   if (category === 'node') {
     obj = ts.nodes?.[id];
@@ -91,11 +112,12 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
   const ids = useMemo(() => {
     if (category === 'node') return getNodeIds(project);
     if (category === 'link') return getLinkIds(project);
+    if (category === 'system') return ['System'];
     return getSubcatchIds(project);
   }, [project, category]);
 
-  const vars = category === 'node' ? NODE_VARS : category === 'link' ? LINK_VARS : SUBCATCH_VARS;
-  const varLabels = category === 'node' ? NODE_VAR_LABELS : category === 'link' ? LINK_VAR_LABELS : SUBCATCH_VAR_LABELS;
+  const vars = category === 'node' ? NODE_VARS : category === 'link' ? LINK_VARS : category === 'system' ? SYSTEM_VARS : SUBCATCH_VARS;
+  const varLabels = category === 'node' ? NODE_VAR_LABELS : category === 'link' ? LINK_VAR_LABELS : category === 'system' ? SYSTEM_VAR_LABELS : SUBCATCH_VAR_LABELS;
   const timestamps = useMemo(() => {
     if (!results?.timeSteps) return [];
     return results.timeSteps.map(ts => ts.dateTime || `t=${ts.time}`);
@@ -292,15 +314,16 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
             <Button variant={mode === 'byObject' ? 'default' : 'outline'} size="sm" className="text-[11px] h-7" onClick={() => onModeChange('byObject')} style={mode === 'byObject' ? { backgroundColor: '#2c6eb5' } : {}} data-testid="btn-table-by-object">By Object</Button>
             <Button variant={mode === 'byVariable' ? 'default' : 'outline'} size="sm" className="text-[11px] h-7" onClick={() => onModeChange('byVariable')} style={mode === 'byVariable' ? { backgroundColor: '#2c6eb5' } : {}} data-testid="btn-table-by-variable">By Variable</Button>
           </div>
-          <Select value={category} onValueChange={v => { setCategory(v as ObjCategory); setSelectedObj(''); setSelectedVar(''); }}>
+          <Select value={category} onValueChange={v => { setCategory(v as ObjCategory); setSelectedObj(v === 'system' ? 'System' : ''); setSelectedVar(''); }}>
             <SelectTrigger className="h-7 text-[11px] w-32" data-testid="select-table-category"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="node">Nodes</SelectItem>
               <SelectItem value="link">Links</SelectItem>
               <SelectItem value="subcatchment">Subcatchments</SelectItem>
+              <SelectItem value="system">System</SelectItem>
             </SelectContent>
           </Select>
-          {mode === 'byObject' && (
+          {mode === 'byObject' && category !== 'system' && (
             <Select value={selectedObj} onValueChange={setSelectedObj}>
               <SelectTrigger className="h-7 text-[11px] w-36" data-testid="select-table-object"><SelectValue placeholder="Select object..." /></SelectTrigger>
               <SelectContent>

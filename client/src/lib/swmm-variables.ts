@@ -303,6 +303,20 @@ export const SYS_VARS: SwmmVariable[] = [
   { key: 'sysTimestep', name: 'Timestep Used', units: 'sec', cat: 'SYS_QA', scope: 'system', maxVal: 60, labels: ['< 5', '5-15', '15-30', '30-45', '> 45'] },
 ];
 
+export function getSystemVarByKey(key: string): SwmmVariable | undefined {
+  return SYS_VARS.find(v => v.key === key);
+}
+
+export function getSystemCategories(): { label: string; vars: SwmmVariable[] }[] {
+  const cats = CATEGORY_INFO.filter(c => c.scope === 'system');
+  const groups: { label: string; vars: SwmmVariable[] }[] = [];
+  for (const cat of cats) {
+    const vars = SYS_VARS.filter(v => v.cat === cat.id);
+    if (vars.length > 0) groups.push({ label: cat.label, vars });
+  }
+  return groups;
+}
+
 export function getNodeVarByKey(key: string): SwmmVariable | undefined {
   return NODE_VARS.find(v => v.key === key) || NODE_INPUT_VARS.find(v => v.key === key);
 }
