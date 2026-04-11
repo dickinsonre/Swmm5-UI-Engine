@@ -79,6 +79,16 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - Floating System Variables panel in map UI shows all system vars grouped by category, clickable to set theme variable
 - View toolbar has System dropdown for system variable theming
 
+## New Features (Session 2)
+- **Animation Speed Control**: Speed slider (20-500ms range, inverted for intuition) next to play/pause button, adjusts requestAnimationFrame interval
+- **Enhanced Report Viewer**: Searchable `.rpt` viewer with match count, search highlighting (deterministic split-based), section navigation buttons (scrolls to first match), 9 quick-jump sections
+- **Scatter Plot Dialog**: X-Y scatter with independent category/object/variable selectors for each axis, Pearson correlation coefficient (r) and R², Recharts ScatterChart
+- **Frequency/Exceedance Curves**: Added to Statistics Report after event bar chart — exceedance probability curve (Weibull plotting position), cumulative frequency distribution, return period analysis (2-100yr)
+- **Transect Editor**: Station-elevation table editor with add/remove rows, Manning's N (left/right/channel), bank station markers, live AreaChart cross-section preview, save to project
+- **Split-Screen Comparison**: Load second INP file, mock-engine simulation for quick topology comparison, side-by-side summary stats, difference table (first 50 elements), % change calculation, bar chart of differences
+- **URL-Based State**: `?inp=URL` and `?github=URL` query parameters auto-load INP files from raw URLs or GitHub blob URLs (converts to raw), falls back to default sample on failure
+- **Extended Variable Stubs**: Pollutant WQ (washoff, buildup, conc in runoff/GW, total load), Snow (ATI, WATI, pack SWE, pack depth), LID (soil evap, drain coeff, retention) — all registered in swmm-variables.ts with SUB_POLLUT category
+
 ## External Dependencies
 - EPA SWMM 5.2.4 Binary (local dev only)
 - SWMM WASM Engine v5.2.4 (compiled from source via Emscripten, bundled in client/public/)

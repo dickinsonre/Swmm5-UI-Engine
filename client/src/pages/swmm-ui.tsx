@@ -136,7 +136,8 @@ export default function SwmmUI() {
   const [results, setResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | null>(null);
+  const [animSpeed, setAnimSpeed] = useState(150);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | null>(null);
   const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
@@ -219,6 +220,8 @@ export default function SwmmUI() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [reportContent, setReportContent] = useState<string | null>(null);
   const [showReportDialog, setShowReportDialog] = useState(false);
+  const [reportSearchTerm, setReportSearchTerm] = useState('');
+  const [splitScreenProject, setSplitScreenProject] = useState<{ project: SwmmProject; results: SimulationResults; fileName: string } | null>(null);
   const animRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const networkMapRef = useRef<NetworkMapHandle>(null);
@@ -290,6 +293,32 @@ export default function SwmmUI() {
   useEffect(() => {
     if (initialLoadDone) return;
     setInitialLoadDone(true);
+
+    const params = new URLSearchParams(window.location.search);
+    const inpUrl = params.get('inp');
+    const ghUrl = params.get('github');
+
+    if (inpUrl || ghUrl) {
+      const url = inpUrl || (ghUrl ? ghUrl.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/') : '');
+      if (url) {
+        fetch(url)
+          .then(r => { if (!r.ok) throw new Error('Failed to fetch'); return r.text(); })
+          .then(text => {
+            const parsed = parseInpFile(text);
+            setProject(parsed);
+            const name = url.split('/').pop() || 'model.inp';
+            setFileName(name);
+            toast({ title: 'Loaded from URL', description: `${name} loaded from shared link` });
+          })
+          .catch(() => {
+            fetch('/samples/Greenville_SI.inp')
+              .then(r => r.ok ? r.text() : '')
+              .then(text => { if (text) { setProject(parseInpFile(text)); setFileName('Greenville_SI.inp'); } });
+          });
+        return;
+      }
+    }
+
     fetch('/samples/Greenville_SI.inp')
       .then(r => { if (!r.ok) throw new Error('Failed'); return r.text(); })
       .then(text => {
@@ -878,7 +907,7 @@ export default function SwmmUI() {
     }
     let lastTime = 0;
     const animate = (time: number) => {
-      if (time - lastTime > 150) {
+      if (time - lastTime > animSpeed) {
         lastTime = time;
         setTimeStep(prev => (prev + 1) % results.timeSteps.length);
       }
@@ -888,7 +917,7 @@ export default function SwmmUI() {
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [isAnimating, results]);
+  }, [isAnimating, results, animSpeed]);
 
   const menus: MenuTab[] = ['File', 'Edit', 'View', 'Map', 'Project', 'Help'];
 
@@ -1546,6 +1575,20 @@ export default function SwmmUI() {
                   {isAnimating ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                   <span className="hidden sm:inline">{isAnimating ? 'Stop' : 'Animate'}</span>
                 </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-[8px] text-[#6b6b7b]">Speed</span>
+                  <input
+                    type="range"
+                    min={20}
+                    max={500}
+                    step={10}
+                    value={520 - animSpeed}
+                    onChange={e => setAnimSpeed(520 - +e.target.value)}
+                    className="w-12"
+                    style={{ accentColor: '#2c6eb5' }}
+                    data-testid="anim-speed-slider"
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -1593,6 +1636,9 @@ export default function SwmmUI() {
             <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (results) setOpenDialog('timeSeries'); else toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); }} testId="btn-graph" />
             <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => setOpenDialog('calibration')} testId="btn-calibration" />
             <ToolbarButton icon={<Table2 className="w-4 h-4" />} label="Table" onClick={() => setOpenDialog('tableView')} testId="btn-table-view" />
+            <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Scatter" onClick={() => { if (results) setOpenDialog('scatterPlot'); else toast({ title: 'No Results', description: 'Run a simulation first' }); }} testId="btn-scatter-plot" />
+            <ToolbarButton icon={<Droplets className="w-4 h-4" />} label="Transect" onClick={() => setOpenDialog('transectEditor')} testId="btn-transect-editor" />
+            <ToolbarButton icon={<PanelLeftOpen className="w-4 h-4" />} label="Compare" onClick={() => setOpenDialog('splitScreen')} testId="btn-split-screen" />
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Find" onClick={() => { setFindSearchTerm(''); setOpenDialog('findObject'); }} testId="btn-find" />
             <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
@@ -2977,23 +3023,67 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
-        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-3xl w-[95vw] sm:w-auto max-h-[85vh] flex flex-col" data-testid="report-dialog">
+      <Dialog open={showReportDialog} onOpenChange={v => { setShowReportDialog(v); if (!v) setReportSearchTerm(''); }}>
+        <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-4xl w-[95vw] sm:w-auto max-h-[85vh] flex flex-col" data-testid="report-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <BarChart3 className="w-4 h-4" /> SWMM Report
             </DialogTitle>
             <DialogDescription className="text-xs text-[#6b6b7b]">
-              Full simulation report output (.rpt file contents)
+              Full simulation report output (.rpt file contents). Use the search bar to find sections.
             </DialogDescription>
           </DialogHeader>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-[#9090a0]" />
+              <input
+                type="text"
+                placeholder="Search report..."
+                value={reportSearchTerm}
+                onChange={e => setReportSearchTerm(e.target.value)}
+                className="w-full pl-7 pr-2 py-1.5 text-[11px] border border-[#d0d0d8] rounded bg-white outline-none focus:border-[#2c6eb5]"
+                data-testid="input-report-search"
+              />
+            </div>
+            {reportSearchTerm && reportContent && (
+              <span className="text-[10px] text-[#6b6b7b] shrink-0">
+                {(reportContent.toLowerCase().match(new RegExp(reportSearchTerm.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length} matches
+              </span>
+            )}
+          </div>
+          <div className="flex gap-1 mb-1 flex-wrap">
+            {['Summary', 'Node Depth', 'Node Inflow', 'Node Flooding', 'Link Flow', 'Subcatchment Runoff', 'Cross Section', 'Continuity', 'Routing Time Step'].map(section => (
+              <button
+                key={section}
+                className="px-2 py-0.5 text-[9px] rounded border border-[#d0d0d8] hover:bg-[#e8f0fb] text-[#4a4a5a]"
+                onClick={() => {
+                  setReportSearchTerm(section);
+                  setTimeout(() => {
+                    const mark = document.querySelector('[data-testid="report-content"] mark');
+                    if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 50);
+                }}
+                data-testid={`report-jump-${section.toLowerCase().replace(/\s/g, '-')}`}
+              >
+                {section}
+              </button>
+            ))}
+          </div>
           <div className="flex-1 overflow-auto min-h-0">
             <pre
               className="text-[11px] leading-[1.4] p-3 rounded border border-[#d0d0d8] bg-[#f8f8fa] whitespace-pre overflow-x-auto font-mono"
-              style={{ maxHeight: 'calc(85vh - 120px)' }}
+              style={{ maxHeight: 'calc(85vh - 200px)' }}
               data-testid="report-content"
             >
-              {reportContent || 'No report available.'}
+              {(() => {
+                const text = reportContent || 'No report available.';
+                if (!reportSearchTerm) return text;
+                const escaped = reportSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+                return parts.map((part, i) =>
+                  i % 2 === 1 ? <mark key={i} className="bg-yellow-200 text-[#2a2a3e]">{part}</mark> : part
+                );
+              })()}
             </pre>
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -3084,6 +3174,49 @@ export default function SwmmUI() {
             <DialogDescription>Define statistical analysis parameters for simulation results.</DialogDescription>
           </DialogHeader>
           {results && <StatisticsReportContent project={project} results={results} selectedObj={selectedObj} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'scatterPlot'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-5xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="scatter-plot-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <Activity className="w-4 h-4" /> Scatter Plot
+            </DialogTitle>
+            <DialogDescription>Plot any two variables against each other. Select X and Y axes, overlay multiple objects.</DialogDescription>
+          </DialogHeader>
+          {results && <ScatterPlotContent project={project} results={results} selectedObj={selectedObj} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'transectEditor'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-4xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="transect-editor-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <Droplets className="w-4 h-4" /> Transect Editor
+            </DialogTitle>
+            <DialogDescription>Create and edit cross-section transects for IRREGULAR shaped conduits.</DialogDescription>
+          </DialogHeader>
+          <TransectEditorContent project={project} onUpdateProject={handleUpdateProject} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'splitScreen'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-6xl w-[98vw] bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="split-screen-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <PanelLeftOpen className="w-4 h-4" /> Split-Screen Comparison
+            </DialogTitle>
+            <DialogDescription>Compare two scenarios side by side. Load a second INP file to compare network topology and mock results.</DialogDescription>
+          </DialogHeader>
+          <SplitScreenContent
+            projectA={project}
+            resultsA={results}
+            fileNameA={fileName}
+            timeStep={timeStep}
+            projectB={splitScreenProject}
+            onLoadB={(p, r, n) => setSplitScreenProject({ project: p, results: r, fileName: n })}
+          />
         </DialogContent>
       </Dialog>
 
@@ -3909,6 +4042,70 @@ function StatisticsReportContent({ project, results, selectedObj }: {
                     <Bar dataKey="value" fill="#2c6eb5" radius={[2, 2, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+            </>
+          )}
+
+          {reportData.events.length > 1 && (
+            <>
+              <div className="text-[11px] font-bold text-[#2c3e6b] mt-2">Exceedance Probability / Flow Duration Curve</div>
+              <div className="h-[200px]" data-testid="exceedance-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={(() => {
+                      const sorted = [...reportData.events.map(e => e.value)].sort((a, b) => b - a);
+                      return sorted.map((v, i) => ({
+                        exceedance: ((i + 1) / (sorted.length + 1)) * 100,
+                        value: v,
+                      }));
+                    })()}
+                    margin={{ top: 10, right: 20, bottom: 30, left: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                    <XAxis dataKey="exceedance" tick={{ fontSize: 9 }} label={{ value: 'Exceedance Probability (%)', position: 'insideBottom', offset: -15, fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 9 }} label={{ value: statisticOptions.find(s => s.key === statistic)?.label || 'Value', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+                    <Tooltip contentStyle={{ fontSize: 10 }} formatter={(v: number) => v.toFixed(4)} labelFormatter={(l: number) => `P(exceed) = ${(+l).toFixed(1)}%`} />
+                    <Line type="monotone" dataKey="value" stroke="#2c6eb5" strokeWidth={2} dot={{ r: 2 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="text-[11px] font-bold text-[#2c3e6b] mt-2">Cumulative Frequency Distribution</div>
+              <div className="h-[200px]" data-testid="frequency-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={(() => {
+                      const sorted = [...reportData.events.map(e => e.value)].sort((a, b) => a - b);
+                      return sorted.map((v, i) => ({
+                        cumFreq: ((i + 1) / sorted.length) * 100,
+                        value: v,
+                      }));
+                    })()}
+                    margin={{ top: 10, right: 20, bottom: 30, left: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                    <XAxis dataKey="value" tick={{ fontSize: 9 }} label={{ value: statisticOptions.find(s => s.key === statistic)?.label || 'Value', position: 'insideBottom', offset: -15, fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 9 }} label={{ value: 'Cumulative Frequency (%)', angle: -90, position: 'insideLeft', fontSize: 10 }} domain={[0, 100]} />
+                    <Tooltip contentStyle={{ fontSize: 10 }} formatter={(v: number) => v.toFixed(1) + '%'} />
+                    <Line type="monotone" dataKey="cumFreq" stroke="#e88a1a" strokeWidth={2} dot={{ r: 2 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="border border-[#d0d0d8] rounded p-2.5 bg-[#f8f9fc]">
+                <div className="text-[10px] font-semibold text-[#4a4a5a] mb-1">Return Period Analysis</div>
+                <div className="grid grid-cols-4 gap-2 text-[10px]">
+                  {[2, 5, 10, 25, 50, 100].map(rp => {
+                    const sorted = [...reportData.events.map(e => e.value)].sort((a, b) => b - a);
+                    const idx = Math.min(Math.round(sorted.length / rp), sorted.length - 1);
+                    return (
+                      <div key={rp} className="flex justify-between">
+                        <span className="text-[#6b6b7b]">{rp}-yr:</span>
+                        <span className="font-mono text-[#2c3e6b]" data-testid={`return-period-${rp}`}>{sorted[idx]?.toFixed(3) || '—'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </>
           )}
@@ -5388,6 +5585,476 @@ function ProfilePlotContent({ project, results, timeStep }: {
       ) : (
         <div className="h-[200px] flex items-center justify-center text-[12px] text-[#9090a0] border border-dashed border-[#d0d0d8] rounded" data-testid="profile-empty">
           Add conduits above to generate the profile plot
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScatterPlotContent({ project, results, selectedObj }: {
+  project: SwmmProject;
+  results: SimulationResults;
+  selectedObj: SelectedObject;
+}) {
+  const [xCat, setXCat] = useState<'node' | 'link' | 'subcatchment'>('node');
+  const [yCat, setYCat] = useState<'node' | 'link' | 'subcatchment'>('node');
+  const [xObj, setXObj] = useState('');
+  const [yObj, setYObj] = useState('');
+  const [xVar, setXVar] = useState('depth');
+  const [yVar, setYVar] = useState('head');
+  const [plotData, setPlotData] = useState<{ x: number; y: number; t: string }[]>([]);
+
+  const nodeIds = useMemo(() => [
+    ...project.junctions.map(j => j.id), ...project.outfalls.map(o => o.id),
+    ...project.storageUnits.map(s => s.id), ...project.dividers.map(d => d.id),
+  ], [project]);
+  const linkIds = useMemo(() => [
+    ...project.conduits.map(c => c.id), ...project.pumps.map(p => p.id),
+    ...project.orifices.map(o => o.id), ...project.weirs.map(w => w.id),
+    ...project.outlets.map(o => o.id),
+  ], [project]);
+  const subIds = useMemo(() => project.subcatchments.map(s => s.id), [project]);
+
+  const getIds = (cat: string) => cat === 'node' ? nodeIds : cat === 'link' ? linkIds : subIds;
+  const getVars = (cat: string) => cat === 'node'
+    ? [{ key: 'depth', label: 'Depth' }, { key: 'head', label: 'Head' }, { key: 'volume', label: 'Volume' }, { key: 'lateralInflow', label: 'Lateral Inflow' }, { key: 'totalInflow', label: 'Total Inflow' }, { key: 'flooding', label: 'Flooding' }]
+    : cat === 'link'
+    ? [{ key: 'flow', label: 'Flow' }, { key: 'depth', label: 'Depth' }, { key: 'velocity', label: 'Velocity' }, { key: 'volume', label: 'Volume' }, { key: 'capacity', label: 'Capacity' }]
+    : [{ key: 'rainfall', label: 'Rainfall' }, { key: 'runoff', label: 'Runoff' }, { key: 'infiltration', label: 'Infiltration' }];
+
+  useEffect(() => {
+    const ids = getIds(xCat);
+    if (ids.length > 0 && !ids.includes(xObj)) setXObj(ids[0]);
+  }, [xCat, nodeIds, linkIds, subIds]);
+  useEffect(() => {
+    const ids = getIds(yCat);
+    if (ids.length > 0 && !ids.includes(yObj)) setYObj(ids[0]);
+  }, [yCat, nodeIds, linkIds, subIds]);
+
+  const handlePlot = useCallback(() => {
+    if (!results) return;
+    const data: { x: number; y: number; t: string }[] = [];
+    for (const ts of results.timeSteps) {
+      let xVal = 0, yVal = 0;
+      if (xCat === 'node') xVal = (ts.nodes[xObj] as any)?.[xVar] ?? 0;
+      else if (xCat === 'link') xVal = (ts.links[xObj] as any)?.[xVar] ?? 0;
+      else xVal = (ts.subcatchments[xObj] as any)?.[xVar] ?? 0;
+      if (yCat === 'node') yVal = (ts.nodes[yObj] as any)?.[yVar] ?? 0;
+      else if (yCat === 'link') yVal = (ts.links[yObj] as any)?.[yVar] ?? 0;
+      else yVal = (ts.subcatchments[yObj] as any)?.[yVar] ?? 0;
+      data.push({ x: xVal, y: yVal, t: ts.dateTime });
+    }
+    setPlotData(data);
+  }, [results, xCat, xObj, xVar, yCat, yObj, yVar]);
+
+  const xVars = getVars(xCat);
+  const yVars = getVars(yCat);
+  const xIds = getIds(xCat);
+  const yIds = getIds(yCat);
+
+  const corrCoeff = useMemo(() => {
+    if (plotData.length < 2) return null;
+    const n = plotData.length;
+    const sx = plotData.reduce((s, d) => s + d.x, 0);
+    const sy = plotData.reduce((s, d) => s + d.y, 0);
+    const sxy = plotData.reduce((s, d) => s + d.x * d.y, 0);
+    const sx2 = plotData.reduce((s, d) => s + d.x * d.x, 0);
+    const sy2 = plotData.reduce((s, d) => s + d.y * d.y, 0);
+    const denom = Math.sqrt((n * sx2 - sx * sx) * (n * sy2 - sy * sy));
+    return denom > 0 ? (n * sxy - sx * sy) / denom : 0;
+  }, [plotData]);
+
+  return (
+    <div className="space-y-3" data-testid="scatter-plot-content">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2 border border-[#d0d0d8] rounded p-3 bg-[#fafafa]">
+          <div className="text-[11px] font-bold text-[#2c3e6b]">X-Axis</div>
+          <select className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px] bg-white" value={xCat} onChange={e => setXCat(e.target.value as any)} data-testid="scatter-x-cat">
+            <option value="node">Node</option><option value="link">Link</option><option value="subcatchment">Subcatchment</option>
+          </select>
+          <select className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px] bg-white" value={xObj} onChange={e => setXObj(e.target.value)} data-testid="scatter-x-obj">
+            {xIds.map(id => <option key={id} value={id}>{id}</option>)}
+          </select>
+          <select className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px] bg-white" value={xVar} onChange={e => setXVar(e.target.value)} data-testid="scatter-x-var">
+            {xVars.map(v => <option key={v.key} value={v.key}>{v.label}</option>)}
+          </select>
+        </div>
+        <div className="space-y-2 border border-[#d0d0d8] rounded p-3 bg-[#fafafa]">
+          <div className="text-[11px] font-bold text-[#2c3e6b]">Y-Axis</div>
+          <select className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px] bg-white" value={yCat} onChange={e => setYCat(e.target.value as any)} data-testid="scatter-y-cat">
+            <option value="node">Node</option><option value="link">Link</option><option value="subcatchment">Subcatchment</option>
+          </select>
+          <select className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px] bg-white" value={yObj} onChange={e => setYObj(e.target.value)} data-testid="scatter-y-obj">
+            {yIds.map(id => <option key={id} value={id}>{id}</option>)}
+          </select>
+          <select className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px] bg-white" value={yVar} onChange={e => setYVar(e.target.value)} data-testid="scatter-y-var">
+            {yVars.map(v => <option key={v.key} value={v.key}>{v.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <Button onClick={handlePlot} className="bg-[#2c6eb5] hover:bg-[#245a96] text-white text-[12px] px-4" data-testid="scatter-plot-btn">
+        Generate Plot
+      </Button>
+      {plotData.length > 0 && (
+        <div className="space-y-2">
+          {corrCoeff !== null && (
+            <div className="text-[10px] text-[#6b6b7b]">
+              Correlation coefficient (r): <span className="font-mono font-bold text-[#2c3e6b]" data-testid="scatter-corr">{corrCoeff.toFixed(4)}</span>
+              {' '}| R²: <span className="font-mono font-bold text-[#2c3e6b]">{(corrCoeff * corrCoeff).toFixed(4)}</span>
+              {' '}| N: <span className="font-mono">{plotData.length}</span>
+            </div>
+          )}
+          <div className="h-[350px]" data-testid="scatter-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                <XAxis type="number" dataKey="x" name={`${xObj}.${xVar}`} tick={{ fontSize: 9 }} label={{ value: `${xObj} - ${xVars.find(v => v.key === xVar)?.label || xVar}`, position: 'insideBottom', offset: -15, fontSize: 10 }} />
+                <YAxis type="number" dataKey="y" name={`${yObj}.${yVar}`} tick={{ fontSize: 9 }} label={{ value: `${yObj} - ${yVars.find(v => v.key === yVar)?.label || yVar}`, angle: -90, position: 'insideLeft', fontSize: 10, offset: -5 }} />
+                <Tooltip content={({ payload }) => payload?.[0] ? (
+                  <div className="bg-white border border-[#d0d0d8] rounded p-2 shadow text-[10px]">
+                    <div className="font-bold text-[#2c3e6b]">{(payload[0].payload as any).t}</div>
+                    <div>X: {(payload[0].payload as any).x.toFixed(4)}</div>
+                    <div>Y: {(payload[0].payload as any).y.toFixed(4)}</div>
+                  </div>
+                ) : null} />
+                <Scatter data={plotData} fill="#2c6eb5" fillOpacity={0.6} r={2} />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TransectEditorContent({ project, onUpdateProject }: {
+  project: SwmmProject;
+  onUpdateProject: (updater: (prev: SwmmProject) => SwmmProject) => void;
+}) {
+  const existingTransects = useMemo(() => {
+    const transects: { name: string; stations: { x: number; y: number }[]; nLeft: number; nRight: number; nChannel: number; leftBank: number; rightBank: number }[] = [];
+    if ((project as any).transects) {
+      for (const t of (project as any).transects) transects.push(t);
+    }
+    return transects;
+  }, [project]);
+
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [editName, setEditName] = useState('New_Transect');
+  const [stations, setStations] = useState<{ x: number; y: number }[]>([
+    { x: 0, y: 5 }, { x: 2, y: 2 }, { x: 4, y: 0 }, { x: 6, y: 0 }, { x: 8, y: 2 }, { x: 10, y: 5 },
+  ]);
+  const [nLeft, setNLeft] = useState('0.015');
+  const [nRight, setNRight] = useState('0.015');
+  const [nChannel, setNChannel] = useState('0.013');
+  const [leftBank, setLeftBank] = useState('2');
+  const [rightBank, setRightBank] = useState('8');
+
+  useEffect(() => {
+    if (existingTransects.length > 0 && selectedIdx < existingTransects.length) {
+      const t = existingTransects[selectedIdx];
+      if (t && t.stations) {
+        setEditName(t.name || '');
+        setStations(t.stations);
+        setNLeft(String(t.nLeft ?? 0.015));
+        setNRight(String(t.nRight ?? 0.015));
+        setNChannel(String(t.nChannel ?? 0.013));
+        setLeftBank(String(t.leftBank ?? 2));
+        setRightBank(String(t.rightBank ?? 8));
+      }
+    }
+  }, [selectedIdx, existingTransects]);
+
+  const handleAddStation = () => {
+    const lastX = stations.length > 0 ? stations[stations.length - 1].x + 1 : 0;
+    setStations([...stations, { x: lastX, y: 0 }]);
+  };
+
+  const handleRemoveStation = (idx: number) => {
+    setStations(stations.filter((_, i) => i !== idx));
+  };
+
+  const handleSave = () => {
+    const transect = {
+      name: editName || `Transect_${Date.now()}`,
+      stations: [...stations].sort((a, b) => a.x - b.x),
+      nLeft: parseFloat(nLeft) || 0.015,
+      nRight: parseFloat(nRight) || 0.015,
+      nChannel: parseFloat(nChannel) || 0.013,
+      leftBank: parseFloat(leftBank) || stations[0]?.x || 0,
+      rightBank: parseFloat(rightBank) || stations[stations.length - 1]?.x || 10,
+    };
+    onUpdateProject(prev => {
+      const transects = [...((prev as any).transects || [])];
+      const existIdx = transects.findIndex((t: any) => t.name === transect.name);
+      if (existIdx >= 0) transects[existIdx] = transect;
+      else transects.push(transect);
+      return { ...prev, transects } as any;
+    });
+  };
+
+  const handleNew = () => {
+    setEditName(`Transect_${existingTransects.length + 1}`);
+    setStations([{ x: 0, y: 5 }, { x: 2, y: 2 }, { x: 4, y: 0 }, { x: 6, y: 0 }, { x: 8, y: 2 }, { x: 10, y: 5 }]);
+    setNLeft('0.015'); setNRight('0.015'); setNChannel('0.013');
+    setLeftBank('2'); setRightBank('8');
+  };
+
+  const sortedStations = [...stations].sort((a, b) => a.x - b.x);
+  const minY = Math.min(...stations.map(s => s.y), 0);
+  const maxY = Math.max(...stations.map(s => s.y), 1);
+  const lb = parseFloat(leftBank) || 0;
+  const rb = parseFloat(rightBank) || 10;
+
+  return (
+    <div className="space-y-3" data-testid="transect-editor-content">
+      <div className="flex gap-2 items-center">
+        {existingTransects.length > 0 && (
+          <select className="border border-[#d0d0d8] rounded px-2 py-1 text-[11px] bg-white" value={selectedIdx} onChange={e => setSelectedIdx(+e.target.value)} data-testid="transect-select">
+            {existingTransects.map((t, i) => <option key={i} value={i}>{t.name}</option>)}
+          </select>
+        )}
+        <Button variant="outline" size="sm" onClick={handleNew} className="text-[11px]" data-testid="transect-new-btn">New Transect</Button>
+      </div>
+
+      <div className="grid grid-cols-[1fr_1fr] gap-4">
+        <div className="space-y-2">
+          <div>
+            <label className="text-[10px] font-semibold text-[#4a4a5a] block mb-0.5">Transect Name</label>
+            <input type="text" className="w-full border border-[#d0d0d8] rounded px-2 py-1 text-[11px]" value={editName} onChange={e => setEditName(e.target.value)} data-testid="transect-name" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="text-[9px] text-[#6b6b7b] block mb-0.5">N Left</label>
+              <input type="text" className="w-full border border-[#d0d0d8] rounded px-1.5 py-1 text-[11px] font-mono" value={nLeft} onChange={e => setNLeft(e.target.value)} data-testid="transect-n-left" />
+            </div>
+            <div>
+              <label className="text-[9px] text-[#6b6b7b] block mb-0.5">N Channel</label>
+              <input type="text" className="w-full border border-[#d0d0d8] rounded px-1.5 py-1 text-[11px] font-mono" value={nChannel} onChange={e => setNChannel(e.target.value)} data-testid="transect-n-channel" />
+            </div>
+            <div>
+              <label className="text-[9px] text-[#6b6b7b] block mb-0.5">N Right</label>
+              <input type="text" className="w-full border border-[#d0d0d8] rounded px-1.5 py-1 text-[11px] font-mono" value={nRight} onChange={e => setNRight(e.target.value)} data-testid="transect-n-right" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[9px] text-[#6b6b7b] block mb-0.5">Left Bank Station</label>
+              <input type="text" className="w-full border border-[#d0d0d8] rounded px-1.5 py-1 text-[11px] font-mono" value={leftBank} onChange={e => setLeftBank(e.target.value)} data-testid="transect-left-bank" />
+            </div>
+            <div>
+              <label className="text-[9px] text-[#6b6b7b] block mb-0.5">Right Bank Station</label>
+              <input type="text" className="w-full border border-[#d0d0d8] rounded px-1.5 py-1 text-[11px] font-mono" value={rightBank} onChange={e => setRightBank(e.target.value)} data-testid="transect-right-bank" />
+            </div>
+          </div>
+
+          <div className="text-[10px] font-semibold text-[#4a4a5a] mt-2">Station-Elevation Data</div>
+          <div className="max-h-[200px] overflow-auto border border-[#d0d0d8] rounded">
+            <table className="w-full text-[10px]">
+              <thead className="bg-[#f0f0f4] sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">#</th>
+                  <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Station</th>
+                  <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Elevation</th>
+                  <th className="px-1 py-1 border-b border-[#d0d0d8]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {stations.map((s, i) => (
+                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-[#f8f9fc]'} data-testid={`transect-station-row-${i}`}>
+                    <td className="px-2 py-0.5 text-[#6b6b7b]">{i + 1}</td>
+                    <td className="px-1 py-0.5">
+                      <input type="number" step="0.1" className="w-full text-right border border-[#d0d0d8] rounded px-1 py-0.5 text-[10px] font-mono" value={s.x}
+                        onChange={e => { const n = [...stations]; n[i] = { ...n[i], x: parseFloat(e.target.value) || 0 }; setStations(n); }} />
+                    </td>
+                    <td className="px-1 py-0.5">
+                      <input type="number" step="0.1" className="w-full text-right border border-[#d0d0d8] rounded px-1 py-0.5 text-[10px] font-mono" value={s.y}
+                        onChange={e => { const n = [...stations]; n[i] = { ...n[i], y: parseFloat(e.target.value) || 0 }; setStations(n); }} />
+                    </td>
+                    <td className="px-1 py-0.5 text-center">
+                      <button onClick={() => handleRemoveStation(i)} className="text-red-400 hover:text-red-600"><X className="w-3 h-3" /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleAddStation} className="text-[10px]" data-testid="transect-add-station">+ Add Station</Button>
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-[10px] font-semibold text-[#4a4a5a]">Cross-Section Preview</div>
+          <div className="h-[300px] border border-[#d0d0d8] rounded bg-[#f8f9fc] relative" data-testid="transect-preview">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={sortedStations.map(s => ({ station: s.x, elevation: s.y }))} margin={{ top: 15, right: 15, bottom: 25, left: 15 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                <XAxis dataKey="station" tick={{ fontSize: 9 }} label={{ value: 'Station', position: 'insideBottom', offset: -10, fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 9 }} domain={[minY - 0.5, maxY + 1]} label={{ value: 'Elevation', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+                <Tooltip contentStyle={{ fontSize: 10 }} />
+                <ReferenceLine x={lb} stroke="#e88a1a" strokeDasharray="4 4" label={{ value: 'LB', position: 'top', fontSize: 9, fill: '#e88a1a' }} />
+                <ReferenceLine x={rb} stroke="#e88a1a" strokeDasharray="4 4" label={{ value: 'RB', position: 'top', fontSize: 9, fill: '#e88a1a' }} />
+                <Area type="linear" dataKey="elevation" stroke="#2a2a3e" fill="#8db4e0" fillOpacity={0.3} strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <Button onClick={handleSave} className="bg-[#2c6eb5] hover:bg-[#245a96] text-white text-[12px] px-4" data-testid="transect-save-btn">
+          Save Transect
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SplitScreenContent({ projectA, resultsA, fileNameA, timeStep, projectB, onLoadB }: {
+  projectA: SwmmProject;
+  resultsA: SimulationResults | null;
+  fileNameA: string;
+  timeStep: number;
+  projectB: { project: SwmmProject; results: SimulationResults; fileName: string } | null;
+  onLoadB: (p: SwmmProject, r: SimulationResults, n: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [diffMetrics, setDiffMetrics] = useState<{ name: string; varA: number; varB: number; diff: number }[]>([]);
+
+  const [loadingB, setLoadingB] = useState(false);
+
+  const handleLoadB = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoadingB(true);
+    try {
+      const text = await file.text();
+      const proj = parseInpFile(text);
+      const engine = createMockEngine();
+      const res = await engine.run(proj, () => {});
+      onLoadB(proj, res, file.name);
+    } finally {
+      setLoadingB(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!resultsA || !projectB?.results || resultsA.timeSteps.length === 0 || projectB.results.timeSteps.length === 0) {
+      setDiffMetrics([]);
+      return;
+    }
+    const tsA = resultsA.timeSteps[Math.min(timeStep, resultsA.timeSteps.length - 1)];
+    const tsB = projectB.results.timeSteps[Math.min(timeStep, projectB.results.timeSteps.length - 1)];
+    const metrics: typeof diffMetrics = [];
+    for (const nodeId of Object.keys(tsA.nodes)) {
+      if (tsB.nodes[nodeId]) {
+        const a = tsA.nodes[nodeId].depth;
+        const b = tsB.nodes[nodeId].depth;
+        metrics.push({ name: `Node ${nodeId} Depth`, varA: a, varB: b, diff: a - b });
+      }
+    }
+    for (const linkId of Object.keys(tsA.links)) {
+      if (tsB.links[linkId]) {
+        const a = tsA.links[linkId].flow;
+        const b = tsB.links[linkId].flow;
+        metrics.push({ name: `Link ${linkId} Flow`, varA: a, varB: b, diff: a - b });
+      }
+    }
+    setDiffMetrics(metrics.slice(0, 50));
+  }, [resultsA, projectB, timeStep]);
+
+  const summaryA = useMemo(() => ({
+    nodes: projectA.junctions.length + projectA.outfalls.length + projectA.storageUnits.length + projectA.dividers.length,
+    links: projectA.conduits.length + projectA.pumps.length + projectA.orifices.length + projectA.weirs.length + projectA.outlets.length,
+    subs: projectA.subcatchments.length,
+    steps: resultsA?.timeSteps.length || 0,
+  }), [projectA, resultsA]);
+
+  const summaryB = useMemo(() => {
+    if (!projectB) return null;
+    return {
+      nodes: projectB.project.junctions.length + projectB.project.outfalls.length + projectB.project.storageUnits.length + projectB.project.dividers.length,
+      links: projectB.project.conduits.length + projectB.project.pumps.length + projectB.project.orifices.length + projectB.project.weirs.length + projectB.project.outlets.length,
+      subs: projectB.project.subcatchments.length,
+      steps: projectB.results.timeSteps.length,
+    };
+  }, [projectB]);
+
+  return (
+    <div className="space-y-3" data-testid="split-screen-content">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="border border-[#d0d0d8] rounded p-3 bg-[#f0f7ff]">
+          <div className="text-[11px] font-bold text-[#2c3e6b] mb-2">Scenario A: {fileNameA || 'Current Model'}</div>
+          <div className="text-[10px] text-[#6b6b7b] space-y-0.5">
+            <div>Nodes: {summaryA.nodes} | Links: {summaryA.links} | Subcatchments: {summaryA.subs}</div>
+            <div>Time Steps: {summaryA.steps}</div>
+          </div>
+        </div>
+        <div className="border border-[#d0d0d8] rounded p-3 bg-[#fff7f0]">
+          <div className="text-[11px] font-bold text-[#2c3e6b] mb-2">
+            Scenario B: {projectB?.fileName || 'Not loaded'}
+          </div>
+          {projectB && summaryB ? (
+            <div className="text-[10px] text-[#6b6b7b] space-y-0.5">
+              <div>Nodes: {summaryB.nodes} | Links: {summaryB.links} | Subcatchments: {summaryB.subs}</div>
+              <div>Time Steps: {summaryB.steps}</div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-[10px] text-[#9090a0]">Load a second INP file to compare</div>
+              <input type="file" ref={fileInputRef} accept=".inp" onChange={handleLoadB} className="hidden" />
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="text-[11px]" disabled={loadingB} data-testid="split-load-b-btn">
+                {loadingB ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Loading...</> : <><Upload className="w-3.5 h-3.5 mr-1" /> Load INP</>}
+              </Button>
+              <div className="text-[9px] text-[#9090a0] mt-1">Scenario B uses mock engine for quick topology comparison</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {diffMetrics.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] font-bold text-[#2c3e6b]">Comparison at Time Step {timeStep} (showing first 50)</div>
+          <div className="max-h-[300px] overflow-auto border border-[#d0d0d8] rounded">
+            <table className="w-full text-[10px]">
+              <thead className="bg-[#f0f0f4] sticky top-0">
+                <tr>
+                  <th className="text-left px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Element</th>
+                  <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Scenario A</th>
+                  <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Scenario B</th>
+                  <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Difference</th>
+                  <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">% Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                {diffMetrics.map((m, i) => (
+                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-[#f8f9fc]'} data-testid={`diff-row-${i}`}>
+                    <td className="px-2 py-1">{m.name}</td>
+                    <td className="px-2 py-1 text-right font-mono">{m.varA.toFixed(4)}</td>
+                    <td className="px-2 py-1 text-right font-mono">{m.varB.toFixed(4)}</td>
+                    <td className="px-2 py-1 text-right font-mono" style={{ color: m.diff > 0 ? '#2a8a4a' : m.diff < 0 ? '#d04040' : '#6b6b7b' }}>
+                      {m.diff > 0 ? '+' : ''}{m.diff.toFixed(4)}
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono text-[#6b6b7b]">
+                      {m.varB !== 0 ? ((m.diff / Math.abs(m.varB)) * 100).toFixed(1) + '%' : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="h-[200px]" data-testid="diff-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={diffMetrics.slice(0, 20).map((m, i) => ({ name: m.name.substring(0, 15), diff: m.diff }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
+                <XAxis dataKey="name" tick={{ fontSize: 7, angle: -45, textAnchor: 'end' }} height={60} />
+                <YAxis tick={{ fontSize: 9 }} />
+                <Tooltip contentStyle={{ fontSize: 10 }} />
+                <ReferenceLine y={0} stroke="#2a2a3e" />
+                <Bar dataKey="diff" fill="#2c6eb5" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
     </div>

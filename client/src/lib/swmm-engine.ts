@@ -1016,6 +1016,20 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
       ext.snowFreeWater = sr.snowDepth > 0 ? sr.snowDepth * 0.05 : 0;
       ext.snowColdContent = sr.snowDepth > 0 ? 0.5 : 0;
       ext.snowCoverage = sr.snowDepth > 0 ? 1.0 : 0;
+      ext.snowATI = sr.snowDepth > 0 ? 32 : 60;
+      ext.snowWATI = sr.snowDepth > 0 ? 28 : 55;
+      ext.snowPackSWE = sr.snowDepth > 0 ? sr.snowDepth * 0.3 : 0;
+      ext.snowPackDepth = sr.snowDepth;
+
+      ext.pollutWashoff = sr.runoff > 0 ? sr.runoff * 20 : 0;
+      ext.pollutBuildup = sr.runoff > 0 ? Math.max(0, 10 - sr.runoff * 2) : 10;
+      ext.pollutConcRunoff = sr.runoff > 0 ? 50 + sr.runoff * 10 : 0;
+      ext.pollutConcGW = sr.gwOutflow > 0 ? 25 : 0;
+      ext.pollutLoad = sr.runoff > 0 ? sr.runoff * area * 0.1 : 0;
+
+      ext.lidSoilEvap = sr.evap > 0 ? sr.evap * 0.1 : 0;
+      ext.lidDrainCoeff = 0.5;
+      ext.lidRetention = 0;
 
       const prevCumI = cumInfil.get(scId) || 0;
       const prevCumR = cumRain.get(scId) || 0;

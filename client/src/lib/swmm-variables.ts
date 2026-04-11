@@ -1,7 +1,7 @@
 export type VarCategory =
   | 'NODE_STD' | 'NODE_SOLVER' | 'NODE_RDII'
   | 'LINK_STD' | 'LINK_MOMENTUM' | 'LINK_GEOMETRY' | 'LINK_ENERGY' | 'LINK_COMPAT' | 'LINK_PROPS'
-  | 'SUB_STD' | 'SUB_RUNOFF' | 'SUB_LID' | 'SUB_GW' | 'SUB_SNOW' | 'SUB_INFIL'
+  | 'SUB_STD' | 'SUB_RUNOFF' | 'SUB_LID' | 'SUB_GW' | 'SUB_SNOW' | 'SUB_INFIL' | 'SUB_POLLUT'
   | 'SYS' | 'SYS_QA' | 'FLOW_CLASS';
 
 export type VarScope = 'node' | 'link' | 'subcatch' | 'system';
@@ -42,6 +42,7 @@ export const CATEGORY_INFO: VarCategoryInfo[] = [
   { id: 'SUB_GW', label: 'Groundwater', scope: 'subcatch', icon: '\uD83C\uDF0A', color: '#d29922' },
   { id: 'SUB_SNOW', label: 'Snow Internals', scope: 'subcatch', icon: '\u2744', color: '#f0883e' },
   { id: 'SUB_INFIL', label: 'Infiltration', scope: 'subcatch', icon: '\u2B07', color: '#bc8cff' },
+  { id: 'SUB_POLLUT', label: 'Pollutant WQ', scope: 'subcatch', icon: '\u2623', color: '#f85149' },
   { id: 'SYS', label: 'System Flow', scope: 'system', icon: '\uD83D\uDD04', color: '#58a6ff' },
   { id: 'SYS_QA', label: 'QA Diagnostics', scope: 'system', icon: '\uD83D\uDD0D', color: '#f85149' },
   { id: 'FLOW_CLASS', label: 'Flow Classification', scope: 'link', icon: '\uD83C\uDFF7', color: '#d29922' },
@@ -270,6 +271,21 @@ export const SUB_VARS: SwmmVariable[] = [
   { key: 'cnF1', name: 'CN: F1 (prev F)', units: 'in/mm', cat: 'SUB_INFIL', scope: 'subcatch', maxVal: 5, labels: ['< 0.5', '0.5-1.5', '1.5-2.5', '2.5-4', '> 4'] },
   { key: 'cnRegen', name: 'CN: Regeneration', units: 'in/mm', cat: 'SUB_INFIL', scope: 'subcatch', maxVal: 5, labels: ['< 0.5', '0.5-1.5', '1.5-2.5', '2.5-4', '> 4'] },
   { key: 'cnCN', name: 'CN: Current CN', units: '\u2014', cat: 'SUB_INFIL', scope: 'subcatch', maxVal: 100, labels: ['< 40', '40-60', '60-75', '75-90', '> 90'] },
+
+  { key: 'pollutWashoff', name: 'Pollutant: Washoff', units: 'mg/L', cat: 'SUB_POLLUT', scope: 'subcatch', maxVal: 100, labels: ['< 10', '10-30', '30-50', '50-80', '> 80'] },
+  { key: 'pollutBuildup', name: 'Pollutant: Buildup', units: 'lbs/kg', cat: 'SUB_POLLUT', scope: 'subcatch', maxVal: 50, labels: ['< 5', '5-15', '15-25', '25-40', '> 40'] },
+  { key: 'pollutConcRunoff', name: 'Pollutant: Conc in Runoff', units: 'mg/L', cat: 'SUB_POLLUT', scope: 'subcatch', maxVal: 200, labels: ['< 20', '20-50', '50-100', '100-150', '> 150'] },
+  { key: 'pollutConcGW', name: 'Pollutant: Conc in GW', units: 'mg/L', cat: 'SUB_POLLUT', scope: 'subcatch', maxVal: 100, labels: ['< 10', '10-30', '30-50', '50-80', '> 80'] },
+  { key: 'pollutLoad', name: 'Pollutant: Total Load', units: 'lbs/kg', cat: 'SUB_POLLUT', scope: 'subcatch', maxVal: 100, labels: ['< 10', '10-30', '30-50', '50-80', '> 80'] },
+
+  { key: 'snowATI', name: 'Snow: ATI (temp index)', units: '\u00B0F', cat: 'SUB_SNOW', scope: 'subcatch', maxVal: 50, labels: ['< 10', '10-20', '20-30', '30-40', '> 40'] },
+  { key: 'snowWATI', name: 'Snow: WATI (wind ATI)', units: '\u00B0F', cat: 'SUB_SNOW', scope: 'subcatch', maxVal: 50, labels: ['< 10', '10-20', '20-30', '30-40', '> 40'] },
+  { key: 'snowPackSWE', name: 'Snow: Pack SWE', units: 'in/mm', cat: 'SUB_SNOW', scope: 'subcatch', maxVal: 10, labels: ['< 1', '1-3', '3-5', '5-8', '> 8'] },
+  { key: 'snowPackDepth', name: 'Snow: Pack Depth', units: 'in/mm', cat: 'SUB_SNOW', scope: 'subcatch', maxVal: 20, labels: ['< 2', '2-6', '6-10', '10-15', '> 15'] },
+
+  { key: 'lidSoilEvap', name: 'LID: Soil Evap', units: 'in/hr', cat: 'SUB_LID', scope: 'subcatch', maxVal: 0.2, labels: ['< 0.02', '0.02-0.05', '0.05-0.1', '0.1-0.15', '> 0.15'] },
+  { key: 'lidDrainCoeff', name: 'LID: Drain Coeff', units: 'in/hr', cat: 'SUB_LID', scope: 'subcatch', maxVal: 2, labels: ['< 0.2', '0.2-0.5', '0.5-1.0', '1.0-1.5', '> 1.5'] },
+  { key: 'lidRetention', name: 'LID: Water Retention', units: 'in/mm', cat: 'SUB_LID', scope: 'subcatch', maxVal: 3, labels: ['< 0.3', '0.3-0.8', '0.8-1.5', '1.5-2.5', '> 2.5'] },
 ];
 
 export const SYS_VARS: SwmmVariable[] = [
