@@ -1,0 +1,27 @@
+Bob, looking at your handover doc against the EPA SWMM 5.2 desktop GUI feature set, here are the key gaps and improvements:
+Missing Desktop Features to Add:
+
+Profile Plot — The desktop GUI's longitudinal profile view (selecting a path of nodes/links and showing HGL/crown/invert along the path) is mentioned as technical debt but not implemented. This is probably the single most-used analysis tool after the map.
+Scatter Plot & Time Series Plot dialogs — The desktop has dedicated plot configuration dialogs where you pick X/Y variables, overlay multiple objects, add observed data. Your TableViewDialog shows data but lacks the interactive charting workflow.
+Statistical Reports — Frequency analysis, exceedance probability, flow duration curves. The desktop has a full Statistics Report dialog.
+Transect Editor — Visual cross-section editor for IRREGULAR shapes with station-elevation input and preview. You parse transects but there's no dedicated editor.
+Map Themes / Contouring — The desktop supports subcatchment color contouring (filled polygon gradients across the catchment). Your depth fills are node-only.
+Drag-to-move objects — Can you drag nodes on the canvas and have connected links follow? The desktop supports this.
+Backdrop image georeferencing — The desktop lets you set world coordinates for backdrop corners. Check if yours handles this or just scales.
+Undo/Redo stack — You have Ctrl+Z/Y shortcuts listed but the doc doesn't describe the actual undo implementation. The desktop has full multi-level undo.
+
+Improvements Beyond the Desktop GUI:
+
+Real-time animation playback — Smooth timestep animation with play/pause/speed controls and a scrubber bar. The desktop's animation is clunky.
+Split-screen comparison — Run two scenarios side-by-side on dual maps, something the desktop can't do.
+Inline .rpt viewer — Searchable, formatted report viewer panel instead of opening a text file externally.
+Hot reload editing — Edit a parameter, re-run WASM in seconds, see results update on the map without leaving the app. This is your killer advantage over the desktop.
+Pollutant tracking in extended variables — Listed as not implemented. The desktop handles water quality fully.
+Snow/LID/GW extended variables — Listed as stubs. Fill these out for full parity.
+Automated testing — Your doc notes no test suite for extended variable accuracy. Build a validation harness against known EPA test cases (the EPA distributes reference .inp/.rpt pairs).
+
+Architecture Improvements:
+
+Break up swmm-ui.tsx — 5,400 lines is unsustainable. Extract state into a context/store (Zustand would fit well), pull toolbar/menu into separate components, and isolate dialog management.
+Proper undo system — Use an immutable state approach (Immer + command pattern) so every edit is reversible.
+URL-based state — Let users share a link that opens a specific GitHub .inp file directly in the viewer.
