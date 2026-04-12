@@ -1,8 +1,8 @@
 # EPA SWMM5-UI — Comprehensive Handover Document
 
 **Project**: Web-based EPA SWMM5 User Interface  
-**Date**: April 11, 2026  
-**Codebase Size**: ~20,024 lines across 20 core files  
+**Date**: April 12, 2026  
+**Codebase Size**: ~20,721 lines across 20 core files  
 **Stack**: React 18 + TypeScript + Express.js + Vite + Tailwind CSS  
 **Database**: None — all data is client-side from INP file parsing
 
@@ -27,9 +27,10 @@
 15. [Import / Export](#15-import--export)
 16. [Design Theme & Styling](#16-design-theme--styling)
 17. [WASM Engine Compilation](#17-wasm-engine-compilation)
-18. [Known Bugs Fixed & Technical Debt](#18-known-bugs-fixed--technical-debt)
-19. [Critical Implementation Details](#19-critical-implementation-details)
-20. [Deployment & Runtime](#20-deployment--runtime)
+18. [New Features (Session 2)](#18-new-features-session-2)
+19. [Known Bugs Fixed & Technical Debt](#19-known-bugs-fixed--technical-debt)
+20. [Critical Implementation Details](#20-critical-implementation-details)
+21. [Deployment & Runtime](#21-deployment--runtime)
 
 ---
 
@@ -56,7 +57,7 @@ SWMM5-UI is a full-featured web-based replacement for the EPA SWMM 5.2 desktop a
 │                                                          │
 │  ┌──────────┐  ┌──────────┐  ┌────────────────────────┐ │
 │  │ INP      │  │ SWMM     │  │  React UI              │ │
-│  │ Parser   │→ │ Project  │→ │  swmm-ui.tsx (5407 ln)  │ │
+│  │ Parser   │→ │ Project  │→ │  swmm-ui.tsx (6074 ln)  │ │
 │  │ (1515 ln)│  │ (in-mem) │  │  NetworkMap (1549 ln)   │ │
 │  └──────────┘  └──────────┘  │  ProjectExplorer        │ │
 │                               │  PropertyEditor         │ │
@@ -93,16 +94,16 @@ SWMM5-UI is a full-featured web-based replacement for the EPA SWMM 5.2 desktop a
 
 ## 3. File Inventory & Line Counts
 
-### Core Application Files (20,024 lines total)
+### Core Application Files (20,721 lines total)
 
 | File | Lines | Purpose |
 |------|------:|---------|
-| `client/src/pages/swmm-ui.tsx` | 5,407 | Main UI — all state, toolbars, menus, dialogs, layout |
+| `client/src/pages/swmm-ui.tsx` | 6,074 | Main UI — all state, toolbars, menus, dialogs, layout |
 | `client/src/components/swmm/NetworkMap.tsx` | 1,549 | Canvas network visualization |
 | `client/src/components/swmm/DataEditors.tsx` | 1,456 | Time series, curves, patterns, controls, pollutants, land uses, LID, evap, aquifers |
 | `client/src/lib/inp-parser.ts` | 1,515 | INP file parser + writer (`projectToInp`) |
 | `client/src/components/swmm/ProjectExplorer.tsx` | 1,412 | Tree navigation + property panel + data grid |
-| `client/src/lib/swmm-engine.ts` | 1,270 | 4 engine adapters + `computeExtendedVariables` |
+| `client/src/lib/swmm-engine.ts` | 1,284 | 4 engine adapters + `computeExtendedVariables` |
 | `client/src/components/swmm/SubDialogs.tsx` | 1,107 | 8 modal sub-dialog editors |
 | `client/src/components/swmm/Panels.tsx` | 1,030 | Legend, Object Locator, Map Query panels |
 | `client/src/components/swmm/PropertyEditor.tsx` | 783 | Docked property grid with schemas for all 12 object types |
@@ -112,7 +113,7 @@ SWMM5-UI is a full-featured web-based replacement for the EPA SWMM 5.2 desktop a
 | `client/src/lib/import-export.ts` | 509 | CSV/DXF/GeoJSON import + CSV/DXF export |
 | `client/src/lib/swmm-types.ts` | 462 | All TypeScript interfaces |
 | `server/routes.ts` | 408 | Express API routes |
-| `client/src/lib/swmm-variables.ts` | 378 | 200+ variable catalog |
+| `client/src/lib/swmm-variables.ts` | 394 | 200+ variable catalog |
 | `client/src/lib/cfl-analysis.ts` | 361 | CFL stability + discretization |
 | `client/src/components/swmm/AnalysisOptionsDialog.tsx` | 259 | Analysis options (5 tabs) |
 | `client/src/lib/swmm-out-parser.ts` | 201 | Binary .out file parser |
@@ -400,7 +401,7 @@ When binary `.out` is missing but text `.rpt` exists:
 
 ## 7. Simulation Engines (4 Modes)
 
-**File**: `client/src/lib/swmm-engine.ts` (1,270 lines)
+**File**: `client/src/lib/swmm-engine.ts` (1,284 lines)
 
 ### Engine Priority: Local > WASM > Remote > Mock
 
@@ -450,7 +451,7 @@ All 4 engines call `computeExtendedVariables(project, results)` after simulation
 
 ## 8. Extended Variables System (200+)
 
-**File**: `client/src/lib/swmm-variables.ts` (378 lines)
+**File**: `client/src/lib/swmm-variables.ts` (394 lines)
 
 ### Organization: Scopes then Categories then Variables
 
@@ -472,15 +473,16 @@ All 4 engines call `computeExtendedVariables(project, results)` after simulation
 | Properties / RTC `LINK_PROPS` | 18 | linkTimestep, akon, qMax, setting, timeOpen |
 | Flow Classification `FLOW_CLASS` | 1 | flowClass |
 
-#### Subcatchment Variables (94 total: 5 input + 89 result)
+#### Subcatchment Variables (103 total: 5 input + 98 result)
 | Category | Count | Examples |
 |----------|------:|---------|
 | Standard (EPA) `SUB_STD` | 13 | rainfall, snowDepth, evap, infiltration, runoff |
 | Runoff Detail `SUB_RUNOFF` | 13 | runoffImperv0, avgSurfDepth, impAreaDS |
-| LID Internals `SUB_LID` | 17 | lidArea, lidSurfInfil, lidStorDrain |
+| LID Internals `SUB_LID` | 17+3 | lidArea, lidSurfInfil, lidStorDrain, lidSoilEvap, lidDrainCoeff, lidRetention |
 | Groundwater `SUB_GW` | 17 | gwFlowA1, gwPercolation, aqPorosity |
-| Snow Internals `SUB_SNOW` | 6 | snowmelt, snowFreeWater, snowCoverage |
+| Snow Internals `SUB_SNOW` | 6+4 | snowmelt, snowFreeWater, snowCoverage, snowATI, snowWATI, snowPackSWE, snowPackDepth |
 | Infiltration `SUB_INFIL` | 28 | currentInfilRate, hortonTp, gaF, cnCN |
+| Pollutant WQ `SUB_POLLUT` | 5 | pollutWashoff, pollutBuildup, pollutConcRunoff, pollutConcGW, pollutTotalLoad |
 
 #### System Variables (29 total)
 | Category | Count | Examples |
@@ -761,7 +763,7 @@ width = max(1.5, min(8, 1.5 + sqrt(|flow|) * 0.8))
 
 ## 11. Main UI Page (swmm-ui.tsx)
 
-**File**: `client/src/pages/swmm-ui.tsx` (5,407 lines)
+**File**: `client/src/pages/swmm-ui.tsx` (6,074 lines)
 
 ### Layout Structure
 
@@ -798,8 +800,10 @@ width = max(1.5, min(8, 1.5 + sqrt(|flow|) * 0.8))
 | `selectedObj` | `SelectedObject | null` | Currently selected node/link/subcatchment |
 | `interactionMode` | `string` | 'select', 'pan', 'addJunction', 'addConduit', etc. |
 | `activeMenu` | `string` | Current toolbar tab (File/Edit/View/Map/Project/Help) |
-| `openDialog` | `string | null` | Currently open modal dialog ID |
+| `openDialog` | `string | null` | Currently open modal dialog ID (includes `'scatterPlot'`, `'transectEditor'`, `'splitScreen'`) |
 | `nodeTheme` / `linkTheme` / `subcatchTheme` | `string` | Variable keys for map coloring |
+| `animSpeed` | `number` | Animation speed in ms (20-500, inverted slider) |
+| `splitScreenProject` | `object | null` | Second project for split-screen comparison (`{ project, results, fileName }`) |
 
 ### Menu/Toolbar Tabs
 
@@ -998,7 +1002,70 @@ EPA SWMM 5.2.4 source code in `swmm-engine/Stormwater-Management-Model-5.2.4/`
 
 ---
 
-## 18. Known Bugs Fixed & Technical Debt
+## 18. New Features (Session 2)
+
+### Animation Speed Control
+- **Location**: `swmm-ui.tsx` — `animSpeed` state variable, speed slider in toolbar
+- **Implementation**: Slider range 20–500ms with inverted scale (`520 - sliderValue`) so dragging right = faster
+- **Integration**: `requestAnimationFrame` loop in `animRef` uses `animSpeed` as the interval between timestep advances
+- **UI**: Compact slider next to play/pause button in the simulation toolbar, labeled with turtle/rabbit icons
+
+### Enhanced Report Viewer (.rpt)
+- **Location**: `swmm-ui.tsx` — report dialog with search and section navigation
+- **Search**: Text input filters report content with match count display
+- **Highlighting**: Uses deterministic split-based approach (`text.split(regex)` then `parts.map((part, i) => i % 2 === 1 ? <mark>)`) — avoids stateful global regex `.test()` bug
+- **Section Navigation**: 9 quick-jump buttons (Summary, Node Depth, Node Inflow, Node Flooding, Node Surcharge, Outfall Loading, Link Flow, Conduit Surcharge, Flow Classification)
+- **Scroll**: Sets search term to section header text then uses `setTimeout(() => mark.scrollIntoView({ behavior: 'smooth' }), 50)`
+
+### Scatter Plot Dialog
+- **Location**: `swmm-ui.tsx` — `openDialog === 'scatterPlot'`
+- **Controls**: Independent X/Y axis selectors, each with category (Node/Link/Subcatch), object dropdown, and variable dropdown
+- **Statistics**: Pearson correlation coefficient (r) and R² computed from paired timestep data
+- **Chart**: Recharts `ScatterChart` with responsive container, tooltips showing time + X/Y values
+- **Data**: Extracts paired values from `results.timeSteps` matching selected objects/variables
+
+### Frequency / Exceedance / Flow-Duration Curves (Statistics)
+- **Location**: `swmm-ui.tsx` — appended to Statistics Report after the existing event bar chart
+- **Exceedance Probability**: Weibull plotting position `P = rank / (n + 1)`, sorted descending
+- **Cumulative Frequency**: Sorted ascending with `P = rank / (n + 1)`
+- **Return Period**: Table showing 2, 5, 10, 25, 50, 100-year return periods with interpolated values
+- **Charts**: Recharts `LineChart` with dot markers and tooltips
+
+### Transect Editor
+- **Location**: `swmm-ui.tsx` — `openDialog === 'transectEditor'`, `TransectEditorContent` component
+- **Table**: Station-elevation pairs with add/remove row buttons
+- **Manning's N**: Three input fields for left overbank, channel, and right overbank
+- **Bank Stations**: Left and right bank station markers
+- **Preview**: Live Recharts `AreaChart` showing cross-section profile
+- **Bug Fix**: Null guard added — `if (t && t.stations)` before accessing fields; default `editName='New_Transect'` prevents undefined.toString() crash when no transects exist
+
+### Split-Screen Comparison
+- **Location**: `swmm-ui.tsx` — `openDialog === 'splitScreen'`, `splitScreenProject` state
+- **Flow**: Load second INP file → parse → run mock engine for quick topology comparison
+- **Display**: Side-by-side summary stats (nodes, links, subcatchments, total length, avg roughness)
+- **Difference Table**: First 50 matching elements with values from both projects, absolute difference, and % change
+- **Chart**: Recharts `BarChart` of differences for visual comparison
+- **Loading State**: `loadingB` state prevents double-click during mock simulation
+
+### URL-Based State
+- **Location**: `swmm-ui.tsx` — `useEffect([initialLoadDone])` reads URL query parameters
+- **Parameters**: `?inp=<raw_url>` and `?github=<github_blob_url>`
+- **GitHub Conversion**: Detects `github.com/.../blob/...` URLs and converts to `raw.githubusercontent.com` format
+- **Fallback**: On fetch error, falls back to default `Greenville_SI.inp` sample
+- **Use Case**: Share direct links to SWMM models, e.g., `?github=https://github.com/user/repo/blob/main/model.inp`
+
+### Extended Variable Stubs (Session 2 additions)
+- **SUB_POLLUT category**: New `VarCategory` added to type union and `CATEGORY_INFO` array in `swmm-variables.ts`
+  - 5 variables: `pollutWashoff`, `pollutBuildup`, `pollutConcRunoff`, `pollutConcGW`, `pollutTotalLoad`
+- **Additional Snow variables**: `snowATI` (antecedent temperature index), `snowWATI` (weighted ATI), `snowPackSWE` (snow water equivalent), `snowPackDepth`
+  - Computed in `swmm-engine.ts` after `snowCoverage` block using temperature-based ATI decay
+- **Additional LID variables**: `lidSoilEvap`, `lidDrainCoeff`, `lidRetention`
+  - Computed from project LID control parameters and current moisture state
+- **Computation**: All stubs computed in `computeExtendedVariables()` in `swmm-engine.ts` after the existing snow/LID blocks
+
+---
+
+## 19. Known Bugs Fixed & Technical Debt
 
 ### Bugs Fixed During Development
 
@@ -1016,20 +1083,25 @@ EPA SWMM 5.2.4 source code in `swmm-engine/Stormwater-Management-Model-5.2.4/`
 
 7. **Comment lines creating ghost entries** — INP parser `extractSections()` now filters ALL lines starting with `;`.
 
+8. **TransectEditorContent crash** (Session 2) — `undefined.toString()` when no transects exist. Fixed with null guard: `if (t && t.stations)` before accessing transect fields; default `editName='New_Transect'`.
+
+9. **Report search highlighting stateful regex** (Session 2) — Global regex `.test()` is stateful (alternates true/false). Fixed by switching to split-based approach: `text.split(regex)` then `parts.map((part, i) => i % 2 === 1 ? <mark>)` for deterministic highlighting.
+
 ### Technical Debt / Future Work
 
-- `swmm-ui.tsx` at 5,407 lines should be decomposed into smaller state management modules
-- Profile plot and statistics report dialogs could be separate components
+- `swmm-ui.tsx` at 6,074 lines should be decomposed into smaller state management modules
+- Profile plot, statistics report, scatter plot, transect editor, and split-screen dialogs could be separate components
 - WASM engine could support progress callbacks via Emscripten `ccall` wrappers
-- Pollutant tracking in extended variables is not yet implemented
+- Pollutant WQ extended variables are stub estimates (not connected to actual SWMM pollutant routing)
 - LID performance diagnostics in extended variables are placeholder estimates
 - Groundwater extended variables use simplified assumptions
-- Snow melt extended variables are stub implementations
+- Snow melt extended variables (ATI, WATI, SWE, depth) are stub implementations using temperature-based decay
+- Split-screen comparison uses mock engine only — could integrate real engine comparison
 - No automated test suite for extended variable accuracy against reference SWMM output
 
 ---
 
-## 19. Critical Implementation Details
+## 20. Critical Implementation Details
 
 ### INP Round-Trip Fidelity
 - `rawSections` stores unrecognized sections verbatim
@@ -1064,7 +1136,7 @@ EPA SWMM 5.2.4 source code in `swmm-engine/Stormwater-Management-Model-5.2.4/`
 
 ---
 
-## 20. Deployment & Runtime
+## 21. Deployment & Runtime
 
 ### Development
 ```bash
