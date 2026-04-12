@@ -1,0 +1,770 @@
+This is an impressive project! You've essentially rebuilt EPA SWMM5 as a modern web application. Let me analyze your codebase and provide actionable improvements for Replit.
+
+## Executive Summary of Recommendations
+
+Based on your 20K+ line codebase, here are the **highest-impact improvements** you can make:
+
+---
+
+## 1. **Code Architecture: Break Down the Monolith**
+
+Your `swmm-ui.tsx` at 6,074 lines is a maintenance nightmare. Here's how to refactor it:
+
+### Create a State Management Layer
+
+```typescript
+// client/src/lib/store/projectStore.ts
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+
+interface ProjectState {
+  project: SwmmProject | null;
+  results: SimulationResults | null;
+  fileName: string;
+  simStatus: 'none' | 'running' | 'current' | 'outdated';
+  selectedObj: SelectedObject | null;
+  interactionMode: string;
+  
+  // Actions
+  setProject: (project: SwmmProject) => void;
+  updateObject: (type: string, id: string, updates: Partial<any>) => void;
+  runSimulation: (engine: SwmmEngine) => Promise<void>;
+  selectObject: (obj: SelectedObject | null) => void;
+}
+
+export const useProjectStore = create<ProjectState>()(
+  immer((set, get) => ({
+    project: null,
+    results: null,
+    fileName: 'untitled.inp',
+    simStatus: 'none',
+    selectedObj: null,
+    interactionMode: 'select',
+    
+    setProject: (project) => set({ project, simStatus: 'outdated' }),
+    
+    updateObject: (type, id, updates) => set((state) => {
+      if (!state.project) return;
+      const collection = state.project[type as keyof SwmmProject];
+      if (Array.isArray(collection)) {
+        const idx = collection.findIndex((o: any) => o.id === id);
+        if (idx >= 0) Object.assign(collection[idx], updates);
+      }
+      state.simStatus = 'outdated';
+    }),
+    
+    runSimulation: async (engine) => {
+      const { project } = get();
+      if (!project) return;
+      set({ simStatus: 'running' });
+      try {
+        const results = await engine.run(project);
+        set({ results, simStatus: 'current' });
+      } catch (e) {
+        set({ simStatus: 'none' });
+        throw e;
+      }
+    }
+  }))
+);
+```
+
+### Extract Dialog Components
+
+```typescript
+// client/src/components/swmm/dialogs/index.ts
+export { ScatterPlotDialog } from './ScatterPlotDialog';
+export { TransectEditorDialog } from './TransectEditorDialog';
+export { SplitScreenDialog } from './SplitScreenDialog';
+export { ReportViewerDialog } from './ReportViewerDialog';
+// ... etc
+```
+
+### Create a Toolbar System
+
+```typescript
+// client/src/components/swmm/toolbar/ToolbarRegistry.tsx
+interface ToolbarConfig {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  tools: ToolConfig[];
+}
+
+const TOOLBARS: Record<string, ToolbarConfig> = {
+  file: {
+    id: 'file',
+    label: 'File',
+    icon: <FileIcon />,
+    tools: [
+      { id: 'new', label: 'New', shortcut: 'Ctrl+N', action: () => {} },
+      { id: 'open', label: 'Open...', shortcut: 'Ctrl+O', action: () => {} },
+      { id: 'save', label: 'Save', shortcut: 'Ctrl+S', action: () => {} },
+      { id: 'separator' },
+      { id: 'import', label: 'Import', submenu: ['csv', 'dxf', 'geojson'] },
+      { id: 'export', label: 'Export', submenu: ['csv', 'dxf', 'inp'] },
+    ]
+  },
+  // ... other toolbars
+};
+```
+
+---
+
+## 2. **Performance: Optimize the Canvas**
+
+Your NetworkMap component can be significantly optimized:
+
+### Use Offscreen Canvas for Background Layers
+
+```typescript
+// client/src/components/swmm/NetworkMap/OptimizedNetworkMap.tsx
+import { useRef, useEffect, useCallback, memo } from 'react';
+
+interface NetworkMapProps {
+  project: SwmmProject;
+  results: SimulationResults | null;
+  timeStep: number;
+  nodeTheme: string;
+  linkTheme: string;
+  subcatchTheme: string;
+}
+
+export const OptimizedNetworkMap = memo(function NetworkMap({
+  project, results, timeStep, nodeTheme, linkTheme, subcatchTheme
+}: NetworkMapProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null);
+  const requestRef = useRef<number>();
+  
+  // Pre-render static background (grid, subcatchments, links without results)
+  useEffect(() => {
+    const bgCanvas = bgCanvasRef.current;
+    if (!bgCanvas) return;
+    
+    const ctx = bgCanvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Render grid
+    renderGrid(ctx, project.mapExtent);
+    
+    // Render subcatchments (static geometry)
+    renderSubcatchments(ctx, project.polygons, project.subcatchments);
+    
+    // Render links (static geometry - no flow arrows)
+    renderLinksStatic(ctx, project.conduits, project.coordinates, project.vertices);
+    
+    // Render nodes (static geometry - no depth fills)
+    renderNodesStatic(ctx, project.junctions, project.outfalls, project.coordinates);
+    
+  }, [project]); // Only re-render when project changes
+  
+  // Render dynamic overlay (results-dependent)
+  const renderOverlay = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (!results) return;
+    
+    const ts = results.timeSteps[timeStep];
+    if (!ts) return;
+    
+    // Render depth fills
+    renderDepthFills(ctx, project.junctions, ts.nodes, nodeTheme);
+    
+    // Render flooding halos
+    renderFloodingHalos(ctx, project.junctions, ts.nodes);
+    
+    // Render flow arrows
+    renderFlowArrows(ctx, project.conduits, ts.links, project.coordinates, project.vertices);
+    
+  }, [project, results, timeStep, nodeTheme]);
+  
+  useEffect(() => {
+    renderOverlay();
+  }, [renderOverlay]);
+  
+  // RAF-based pan/zoom for smooth interaction
+  const handlePanZoom = useCallback((dx: number, dy: number, zoom: number) => {
+    if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    
+    requestRef.current = requestAnimationFrame(() => {
+      // Apply transform to both canvases
+      applyTransform(canvasRef.current, dx, dy, zoom);
+      applyTransform(bgCanvasRef.current, dx, dy, zoom);
+    });
+  }, []);
+  
+  return (
+    <div className="relative w-full h-full">
+      <canvas 
+        ref={bgCanvasRef}
+        className="absolute inset-0"
+        style={{ pointerEvents: 'none' }}
+      />
+      <canvas 
+        ref={canvasRef}
+        className="absolute inset-0"
+      />
+    </div>
+  );
+});
+```
+
+### Implement Spatial Indexing for Hit Testing
+
+```typescript
+// client/src/lib/spatialIndex.ts
+interface SpatialIndex {
+  insert(id: string, bbox: [number, number, number, number]): void;
+  query(point: [number, number]): string[];
+  queryRange(bbox: [number, number, number, number]): string[];
+}
+
+export class RTreeIndex implements SpatialIndex {
+  private tree: any; // Use rbush or implement simple quadtree
+  
+  constructor() {
+    this.tree = new RBush();
+  }
+  
+  insert(id: string, bbox: [number, number, number, number]) {
+    this.tree.insert({
+      minX: bbox[0],
+      minY: bbox[1],
+      maxX: bbox[2],
+      maxY: bbox[3],
+      id
+    });
+  }
+  
+  query(point: [number, number]): string[] {
+    return this.tree.search({
+      minX: point[0],
+      minY: point[1],
+      maxX: point[0],
+      maxY: point[1]
+    }).map((item: any) => item.id);
+  }
+}
+
+// Use in NetworkMap
+const spatialIndex = useMemo(() => {
+  const index = new RTreeIndex();
+  
+  // Index nodes
+  project.junctions.forEach(j => {
+    const [x, y] = project.coordinates[j.id];
+    index.insert(`node:${j.id}`, [x - 10, y - 10, x + 10, y + 10]);
+  });
+  
+  // Index links (with segment bounding boxes)
+  project.conduits.forEach(c => {
+    const vertices = project.vertices[c.id] || [];
+    // ... compute bounding boxes for each segment
+  });
+  
+  return index;
+}, [project]);
+```
+
+---
+
+## 3. **Simulation Engine: Web Worker Integration**
+
+Move heavy computations off the main thread:
+
+```typescript
+// client/src/workers/swmmWorker.ts
+import { parseSwmmOut } from '../lib/swmm-out-parser';
+import { computeExtendedVariables } from '../lib/swmm-engine';
+
+self.onmessage = async (e) => {
+  const { type, payload } = e.data;
+  
+  switch (type) {
+    case 'PARSE_OUT': {
+      const { buffer, project } = payload;
+      const results = parseSwmmOut(buffer, project);
+      const extended = computeExtendedVariables(project, results);
+      self.postMessage({ type: 'PARSE_COMPLETE', results: extended });
+      break;
+    }
+    
+    case 'COMPUTE_EXTENDED': {
+      const { project, results } = payload;
+      const extended = computeExtendedVariables(project, results);
+      self.postMessage({ type: 'EXTENDED_COMPLETE', extended });
+      break;
+    }
+  }
+};
+
+// client/src/hooks/useSwmmWorker.ts
+export function useSwmmWorker() {
+  const workerRef = useRef<Worker | null>(null);
+  
+  useEffect(() => {
+    workerRef.current = new Worker(
+      new URL('../workers/swmmWorker.ts', import.meta.url),
+      { type: 'module' }
+    );
+    
+    return () => workerRef.current?.terminate();
+  }, []);
+  
+  const parseResults = useCallback((buffer: ArrayBuffer, project: SwmmProject) => {
+    return new Promise<SimulationResults>((resolve) => {
+      const handler = (e: MessageEvent) => {
+        if (e.data.type === 'PARSE_COMPLETE') {
+          workerRef.current?.removeEventListener('message', handler);
+          resolve(e.data.results);
+        }
+      };
+      
+      workerRef.current?.addEventListener('message', handler);
+      workerRef.current?.postMessage({
+        type: 'PARSE_OUT',
+        payload: { buffer, project }
+      });
+    });
+  }, []);
+  
+  return { parseResults };
+}
+```
+
+---
+
+## 4. **Replit-Specific Optimizations**
+
+### Configure `.replit` for Better Performance
+
+```toml
+# .replit
+run = "npm run dev"
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["sh", "-c", "npm run build && npm start"]
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[workflows]
+runButton = "Run"
+
+[[workflows.workflow]]
+name = "Run"
+author = 0
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+
+# Add hot reload configuration
+[packager]
+language = "nodejs"
+
+[packager.features]
+packageSearch = true
+guessImports = true
+```
+
+### Use Replit's Persistent Storage for Cache
+
+```typescript
+// client/src/lib/cache/replitCache.ts
+const CACHE_KEY = 'swmm_cache_v1';
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
+export class ReplitCache {
+  private storage: Storage;
+  
+  constructor() {
+    this.storage = localStorage; // Replit persists this across sessions
+  }
+  
+  get<T>(key: string): T | null {
+    const entry = this.storage.getItem(`${CACHE_KEY}:${key}`);
+    if (!entry) return null;
+    
+    const parsed: CacheEntry<T> = JSON.parse(entry);
+    if (Date.now() - parsed.timestamp > parsed.ttl) {
+      this.storage.removeItem(`${CACHE_KEY}:${key}`);
+      return null;
+    }
+    
+    return parsed.data;
+  }
+  
+  set<T>(key: string, data: T, ttlMinutes = 60): void {
+    const entry: CacheEntry<T> = {
+      data,
+      timestamp: Date.now(),
+      ttl: ttlMinutes * 60 * 1000
+    };
+    this.storage.setItem(`${CACHE_KEY}:${key}`, JSON.stringify(entry));
+  }
+  
+  // Cache parsed INP files
+  cacheProject(fileName: string, project: SwmmProject): void {
+    this.set(`project:${fileName}`, project, 120);
+  }
+  
+  getCachedProject(fileName: string): SwmmProject | null {
+    return this.get(`project:${fileName}`);
+  }
+  
+  // Cache simulation results
+  cacheResults(fileName: string, results: SimulationResults): void {
+    // Don't cache large results in localStorage - use IndexedDB instead
+    this.set(`results:${fileName}:meta`, {
+      timeSteps: results.timeSteps.length,
+      summary: results.summary
+    }, 60);
+  }
+}
+```
+
+### IndexedDB for Large Result Storage
+
+```typescript
+// client/src/lib/cache/resultCache.ts
+export class ResultCache {
+  private db: IDBDatabase | null = null;
+  
+  async init(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('SWMMResults', 1);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        this.db = request.result;
+        resolve();
+      };
+      
+      request.onupgradeneeded = (e) => {
+        const db = (e.target as IDBOpenDBRequest).result;
+        db.createObjectStore('results', { keyPath: 'id' });
+        db.createObjectStore('timeSeries', { keyPath: 'id' });
+      };
+    });
+  }
+  
+  async saveResults(id: string, results: SimulationResults): Promise<void> {
+    if (!this.db) await this.init();
+    
+    // Store metadata separately from time series data
+    const { timeSteps, ...metadata } = results;
+    
+    const tx = this.db!.transaction(['results', 'timeSeries'], 'readwrite');
+    
+    await Promise.all([
+      this.putStore(tx.objectStore('results'), { id, ...metadata }),
+      this.putStore(tx.objectStore('timeSeries'), { id, timeSteps })
+    ]);
+  }
+  
+  async getResults(id: string): Promise<SimulationResults | null> {
+    if (!this.db) await this.init();
+    
+    const tx = this.db!.transaction(['results', 'timeSeries'], 'readonly');
+    
+    const [meta, ts] = await Promise.all([
+      this.getStore(tx.objectStore('results'), id),
+      this.getStore(tx.objectStore('timeSeries'), id)
+    ]);
+    
+    if (!meta || !ts) return null;
+    
+    return {
+      ...meta,
+      timeSteps: ts.timeSteps
+    };
+  }
+  
+  private putStore(store: IDBObjectStore, data: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = store.put(data);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+  
+  private getStore(store: IDBObjectStore, id: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+}
+```
+
+---
+
+## 5. **UI/UX Improvements**
+
+### Add a Command Palette (VS Code-style)
+
+```typescript
+// client/src/components/swmm/CommandPalette.tsx
+import { useState, useEffect, useMemo } from 'react';
+import { useProjectStore } from '@/lib/store/projectStore';
+
+interface Command {
+  id: string;
+  label: string;
+  shortcut?: string;
+  category: string;
+  action: () => void;
+}
+
+export function CommandPalette({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const { project, selectObject } = useProjectStore();
+  
+  const commands = useMemo<Command[]>(() => {
+    const base: Command[] = [
+      { id: 'new', label: 'New Project', shortcut: 'Ctrl+N', category: 'File', action: () => {} },
+      { id: 'open', label: 'Open Project...', shortcut: 'Ctrl+O', category: 'File', action: () => {} },
+      { id: 'save', label: 'Save', shortcut: 'Ctrl+S', category: 'File', action: () => {} },
+      { id: 'run', label: 'Run Simulation', shortcut: 'F5', category: 'Simulation', action: () => {} },
+      { id: 'fit', label: 'Fit to Extent', shortcut: 'Ctrl+0', category: 'View', action: () => {} },
+    ];
+    
+    // Dynamic commands from project objects
+    if (project) {
+      project.junctions.forEach(j => {
+        base.push({
+          id: `goto:${j.id}`,
+          label: `Go to Junction: ${j.id}`,
+          category: 'Navigation',
+          action: () => selectObject({ type: 'junction', id: j.id })
+        });
+      });
+    }
+    
+    return base;
+  }, [project, selectObject]);
+  
+  const filtered = useMemo(() => {
+    if (!query) return commands;
+    const q = query.toLowerCase();
+    return commands.filter(c => 
+      c.label.toLowerCase().includes(q) ||
+      c.category.toLowerCase().includes(q)
+    );
+  }, [commands, query]);
+  
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+        e.preventDefault();
+        // Toggle palette
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+  
+  if (!isOpen) return null;
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/50">
+      <div className="w-[600px] bg-white rounded-lg shadow-2xl overflow-hidden">
+        <input
+          autoFocus
+          className="w-full px-4 py-3 text-lg border-b"
+          placeholder="Type a command or search..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="max-h-[400px] overflow-y-auto">
+          {filtered.map((cmd, i) => (
+            <button
+              key={cmd.id}
+              className="w-full px-4 py-2 text-left hover:bg-blue-50 flex justify-between"
+              onClick={() => { cmd.action(); onClose(); }}
+            >
+              <span>{cmd.label}</span>
+              <span className="text-gray-400 text-sm">{cmd.shortcut}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### Add Keyboard Shortcuts System
+
+```typescript
+// client/src/hooks/useKeyboardShortcuts.ts
+import { useEffect, useCallback } from 'react';
+
+interface Shortcut {
+  key: string;
+  ctrl?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+  action: () => void;
+  preventDefault?: boolean;
+}
+
+export function useKeyboardShortcuts(shortcuts: Shortcut[]) {
+  const handler = useCallback((e: KeyboardEvent) => {
+    shortcuts.forEach(s => {
+      const keyMatch = e.key.toLowerCase() === s.key.toLowerCase();
+      const ctrlMatch = !!s.ctrl === (e.ctrlKey || e.metaKey);
+      const shiftMatch = !!s.shift === e.shiftKey;
+      const altMatch = !!s.alt === e.altKey;
+      
+      if (keyMatch && ctrlMatch && shiftMatch && altMatch) {
+        if (s.preventDefault !== false) e.preventDefault();
+        s.action();
+      }
+    });
+  }, [shortcuts]);
+  
+  useEffect(() => {
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handler]);
+}
+
+// Usage in component
+useKeyboardShortcuts([
+  { key: 'n', ctrl: true, action: handleNew },
+  { key: 'o', ctrl: true, action: handleOpen },
+  { key: 's', ctrl: true, action: handleSave },
+  { key: 'z', ctrl: true, action: undo },
+  { key: 'z', ctrl: true, shift: true, action: redo },
+  { key: 'f', ctrl: true, action: () => setShowFindDialog(true) },
+  { key: 'F5', action: handleRunSimulation },
+  { key: 'Delete', action: handleDelete },
+  { key: 'Escape', action: () => setInteractionMode('select') },
+]);
+```
+
+---
+
+## 6. **Testing Strategy**
+
+Add a test suite for your critical parsers:
+
+```typescript
+// client/src/lib/__tests__/inp-parser.test.ts
+import { describe, it, expect } from 'vitest';
+import { parseInpFile, projectToInp } from '../inp-parser';
+import { SAMPLE_INP } from '../sample-inp';
+
+describe('INP Parser', () => {
+  it('should parse sample INP without errors', () => {
+    const project = parseInpFile(SAMPLE_INP);
+    
+    expect(project.junctions.length).toBeGreaterThan(0);
+    expect(project.conduits.length).toBeGreaterThan(0);
+    expect(project.options.FLOW_UNITS).toBeDefined();
+  });
+  
+  it('should round-trip without data loss', () => {
+    const project = parseInpFile(SAMPLE_INP);
+    const regenerated = projectToInp(project);
+    const reparsed = parseInpFile(regenerated);
+    
+    expect(reparsed.junctions.length).toBe(project.junctions.length);
+    expect(reparsed.conduits.length).toBe(project.conduits.length);
+    
+    // Check specific junction
+    const origJ = project.junctions[0];
+    const reparsedJ = reparsed.junctions.find(j => j.id === origJ.id);
+    expect(reparsedJ).toBeDefined();
+    expect(reparsedJ!.elevation).toBe(origJ.elevation);
+  });
+  
+  it('should handle all cross-section shapes', () => {
+    const shapes = ['CIRCULAR', 'RECT_CLOSED', 'RECT_OPEN', 'TRAPEZOIDAL', 'TRIANGULAR'];
+    
+    shapes.forEach(shape => {
+      const inp = `
+[JUNCTIONS]
+J1 100 0 0 0 0
+
+[CONDUITS]
+C1 J1 J2 100 0.013 0 0 0 0
+
+[XSECTIONS]
+C1 ${shape} 2 1 1 1 1 1
+
+[COORDINATES]
+J1 0 0
+J2 100 0
+`;
+      const project = parseInpFile(inp);
+      expect(project.xsections['C1'].shape).toBe(shape);
+    });
+  });
+});
+```
+
+---
+
+## 7. **Package.json Scripts for Replit**
+
+```json
+{
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "tsx watch server/index.ts",
+    "client:dev": "vite",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "vite build",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --outfile=dist/server.js",
+    "start": "node dist/server.js",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "lint": "eslint . --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit"
+  }
+}
+```
+
+---
+
+## 8. **Quick Wins Checklist**
+
+| Priority | Task | Effort | Impact |
+|----------|------|--------|--------|
+| 🔴 High | Install Zustand, extract state from swmm-ui.tsx | 2h | Massive |
+| 🔴 High | Add Web Worker for result parsing | 1h | High |
+| 🟡 Medium | Implement spatial index for hit testing | 2h | High |
+| 🟡 Medium | Add Command Palette | 3h | Medium |
+| 🟡 Medium | Set up Vitest + add parser tests | 2h | High |
+| 🟢 Low | Add keyboard shortcuts system | 1h | Medium |
+| 🟢 Low | Implement IndexedDB result caching | 2h | Medium |
+| 🟢 Low | Optimize canvas with offscreen rendering | 3h | High |
+
+---
+
+Would you like me to:
+1. **Create a full refactored version** of any specific component?
+2. **Set up the Zustand store** with all your state slices?
+3. **Implement the Web Worker** for your simulation engines?
+4. **Create a performance profiling script** to identify bottlenecks?

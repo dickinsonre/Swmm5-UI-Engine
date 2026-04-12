@@ -31,6 +31,7 @@
 19. [Known Bugs Fixed & Technical Debt](#19-known-bugs-fixed--technical-debt)
 20. [Critical Implementation Details](#20-critical-implementation-details)
 21. [Deployment & Runtime](#21-deployment--runtime)
+22. [Improvement Roadmap](#22-improvement-roadmap)
 
 ---
 
@@ -1180,6 +1181,191 @@ npm start      # NODE_ENV=production node dist/index.cjs
 | react-resizable-panels | 2.1.7 | Split panel layout |
 | ws | 8.18.0 | WebSocket (server-side) |
 | zod | 3.24.2 | Schema validation |
+
+---
+
+## 22. Improvement Roadmap
+
+Collected architectural, performance, and UX improvement ideas for future development. Each area includes rationale, proposed approach, and key files affected.
+
+### 22.1 Code Architecture: Break Down the Monolith
+
+**Problem**: `swmm-ui.tsx` at 6,074 lines is difficult to maintain, test, and reason about.
+
+**Proposed Solutions**:
+
+#### A. Zustand State Management Layer
+- **New file**: `client/src/lib/store/projectStore.ts`
+- Extract core state (`project`, `results`, `fileName`, `simStatus`, `selectedObj`, `interactionMode`) into a Zustand store with `immer` middleware for immutable updates
+- Actions: `setProject()`, `updateObject(type, id, updates)`, `runSimulation(engine)`, `selectObject()`
+- Benefits: Eliminates prop-drilling, enables cross-component state access without React context gymnastics
+- **Dependencies**: `zustand`, `zustand/middleware/immer`
+
+#### B. Extract Dialog Components
+- **New directory**: `client/src/components/swmm/dialogs/`
+- Extract into individual files: `ScatterPlotDialog`, `TransectEditorDialog`, `SplitScreenDialog`, `ReportViewerDialog`, `StatisticsReportDialog`, `ProfilePlotDialog`, `CalibrationDialog`, `GraphDialog`
+- Each dialog becomes self-contained with its own state, consuming project data from the Zustand store
+- Estimated reduction: ~2,000-2,500 lines from `swmm-ui.tsx`
+
+#### C. Toolbar Registry System
+- **New file**: `client/src/components/swmm/toolbar/ToolbarRegistry.tsx`
+- Data-driven toolbar configuration: `ToolbarConfig` interface with `id`, `label`, `icon`, `tools[]`
+- Declarative tool definitions with `shortcut`, `action`, `submenu` support
+- Replaces imperative toolbar JSX in main UI with a registry lookup pattern
+
+### 22.2 Performance: Optimize the Canvas
+
+**Problem**: NetworkMap re-renders everything on every frame during animation; hit-testing is O(n) linear scan.
+
+**Proposed Solutions**:
+
+#### A. Dual-Canvas Architecture (Static + Dynamic Layers)
+- **Background canvas** (static): Grid, subcatchment polygons, link geometry, node geometry — only re-renders when `project` changes
+- **Foreground canvas** (dynamic): Depth fills, flooding halos, flow arrows, selection highlights — re-renders on `timeStep`/`results` changes
+- RAF-based pan/zoom applies CSS transform to both canvases simultaneously
+- Estimated speedup: 3-5x for large networks during animation playback
+
+#### B. Spatial Indexing for Hit Testing (R-Tree)
+- **New file**: `client/src/lib/spatialIndex.ts`
+- R-Tree index (via `rbush` library) for O(log n) point and range queries
+- Index nodes by bounding box (coordinate ± hit radius)
+- Index link segments by per-segment bounding boxes
+- Index subcatchment polygons by polygon bounding boxes
+- Rebuild index on project change via `useMemo`
+- **Dependency**: `rbush`
+
+#### C. Canvas Tile Caching
+- Pre-render viewport tiles at current zoom level
+- Invalidate only affected tiles on edit
+- Smooth pan by translating cached tiles + rendering edge strips
+
+### 22.3 Simulation Engine: Web Worker Integration
+
+**Problem**: `computeExtendedVariables()` and `parseSwmmOut()` run on the main thread, blocking UI for large models.
+
+**Proposed Solutions**:
+
+#### A. SWMM Web Worker
+- **New file**: `client/src/workers/swmmWorker.ts`
+- Message types: `PARSE_OUT` (binary .out parsing + extended var computation), `COMPUTE_EXTENDED` (extended vars only)
+- Worker posts back `PARSE_COMPLETE` or `EXTENDED_COMPLETE` with results
+- Main thread stays responsive during parsing of large output files
+
+#### B. useSwmmWorker Hook
+- **New file**: `client/src/hooks/useSwmmWorker.ts`
+- `useRef<Worker>` with lazy initialization and cleanup on unmount
+- `parseResults(buffer, project)` returns `Promise<SimulationResults>`
+- Integrates with Zustand store for automatic state updates
+
+#### C. WASM Engine in Worker
+- Move the WASM engine initialization and `swmm_run()` call into the worker
+- Eliminates main-thread blocking during in-browser simulation
+- Worker manages Emscripten FS operations internally
+
+### 22.4 Client-Side Caching
+
+**Problem**: Re-parsing large INP files and re-running simulations is expensive; no persistence across page reloads.
+
+**Proposed Solutions**:
+
+#### A. LocalStorage Cache for Parsed Projects
+- **New file**: `client/src/lib/cache/replitCache.ts`
+- TTL-based cache with `CacheEntry<T>` wrapper (data + timestamp + ttl)
+- `cacheProject(fileName, project)` / `getCachedProject(fileName)` for INP parse results
+- 120-minute TTL for project data, 60-minute for result metadata
+
+#### B. IndexedDB for Large Result Storage
+- **New file**: `client/src/lib/cache/resultCache.ts`
+- Separate object stores: `results` (metadata) and `timeSeries` (timestep data)
+- Avoids localStorage 5MB limit for models with thousands of timesteps
+- `saveResults(id, results)` / `getResults(id)` async API
+- Automatic cleanup of stale entries
+
+### 22.5 UI/UX Improvements
+
+#### A. Command Palette (Ctrl+P)
+- **New file**: `client/src/components/swmm/CommandPalette.tsx`
+- VS Code-style fuzzy search across all commands and project objects
+- Static commands: New, Open, Save, Run Simulation, Fit to Extent, etc.
+- Dynamic commands: "Go to Junction: J1", "Go to Conduit: C5" — generated from project data
+- Categories: File, Simulation, View, Navigation, Edit
+- Keyboard navigation with arrow keys and Enter to execute
+
+#### B. Centralized Keyboard Shortcuts System
+- **New file**: `client/src/hooks/useKeyboardShortcuts.ts`
+- Declarative `Shortcut` interface: `{ key, ctrl?, shift?, alt?, action, preventDefault? }`
+- Single `useKeyboardShortcuts(shortcuts[])` hook replaces scattered `keydown` listeners
+- Standard shortcuts: Ctrl+N (new), Ctrl+O (open), Ctrl+S (save), Ctrl+Z/Y (undo/redo), F5 (run), Ctrl+F (find), Delete, Escape
+- Prevents conflicts and ensures consistent shortcut handling
+
+#### C. Undo/Redo with Immer Patches
+- Track project mutations as Immer patches
+- Bounded undo stack (50 operations)
+- Patch-based instead of full snapshot for memory efficiency
+
+#### D. Recent Files List
+- Store last 10 opened INP files in localStorage
+- Show in File menu and on startup screen
+
+### 22.6 Testing Strategy
+
+**Problem**: No automated tests for critical parsers and extended variable computations.
+
+**Proposed Solutions**:
+
+#### A. INP Parser Unit Tests (Vitest)
+- **New file**: `client/src/lib/__tests__/inp-parser.test.ts`
+- Test cases:
+  - Parse sample INP without errors (junction/conduit/options presence)
+  - Round-trip fidelity: `parseInpFile(projectToInp(parseInpFile(inp)))` preserves data
+  - All cross-section shapes (CIRCULAR, RECT_CLOSED, RECT_OPEN, TRAPEZOIDAL, TRIANGULAR, etc.)
+  - Edge cases: comment filtering, FILE-backed timeseries skip, DAILY pattern chunk size 7
+  - Large file handling: 1000+ junction models
+
+#### B. Extended Variables Accuracy Tests
+- **New file**: `client/src/lib/__tests__/extended-vars.test.ts`
+- Compare computed Froude, friction slope, Bernoulli balance against hand-calculated reference values
+- Validate geometry computations for each XSection shape
+- Test SI vs US unit detection and conversion
+- Validate momentum term reconstruction (stVenantBalance ≈ 0)
+
+#### C. Engine Integration Tests
+- Verify all 4 engine modes produce structurally valid `SimulationResults`
+- Test WASM engine with small INP (5 junctions, 4 conduits)
+- Validate mock engine output plausibility
+
+### 22.7 Additional Improvement Ideas
+
+#### A. Multi-Tab / MDI Interface
+- Open multiple INP files simultaneously in tabs
+- Drag-and-drop tabs for side-by-side comparison
+- Each tab has its own project state and results
+
+#### B. Real-Time Collaboration (Future)
+- CRDT-based shared project state (Yjs or Automerge)
+- Cursor presence indicators on the canvas
+- Conflict-free concurrent editing
+
+#### C. Plugin / Extension System
+- Define extension points: custom variable computations, custom dialogs, custom import/export formats
+- Plugin manifest with dependencies and version compatibility
+- Load plugins dynamically from URLs or local files
+
+#### D. Accessibility Improvements
+- Keyboard navigation for all canvas objects (Tab to cycle, Enter to select)
+- ARIA labels on all interactive elements
+- High-contrast theme option
+- Screen reader announcements for simulation progress
+
+#### E. Progressive Web App (PWA)
+- Service worker for offline INP editing
+- Cache WASM engine files for instant offline simulation
+- Install prompt for desktop-like experience
+
+#### F. Performance Monitoring
+- FPS counter during animation playback
+- Memory usage tracking for large models
+- Console warnings when timestep count exceeds performance thresholds
 
 ---
 
