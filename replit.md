@@ -93,6 +93,9 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - `client/public/help/{userguide,basic,inlets}/` — Static HTML extracted from 3 EPA SWMM CHM files (User Guide, Basic Tutorial, Inlets Tutorial). TOC files: epaswmm5.hhc, tutorial.hhc, InletTutorial.hhc (CHM sitemap format).
 - `client/src/components/swmm/HelpManualsDialog.tsx` — Help > Manuals dialog: manual tab selector, parseHhc() token-based .hhc TOC parser (nested UL/OBJECT sitemap), collapsible tree, sandboxed iframe viewer (`sandbox=""` — scripts blocked, opaque origin), page path allowlist validation, "Open in new tab" link. Inlets home page is inlet_analysis_with_swmm.htm (no introduction.htm).
 
+## Companion Apps Launcher
+- `client/src/components/swmm/AppsLauncherDialog.tsx` — Help > Apps dialog: user-editable list of external web app links (name + URL, add/edit/delete, persisted in localStorage key `swmm-ui-app-links`), sandboxed iframe viewer (`allow-scripts allow-forms allow-popups allow-downloads`, no allow-same-origin), "Open in new tab" fallback, hint shown when host blocks embedding. Defaults preloaded: swmm5-swmm6-phase-space.netlify.app, swmm5-3d-viewer.netlify.app.
+
 ## New Features (Session 2)
 - **Animation Speed Control**: Speed slider (20-500ms range, inverted for intuition) next to play/pause button, adjusts requestAnimationFrame interval
 - **Enhanced Report Viewer**: Searchable `.rpt` viewer with match count, search highlighting (deterministic split-based), section navigation buttons (scrolls to first match), 9 quick-jump sections
