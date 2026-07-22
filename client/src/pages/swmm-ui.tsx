@@ -25,6 +25,8 @@ import PropertyEditor from '@/components/swmm/PropertyEditor';
 import { SubDialogRouter, type SubDialogState } from '@/components/swmm/SubDialogs';
 import AIAssistPanel from '@/components/swmm/AIAssistPanel';
 import { HelpTopicsDialog, HelpTutorialDialog, HelpErrorsDialog } from '@/components/swmm/HelpDialogs';
+import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
+import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
@@ -137,7 +139,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | null>(null);
   const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
@@ -568,11 +570,13 @@ export default function SwmmUI() {
   }, [project]);
 
   const simAbortRef = useRef<AbortController | null>(null);
+  const [runProvenance, setRunProvenance] = useState<RunProvenance | null>(null);
 
   const handleRunSimulation = useCallback(async () => {
     setSimStatus('running');
     setSimProgress(0);
     setSimProgressMsg('Initializing...');
+    const runStartedAt = Date.now();
 
     const abortCtrl = new AbortController();
     simAbortRef.current = abortCtrl;
@@ -597,6 +601,7 @@ export default function SwmmUI() {
       if (abortCtrl.signal.aborted) return;
       setSimProgress(100);
       setSimProgressMsg('Complete');
+      setRunProvenance(buildProvenance(res, engine.mode, runStartedAt, Date.now()));
       setResults(res);
       setReportContent(res.reportContent || null);
       if (res.reportContent) {
@@ -1688,6 +1693,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<HelpCircle className="w-4 h-4" />} label="Topics" onClick={() => setOpenDialog('helpTopics')} testId="btn-topics" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Tutorial" onClick={() => setOpenDialog('helpTutorial')} testId="btn-tutorial" />
             <ToolbarButton icon={<AlertTriangle className="w-4 h-4" />} label="Errors" onClick={() => setOpenDialog('helpErrors')} testId="btn-errors" />
+            <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Engines" onClick={() => setOpenDialog('engineDiagnostics')} testId="btn-engine-diagnostics" />
             <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about-help" />
           </div>
         )}
@@ -3279,6 +3285,12 @@ export default function SwmmUI() {
       <AboutDialog
         open={openDialog === 'about'}
         onOpenChange={v => !v && setOpenDialog(null)}
+      />
+
+      <EngineDiagnosticsDialog
+        open={openDialog === 'engineDiagnostics'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        provenance={runProvenance}
       />
 
       <HelpTopicsDialog

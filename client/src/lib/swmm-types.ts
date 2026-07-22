@@ -407,6 +407,7 @@ export interface SimulationResults {
     };
   };
   reportContent?: string;
+  engineUsed?: 'local' | 'wasm' | 'remote' | 'mock';
 }
 
 export type SelectedObject = {

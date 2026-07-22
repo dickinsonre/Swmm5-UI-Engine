@@ -43,7 +43,7 @@ export async function checkLocalEngine(): Promise<boolean> {
 let wasmModule: any = null;
 let wasmLoading: Promise<any> | null = null;
 
-async function loadWasmModule(onProgress?: (pct: number, msg: string) => void): Promise<any> {
+export async function loadWasmModule(onProgress?: (pct: number, msg: string) => void): Promise<any> {
   if (wasmModule) return wasmModule;
   if (wasmLoading) return wasmLoading;
 
@@ -161,6 +161,7 @@ export function createWasmEngine(): SwmmEngine {
       try { mod.FS.unlink('model.out'); } catch {}
 
       computeExtendedVariables(project, parsed);
+      parsed.engineUsed = 'wasm';
       if (onProgress) onProgress(100, 'Simulation complete');
 
       return parsed;
@@ -242,6 +243,7 @@ export function createLocalEngine(): SwmmEngine {
       }
 
       computeExtendedVariables(project, parsed);
+      parsed.engineUsed = 'local';
       if (onProgress) onProgress(100, 'Simulation complete');
 
       return parsed;
@@ -321,6 +323,7 @@ export function createRemoteEngine(): SwmmEngine {
                   if (onProgress) onProgress(95, 'Parsing results...');
                   const parsed = parseRptToResults(result.reportContent, project);
                   computeExtendedVariables(project, parsed);
+                  parsed.engineUsed = 'remote';
                   if (onProgress) onProgress(100, 'Simulation complete');
                   resolve(parsed);
                 } catch (e: any) {
@@ -1281,6 +1284,7 @@ export function createMockEngine(): SwmmEngine {
       await new Promise(resolve => setTimeout(resolve, 1500));
       const results = generateMockResults(project);
       computeExtendedVariables(project, results);
+      results.engineUsed = 'mock';
       return results;
     },
     getStatus() {

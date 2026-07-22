@@ -1,0 +1,392 @@
+# Updated grade: **80/100 — B-**
+
+This version is substantially better than the one I graded **64/100**. The release-blocking server crash appears to be fixed, engine availability is now tested properly, and production should select the browser-based WASM engine rather than repeatedly attempting the unusable native binary.
+
+The connected Replit deployment audit verified the code changes and deployment logs. I was unable to independently load and operate the public interface through my external browser connection, so the production WASM simulation remains **structurally verified but not independently run end to end by me**.
+
+## Grade breakdown
+
+| Category                       | Previous | Current |
+| ------------------------------ | -------: | ------: |
+| Product concept                |       98 |      98 |
+| SWMM functionality             |       94 |      94 |
+| Results and visualization      |       94 |      94 |
+| Production stability           |       30 |      82 |
+| Engine selection and fallback  |       35 |      84 |
+| Security and resource controls |       62 |      76 |
+| Maintainability                |       62 |      66 |
+| Automated testing              |       15 |      15 |
+| Mobile usability               |       42 |      42 |
+| Accessibility                  |       48 |      46 |
+| **Overall**                    |   **64** |  **80** |
+
+# Major improvements confirmed
+
+## 1. The production server crash is fixed
+
+The previous version could send two HTTP responses after a native-engine startup failure, causing `ERR_HTTP_HEADERS_SENT` and terminating Express.
+
+The updated version now uses response guards in the error, close, and timeout paths. A failed native-engine launch should therefore return an error without bringing down the entire application.
+
+This is the most important improvement.
+
+## 2. Engine availability is now tested correctly
+
+The old implementation treated the native binary as available merely because the file existed.
+
+The new `probeEngine()` actually tries to execute the binary. Production logs reportedly show:
+
+```text
+engine executable=false
+```
+
+That is the correct result because the deployed native binary still depends on a Nix dynamic-loader path unavailable in the production container.
+
+## 3. Production now selects WASM first
+
+The expected production sequence is now:
+
+```text
+Native engine unavailable
+          ↓
+Browser WASM SWMM 5.2.4
+          ↓
+Remote BatchSWMM
+          ↓
+Mock results
+```
+
+This is a sound architecture. The WASM engine and its JavaScript loader are present, and the remote service reports SWMM API version 52004. EPA also continues to publish SWMM 5.2.4 as its official downloadable computational engine. ([US EPA][1])
+
+## 4. Server resource handling is better
+
+The updated app reportedly adds:
+
+* A 25 MB request limit on the principal simulation endpoints
+* A 180-second simulation timeout
+* Forced process termination after timeout
+* Recursive temporary-directory cleanup
+* Different retry periods for transient and permanent engine failures
+* WASM before remote fallback
+
+These changes materially improve production resilience.
+
+## 5. Native execution still works in development
+
+The Replit workspace reportedly completed a real Greenville model run through the native engine:
+
+* Exit code 0
+* Approximately 220 KB report
+* Approximately 39 MB binary output
+* Successful output decoding
+
+That is useful evidence that the execution and result-reading pipeline works when the native binary can start.
+
+# Remaining significant problems
+
+## 1. A production WASM run still needs explicit verification
+
+The most important missing evidence is a confirmed production run through the browser WASM engine.
+
+The deployment logs showed engine probing and status requests but no recorded user-triggered WASM simulation. Because WASM executes in the browser, the server logs may not prove completion.
+
+Add an automated production smoke test that:
+
+1. Opens the deployed app.
+2. Loads a small known model.
+3. Confirms the orange WASM badge.
+4. Runs the model.
+5. Confirms the report says “Simulation complete.”
+6. Confirms results contain the expected number of nodes, links, and periods.
+7. Verifies a known peak flow and continuity error.
+
+Until that is done, I would not call the production execution path fully validated.
+
+## 2. One execution endpoint can still obstruct fallback
+
+The audit found inconsistent unavailable-engine behavior:
+
+* One endpoint returns `404` plus a fallback instruction.
+* Another reportedly returns `500`.
+
+If the client uses the endpoint returning `500`, it may throw an exception rather than continue to WASM.
+
+All native-engine-unavailable responses should use one structured response, such as:
+
+```text
+HTTP 503
+engine: local
+available: false
+fallbackRecommended: wasm
+```
+
+Better still, put all engine selection behind one execution orchestrator.
+
+## 3. The engine probe has a timer leak
+
+The five-second kill timer used during native-engine probing is reportedly not cleared when the process exits or fails quickly.
+
+This probably will not crash the app immediately, but every probe leaves a temporary dangling timer. Under repeated probes, this is unnecessary background work and makes the code harder to reason about.
+
+Clear the timer in every completion path.
+
+## 4. The remote upload proxy remains unbounded
+
+Although the main simulation endpoint now has a 25 MB limit, the remote upload proxy reportedly reads streaming request data without applying the same cap.
+
+That means an oversized request can still consume excessive server memory.
+
+Use one shared input reader with the same limits for every endpoint that accepts an INP model.
+
+## 5. WASM availability checking is incomplete
+
+The current health check reportedly verifies only that the JavaScript loader exists. It does not verify the associated `.wasm` binary.
+
+A missing or corrupted WASM binary could therefore produce:
+
+1. An apparently healthy WASM status
+2. WASM selected as the active engine
+3. A long initialization delay
+4. Failure only after the timeout
+
+The check should validate both resources and ideally initialize the module with a minimal diagnostic call.
+
+# Highest-priority recommendations
+
+## Priority 1: Add an Engine Diagnostics dialog
+
+Display the real state of every engine:
+
+| Engine        | Status      | Version   | Last check              |
+| ------------- | ----------- | --------- | ----------------------- |
+| Native server | Unavailable | —         | Executable probe failed |
+| Browser WASM  | Ready       | 5.2.4     | Initialization passed   |
+| Remote        | Ready       | 5.2.4     | API health passed       |
+| Mock          | Available   | Synthetic | —                       |
+
+After a simulation, show:
+
+* Engine actually used
+* Engine version
+* Start and finish time
+* Runtime
+* Model checksum
+* Report periods
+* Output size
+* Warnings
+* Continuity errors
+
+This removes uncertainty about whether results are native, WASM, remote, or synthetic.
+
+## Priority 2: Add a visible production self-test
+
+Add a **Run engine self-test** button that executes a tiny bundled model through every available engine.
+
+Results should look like:
+
+```text
+WASM: Passed
+Remote: Passed
+Native: Unavailable
+Result comparison: Passed within tolerance
+```
+
+This would immediately tell you whether a deployment is truly operational.
+
+## Priority 3: Add automated tests
+
+The app still reportedly has no Vitest, Jest, or Playwright configuration. That is now the largest overall quality weakness.
+
+Start with five tests:
+
+1. **INP round trip**
+   Parse → write → parse and compare object counts and key properties.
+
+2. **WASM smoke test**
+   Run a tiny model and verify expected report and result values.
+
+3. **Fallback test**
+   Native unavailable → WASM selected; WASM unavailable → remote selected.
+
+4. **OUT parser test**
+   Read a known `.out` file and verify selected values against the `.rpt`.
+
+5. **Deployment browser test**
+   Load the public app, execute a model, and open a result graph.
+
+Without these tests, changes to a large application can silently break model integrity or engine behavior.
+
+## Priority 4: Consolidate the execution endpoints
+
+The application currently appears to duplicate process launching, timeout handling, cleanup, response handling, and fallback behavior.
+
+Create one internal simulation service responsible for:
+
+```text
+Validate request
+Select engine
+Execute
+Enforce timeout
+Clean temporary files
+Normalize errors
+Attach engine metadata
+Return results
+```
+
+Both API endpoints should call that shared service. This prevents differences such as one endpoint returning `500`, another returning `404`, and only one including `engineUsed`.
+
+## Priority 5: Build a portable native binary
+
+The bundled native engine still cannot run in production because it is linked to the Replit/Nix development environment.
+
+A statically linked Linux build would restore the fastest execution option and reduce dependence on browser memory and remote infrastructure.
+
+However, I would place this **after production WASM testing**. A fully validated WASM engine may already be sufficient for many normal models.
+
+# Product ideas that would distinguish the app
+
+## 1. Integrate the Phase Space Explorer
+
+Add an advanced diagnostics command for any selected conduit or node:
+
+> **Phase-space diagnostics**
+
+It could show:
+
+* Flow versus depth
+* Rising and falling branches
+* Manning reference
+* State-derivative view
+* Depth reversal percentage
+* Oscillation/noise index
+* Surcharge chatter
+* Flow sign reversals
+* Model-wide attention sweep
+
+This would connect model editing, execution, and hydraulic diagnosis in one application.
+
+## 2. Add a model health dashboard
+
+Before and after running, display four sections:
+
+### Input integrity
+
+* Invalid references
+* Missing curves and time series
+* Duplicate IDs
+* Orphaned nodes
+* Missing outfalls
+* Zero-length links
+
+### Hydraulic configuration
+
+* Adverse slopes
+* Abrupt diameter changes
+* Very short links
+* Very long links
+* Small node areas
+* Conduit crown discontinuities
+
+### Numerical performance
+
+* Variable timestep statistics
+* Critical timestep elements
+* Nonconverging nodes
+* Flow instability indexes
+* Maximum trials
+* Continuity errors
+
+### Result consequences
+
+* Flooded nodes
+* Surcharged nodes
+* Maximum (d/D)
+* Maximum velocity
+* Reverse flow
+* Capacity exceedance
+* Outfall loading
+
+## 3. Add native model regression testing
+
+Let users compare a baseline and revised model with configurable tolerances:
+
+| Metric             | Baseline | Revised | Difference | Status |
+| ------------------ | -------: | ------: | ---------: | ------ |
+| Peak outfall flow  |    12.50 |   12.61 |     +0.88% | Pass   |
+| Flooding volume    |        0 |    0.24 |      +0.24 | Fail   |
+| Continuity error   |    0.12% |   0.15% |     +0.03% | Pass   |
+| Maximum node depth |     3.42 |    3.78 |     +10.5% | Review |
+
+This could turn the app into a professional SWMM change-verification platform.
+
+## 4. Label extended variables by provenance
+
+The 200-plus-variable system is valuable, but every value should carry one of these labels:
+
+* **Engine output**
+* **Directly derived**
+* **Reconstructed**
+* **Estimated**
+* **Unavailable**
+
+Clicking the label should show the source fields, calculation, units, assumptions, and limitations.
+
+## 5. Create an expert mode and a simplified mode
+
+The current scope is powerful but potentially overwhelming.
+
+### Standard mode
+
+* Open model
+* Validate
+* Run
+* Animate
+* Graph
+* Export report
+
+### Expert mode
+
+* Full object editing
+* Advanced options
+* Extended variables
+* Solver diagnostics
+* Comparison
+* Calibration
+* Phase-space analysis
+
+This would help new users without weakening the professional workflow.
+
+# Mobile and accessibility
+
+These areas appear essentially unchanged and remain below professional expectations.
+
+The next accessibility release should include:
+
+* Text labels or tooltips for every icon
+* `aria-label` attributes for toolbar controls
+* Visible keyboard focus
+* Keyboard-accessible object selection
+* Accessible tables corresponding to charts
+* Non-color-only result encoding
+* Touch pan and pinch zoom
+* Responsive tablet layout
+* Larger touch targets
+* Dialog focus trapping
+
+A full model editor does not need to be ideal on a phone, but model review and result inspection should work on an iPad-sized screen.
+
+# Final assessment
+
+This update successfully addresses the previous version’s most damaging failure. The server no longer appears to crash when the native binary cannot start, and the engine-selection sequence is now substantially more intelligent.
+
+The grade rises from **64/100 to 80/100**.
+
+To reach the next levels:
+
+* **85/100:** prove production WASM execution end to end and fix inconsistent fallback handling.
+* **90/100:** add automated parser, engine, output, and browser tests.
+* **94/100:** add execution provenance, regression comparison, QA/QC dashboard, and phase-space diagnostics.
+
+The current version is now a credible **beta engineering application**, rather than a compelling interface undermined by a release-blocking execution failure.
+
+[1]: https://www.epa.gov/water-research/storm-water-management-model-swmm?utm_source=chatgpt.com "Storm Water Management Model (SWMM) | US EPA"

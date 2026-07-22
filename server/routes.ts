@@ -361,6 +361,21 @@ export async function registerRoutes(
     }
   });
 
+  // Remote-only health check: always queries the BatchSWMM cloud API,
+  // never short-circuits to the local engine. Used by engine diagnostics.
+  app.get("/api/swmm-proxy/remote-status", async (_req: Request, res: Response) => {
+    try {
+      const response = await fetch(`${BATCH_SWMM_URL}/api/swmm-status`);
+      if (!response.ok) {
+        return res.status(200).json({ found: false, error: `Remote returned ${response.status}` });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      res.json({ found: false, error: error.message });
+    }
+  });
+
   app.post("/api/swmm-proxy/upload", async (req: Request, res: Response) => {
     try {
       const chunks: Buffer[] = [];
