@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { X, BarChart3 } from 'lucide-react';
 import type { SwmmProject } from '@/lib/swmm-types';
 
 interface SectionDef {
@@ -262,6 +263,231 @@ const SECTION_COUNTS: Record<string, (p: SwmmProject) => number> = {
   'Symbols': p => Object.keys(p.symbols).length,
 };
 
+type ColStats = {
+  sectionName: string;
+  colName: string;
+  total: number;
+  numeric: number[];
+  nonEmpty: number;
+  min?: number; max?: number; mean?: number; median?: number; stdev?: number; sum?: number;
+  freq: { value: string; count: number }[];
+  distinct: number;
+};
+
+function computeColStats(sectionName: string, colName: string, rows: (string | number)[][], ci: number): ColStats {
+  const raw = rows.map(r => r[ci]).filter(v => v !== undefined && v !== null && v !== '');
+  const numeric: number[] = [];
+  const counts = new Map<string, number>();
+  for (const v of raw) {
+    const s = String(v);
+    counts.set(s, (counts.get(s) || 0) + 1);
+    if (typeof v === 'number') {
+      if (isFinite(v)) numeric.push(v);
+    } else if (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(s.trim())) {
+      const n = Number(s.trim());
+      if (isFinite(n)) numeric.push(n);
+    }
+  }
+  const stats: ColStats = {
+    sectionName, colName,
+    total: rows.length,
+    nonEmpty: raw.length,
+    numeric,
+    freq: Array.from(counts.entries()).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count),
+    distinct: counts.size,
+  };
+  if (numeric.length > 0) {
+    const sorted = [...numeric].sort((a, b) => a - b);
+    const sum = numeric.reduce((a, b) => a + b, 0);
+    const mean = sum / numeric.length;
+    const mid = Math.floor(sorted.length / 2);
+    stats.min = sorted[0];
+    stats.max = sorted[sorted.length - 1];
+    stats.sum = sum;
+    stats.mean = mean;
+    stats.median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    stats.stdev = numeric.length > 1 ? Math.sqrt(numeric.reduce((a, b) => a + (b - mean) ** 2, 0) / (numeric.length - 1)) : 0;
+  }
+  return stats;
+}
+
+const numFmt = (v: number | undefined): string => {
+  if (v === undefined) return '—';
+  if (Number.isInteger(v) && Math.abs(v) < 1e15) return v.toLocaleString();
+  const a = Math.abs(v);
+  if (a !== 0 && (a < 0.001 || a >= 1e7)) return v.toExponential(4);
+  return v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+};
+
+function ColumnStatsPanel({ stats, sectionCount, onClose }: { stats: ColStats; sectionCount: number; onClose: () => void }) {
+  const histRef = useRef<HTMLCanvasElement>(null);
+  const isNumeric = stats.numeric.length > 1 && stats.min !== undefined && stats.max !== undefined;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    const canvas = histRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const W = rect.width, H = rect.height;
+    ctx.fillStyle = '#f8f9ff';
+    ctx.fillRect(0, 0, W, H);
+    const m = { top: 12, right: 10, bottom: 26, left: 44 };
+    const pW = W - m.left - m.right, pH = H - m.top - m.bottom;
+
+    let bars: { label: string; count: number }[];
+    if (isNumeric) {
+      const min = stats.min!, max = stats.max!;
+      const nBins = Math.min(24, Math.max(6, Math.ceil(Math.sqrt(stats.numeric.length))));
+      const span = max - min || 1;
+      const bins = new Array<number>(nBins).fill(0);
+      for (const v of stats.numeric) {
+        const b = Math.min(nBins - 1, Math.floor(((v - min) / span) * nBins));
+        bins[b]++;
+      }
+      bars = bins.map((count, i) => ({
+        label: numFmt(min + (span * (i + 0.5)) / nBins),
+        count,
+      }));
+    } else {
+      bars = stats.freq.slice(0, 20).map(f => ({ label: f.value, count: f.count }));
+    }
+    if (!bars.length) return;
+
+    const maxCount = Math.max(...bars.map(b => b.count), 1);
+    ctx.strokeStyle = '#e0e4f0'; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const y = m.top + (pH * i) / 4;
+      ctx.beginPath(); ctx.moveTo(m.left, y); ctx.lineTo(m.left + pW, y); ctx.stroke();
+      ctx.fillStyle = '#9090a0'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+      ctx.fillText(Math.round(maxCount - (i / 4) * maxCount).toLocaleString(), m.left - 4, y + 3);
+    }
+    const slot = pW / bars.length;
+    const barW = slot * 0.78;
+    bars.forEach((b, i) => {
+      const barH = (b.count / maxCount) * pH;
+      const x = m.left + i * slot + (slot - barW) / 2;
+      const y = m.top + pH - barH;
+      ctx.fillStyle = '#2c6eb5';
+      ctx.fillRect(x, y, barW, barH);
+    });
+    ctx.fillStyle = '#9090a0'; ctx.font = '8px sans-serif';
+    const labelEvery = Math.ceil(bars.length / Math.max(1, Math.floor(pW / 52)));
+    bars.forEach((b, i) => {
+      if (i % labelEvery !== 0) return;
+      const x = m.left + i * slot + slot / 2;
+      ctx.save();
+      ctx.translate(x, H - m.bottom + 4);
+      ctx.rotate(-Math.PI / 8);
+      ctx.textAlign = 'right';
+      ctx.fillText(b.label.length > 10 ? b.label.slice(0, 10) + '…' : b.label, 0, 8);
+      ctx.restore();
+    });
+    ctx.strokeStyle = '#d0d8e8'; ctx.lineWidth = 1;
+    ctx.strokeRect(m.left, m.top, pW, pH);
+  }, [stats, isNumeric]);
+
+  const truncated = stats.total < sectionCount;
+
+  const statRows: [string, string][] = [
+    ['Rows', stats.total.toLocaleString()],
+    ['Non-empty', stats.nonEmpty.toLocaleString()],
+    ['Distinct values', stats.distinct.toLocaleString()],
+    ...(isNumeric || stats.numeric.length === 1 ? ([
+      ['Numeric values', stats.numeric.length.toLocaleString()],
+      ['Min', numFmt(stats.min)],
+      ['Max', numFmt(stats.max)],
+      ['Mean', numFmt(stats.mean)],
+      ['Median', numFmt(stats.median)],
+      ['Std Dev', numFmt(stats.stdev)],
+      ['Sum', numFmt(stats.sum)],
+    ] as [string, string][]) : []),
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] bg-black/30 flex items-center justify-center"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      data-testid="column-stats-overlay"
+    >
+      <div className="bg-white rounded shadow-2xl border border-[#d0d0d8] w-[560px] max-w-[92vw] max-h-[85vh] flex flex-col" data-testid="column-stats-panel">
+        <div className="flex items-center gap-2 px-3 py-2 bg-[#2c3e6b] text-white rounded-t">
+          <BarChart3 className="w-4 h-4" />
+          <span className="text-[12px] font-semibold truncate">
+            Column Statistics — {stats.sectionName}: {stats.colName}
+          </span>
+          <button className="ml-auto p-0.5 hover:bg-white/20 rounded" onClick={onClose} data-testid="column-stats-close">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-3 overflow-y-auto flex flex-col gap-3">
+          {truncated && (
+            <div className="text-[10px] text-[#a05a00] bg-[#fdf3e3] border border-[#f0ddb8] rounded px-2 py-1" data-testid="column-stats-truncated-note">
+              Statistics are based on the first {stats.total.toLocaleString()} of {sectionCount.toLocaleString()} rows.
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[11px]">
+            {statRows.map(([k, v]) => (
+              <div key={k} className="flex justify-between border-b border-[#f0f0f4] py-0.5" data-testid={`colstat-${k.toLowerCase().replace(/[^a-z]+/g, '-')}`}>
+                <span className="text-[#6b6b7b]">{k}</span>
+                <span className="font-semibold text-[#2a2a3e] tabular-nums">{v}</span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-[#2c3e6b] mb-1">
+              {isNumeric ? 'Histogram' : 'Value Counts (top 20)'}
+            </div>
+            <div className="h-[170px] border border-[#d0d8e8] rounded overflow-hidden">
+              <canvas ref={histRef} className="w-full h-full block" data-testid="column-stats-chart" />
+            </div>
+          </div>
+          {stats.freq.length > 0 && (
+            <div>
+              <div className="text-[10px] font-bold text-[#2c3e6b] mb-1">Most Frequent Values</div>
+              <div className="max-h-[130px] overflow-y-auto border border-[#e0e0e8] rounded">
+                <table className="w-full text-[10px] border-collapse">
+                  <thead className="sticky top-0 bg-[#f0f0f4]">
+                    <tr>
+                      <th className="text-left px-2 py-1 border-b border-[#d0d0d8] font-semibold text-[#2c3e6b]">Value</th>
+                      <th className="text-right px-2 py-1 border-b border-[#d0d0d8] font-semibold text-[#2c3e6b]">Count</th>
+                      <th className="text-right px-2 py-1 border-b border-[#d0d0d8] font-semibold text-[#2c3e6b]">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.freq.slice(0, 15).map((f, i) => (
+                      <tr key={i} className={i % 2 ? 'bg-[#f8f8fa]' : 'bg-white'}>
+                        <td className="px-2 py-0.5 border-b border-[#f0f0f4] text-[#2a2a3e] max-w-[280px] truncate">{f.value}</td>
+                        <td className="px-2 py-0.5 border-b border-[#f0f0f4] text-right tabular-nums text-[#2a2a3e]">{f.count.toLocaleString()}</td>
+                        <td className="px-2 py-0.5 border-b border-[#f0f0f4] text-right tabular-nums text-[#6b6b7b]">
+                          {stats.nonEmpty ? ((f.count / stats.nonEmpty) * 100).toFixed(1) : '0.0'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          <div className="text-[9px] text-[#9090a0]">
+            Tip: right-click any column header or cell to see statistics for that column.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SectionGridView({ project }: { project: SwmmProject }) {
   const sections = useMemo(() => {
     const built = SECTION_DEFS.map(def => ({
@@ -290,6 +516,7 @@ export default function SectionGridView({ project }: { project: SwmmProject }) {
 
   const populated = sections.filter(s => s.count > 0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [colStats, setColStats] = useState<ColStats | null>(null);
   const activeSection = populated.find(s => s.def.name === selected) || populated[0];
 
   const activeRows = useMemo(
@@ -329,8 +556,17 @@ export default function SectionGridView({ project }: { project: SwmmProject }) {
           <table className="text-[10px] border-collapse min-w-full">
             <thead className="sticky top-0 bg-[#f0f0f4] z-10">
               <tr>
-                {active.def.columns.map(col => (
-                  <th key={col} className="text-left px-2 py-1 border-b border-r border-[#d0d0d8] font-semibold text-[#2c3e6b] whitespace-nowrap">
+                {active.def.columns.map((col, ci) => (
+                  <th
+                    key={col}
+                    className="text-left px-2 py-1 border-b border-r border-[#d0d0d8] font-semibold text-[#2c3e6b] whitespace-nowrap cursor-context-menu hover:bg-[#e6ecf5]"
+                    title="Right-click for column statistics"
+                    onContextMenu={e => {
+                      e.preventDefault();
+                      setColStats(computeColStats(active.def.name, col, active.def.rows(project), ci));
+                    }}
+                    data-testid={`grid-col-${ci}`}
+                  >
                     {col}
                   </th>
                 ))}
@@ -339,8 +575,15 @@ export default function SectionGridView({ project }: { project: SwmmProject }) {
             <tbody>
               {active.rows.map((row, ri) => (
                 <tr key={ri} className={ri % 2 ? 'bg-[#f8f8fa]' : 'bg-white'} data-testid={`grid-row-${ri}`}>
-                  {active.def.columns.map((_, ci) => (
-                    <td key={ci} className="px-2 py-0.5 border-b border-r border-[#f0f0f4] whitespace-nowrap text-[#2a2a3e]">
+                  {active.def.columns.map((col, ci) => (
+                    <td
+                      key={ci}
+                      className="px-2 py-0.5 border-b border-r border-[#f0f0f4] whitespace-nowrap text-[#2a2a3e]"
+                      onContextMenu={e => {
+                        e.preventDefault();
+                        setColStats(computeColStats(active.def.name, col, active.def.rows(project), ci));
+                      }}
+                    >
                       {row[ci] ?? ''}
                     </td>
                   ))}
@@ -355,6 +598,7 @@ export default function SectionGridView({ project }: { project: SwmmProject }) {
           </div>
         )}
       </div>
+      {colStats && <ColumnStatsPanel stats={colStats} sectionCount={active?.count ?? colStats.total} onClose={() => setColStats(null)} />}
     </div>
   );
 }
