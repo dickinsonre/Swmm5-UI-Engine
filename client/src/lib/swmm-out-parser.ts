@@ -6,6 +6,7 @@ import type {
   LinkResult,
   SubcatchResult,
 } from './swmm-types';
+import { getSimStartMs, formatSimDateTime } from './sim-time';
 
 const SUBCATCH_VARS = ['rainfall', 'snowDepth', 'evap', 'infiltration', 'runoff', 'gwOutflow', 'gwElev', 'moisture'] as const;
 const NODE_VARS = ['depth', 'head', 'volume', 'lateralInflow', 'totalInflow', 'flooding'] as const;
@@ -119,6 +120,7 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
   const maxPeriods = Math.min(actualPeriods, 5000);
 
   const timeSteps: TimeStepResults[] = [];
+  const simStartMs = getSimStartMs(project);
 
   for (let p = 0; p < maxPeriods; p++) {
     offset = startOfResults + p * bytesPerStep;
@@ -169,13 +171,9 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
       };
     }
 
-    const hrs = Math.floor(timeSec / 3600);
-    const mins = Math.floor((timeSec % 3600) / 60);
-    const secs = timeSec % 60;
-
     timeSteps.push({
       time: timeSec,
-      dateTime: `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`,
+      dateTime: formatSimDateTime(simStartMs, timeSec),
       nodes,
       links,
       subcatchments,

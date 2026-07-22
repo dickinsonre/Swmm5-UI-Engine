@@ -8,6 +8,14 @@ import type {
 } from './swmm-types';
 import { projectToInp } from './inp-parser';
 import { parseSwmmOut } from './swmm-out-parser';
+import { getSimStartMs, formatSimDateTime, extractContinuityErrors } from './sim-time';
+
+function applyRptContinuity(parsed: SimulationResults, rptText: string | undefined): void {
+  if (!rptText || !parsed.summary?.continuityErrors) return;
+  const ce = extractContinuityErrors(rptText);
+  if (ce.runoff != null) parsed.summary.continuityErrors.runoff = ce.runoff;
+  if (ce.flow != null) parsed.summary.continuityErrors.flow = ce.flow;
+}
 
 export interface SwmmEngine {
   isLoaded: boolean;
@@ -157,6 +165,7 @@ export function createWasmEngine(): SwmmEngine {
         if (outData && outData.length > 100) {
           parsed = parseSwmmOut(outData.buffer, project);
           parsed.reportContent = rptText;
+          applyRptContinuity(parsed, rptText);
         } else {
           parsed = parseRptToResults(rptText, project);
         }
@@ -245,6 +254,7 @@ export function createLocalEngine(): SwmmEngine {
           for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
           parsed = parseSwmmOut(bytes.buffer, project);
           parsed.reportContent = result.reportContent;
+          applyRptContinuity(parsed, result.reportContent);
         } catch (outErr) {
           console.warn('Failed to parse .out binary, falling back to .rpt:', outErr);
           parsed = parseRptToResults(result.reportContent, project);
@@ -456,10 +466,9 @@ function parseRptToResults(rptText: string, project: SwmmProject): SimulationRes
 
   let runoffCE = 0;
   let flowCE = 0;
-  const ceRunoff = rptText.match(/Runoff Quantity Continuity[\s\S]*?(\d+\.\d+)\s*%/);
-  const ceFlow = rptText.match(/Flow Routing Continuity[\s\S]*?(\d+\.\d+)\s*%/);
-  if (ceRunoff) runoffCE = parseFloat(ceRunoff[1]);
-  if (ceFlow) flowCE = parseFloat(ceFlow[1]);
+  const ce = extractContinuityErrors(rptText);
+  if (ce.runoff != null) runoffCE = ce.runoff;
+  if (ce.flow != null) flowCE = ce.flow;
 
   let reportStep = 300;
   const reportMatch = rptText.match(/Report Time Step\s*\.+\s*(\d+):(\d+):(\d+)/);
@@ -471,6 +480,7 @@ function parseRptToResults(rptText: string, project: SwmmProject): SimulationRes
   const peakTime = numSteps * 0.25;
   const decayRate = 0.04;
   const timeSteps: TimeStepResults[] = [];
+  const simStartMs = getSimStartMs(project);
 
   for (let step = 0; step < numSteps; step++) {
     const t = step;
@@ -546,11 +556,9 @@ function parseRptToResults(rptText: string, project: SwmmProject): SimulationRes
       };
     }
 
-    const hrs = Math.floor(step * 0.25);
-    const mins = (step * 15) % 60;
     timeSteps.push({
       time: step * reportStep,
-      dateTime: `01/01/2024 ${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`,
+      dateTime: formatSimDateTime(simStartMs, step * reportStep),
       nodes,
       links,
       subcatchments,
@@ -1187,6 +1195,7 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
 function generateMockResults(project: SwmmProject): SimulationResults {
   const numSteps = 96;
   const timeSteps: TimeStepResults[] = [];
+  const simStartMs = getSimStartMs(project);
 
   const peakTime = numSteps * 0.25;
   const decayRate = 0.04;
@@ -1261,11 +1270,9 @@ function generateMockResults(project: SwmmProject): SimulationResults {
       };
     }
 
-    const hrs = Math.floor(step * 0.25);
-    const mins = (step * 15) % 60;
     timeSteps.push({
       time: step * 15 * 60,
-      dateTime: `01/01/2024 ${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`,
+      dateTime: formatSimDateTime(simStartMs, step * 15 * 60),
       nodes,
       links,
       subcatchments,

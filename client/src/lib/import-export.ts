@@ -388,6 +388,10 @@ export function exportNodesCsv(project: SwmmProject): string {
     const coord = project.coordinates[s.id] || [0, 0];
     rows.push(`${s.id},Storage,${coord[0]},${coord[1]},${s.elevation},${s.maxDepth}`);
   }
+  for (const d of project.dividers) {
+    const coord = project.coordinates[d.id] || [0, 0];
+    rows.push(`${d.id},Divider,${coord[0]},${coord[1]},${d.elevation},${d.maxDepth ?? 0}`);
+  }
   return rows.join('\n');
 }
 

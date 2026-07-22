@@ -3270,7 +3270,7 @@ export default function SwmmUI() {
             >
               <FileText className="w-3.5 h-3.5 mr-2" />
               Export Nodes as CSV
-              <span className="ml-auto text-[10px] text-[#6b6b7b]">{project.junctions.length + project.outfalls.length + project.storageUnits.length} nodes</span>
+              <span className="ml-auto text-[10px] text-[#6b6b7b]">{project.junctions.length + project.outfalls.length + project.storageUnits.length + project.dividers.length} nodes</span>
             </Button>
             <Button
               variant="outline"

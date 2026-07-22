@@ -3,6 +3,7 @@ import type { SwmmProject, SelectedObject } from '@/lib/swmm-types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChevronDown, ChevronRight, X, MapPin } from 'lucide-react';
 import { CrossSectionSvg } from './Panels';
+import { unitLabel } from '@/lib/units';
 import ProvenanceBadge from './ProvenanceBadge';
 import type { XSection } from '@/lib/swmm-types';
 
@@ -583,7 +584,7 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
                 <div key={r.label} className="flex items-center px-2.5 py-[3px] bg-[#f8f9ff]">
                   <span className="text-[9px] text-[#6b6b7b] w-[100px] truncate">{r.label}</span>
                   <span className="text-[9px] font-mono text-[#2a2a3e] flex-1">{r.value}</span>
-                  {r.unit && <span className="text-[8px] text-[#9090a0] ml-1">{r.unit}</span>}
+                  {r.unit && <span className="text-[8px] text-[#9090a0] ml-1">{unitLabel(r.unit, project)}</span>}
                   <span className="ml-1"><ProvenanceBadge varKey={r.varKey} scope={r.scope} /></span>
                 </div>
               ))}
@@ -614,7 +615,7 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
                 {!isCollapsed && visibleFields.map(field => (
                   <PropertyRow
                     key={`${field.key}-${field.label}`}
-                    field={field}
+                    field={field.unit ? { ...field, unit: unitLabel(field.unit, project) } : field}
                     value={data[field.key]}
                     onChange={(val) => handleFieldChange(field.key, val)}
                     onSubdialogClick={field.type === 'subdialog' && field.subdialogType && onSubdialog ? () => {
