@@ -1,0 +1,1 @@
+- [Static SWMM binary](static-swmm-binary.md) — runswmm must be musl-static; Nix-glibc-linked binaries can't spawn in the production container.
