@@ -27,6 +27,7 @@ import AIAssistPanel from '@/components/swmm/AIAssistPanel';
 import { HelpTopicsDialog, HelpTutorialDialog, HelpErrorsDialog } from '@/components/swmm/HelpDialogs';
 import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
+import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@/components/swmm/PhaseSpaceDialog';
 import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
@@ -140,7 +141,8 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | null>(null);
+  const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
   const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
@@ -1654,6 +1656,11 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Options" onClick={() => setOpenDialog('analysisOptions')} testId="btn-analysis-options" />
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Locate" onClick={() => setShowLocator(!showLocator)} testId="btn-locate" />
             <ToolbarButton icon={<HeartPulse className="w-4 h-4" />} label="Health" onClick={() => setOpenDialog('modelHealth')} testId="btn-model-health" />
+            <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Phase" onClick={() => {
+              const et = selectedObj ? objTypeToElementType(selectedObj.objType) : null;
+              setPhaseSpaceTarget(selectedObj && et ? { id: selectedObj.id, elementType: et } : null);
+              setOpenDialog('phaseSpace');
+            }} testId="btn-phase-space" />
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" testId="btn-summary" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" testId="btn-details" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
@@ -3331,6 +3338,15 @@ export default function SwmmUI() {
         onSelectObject={handleHealthSelect}
       />
 
+      <PhaseSpaceDialog
+        open={openDialog === 'phaseSpace'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        results={results}
+        target={phaseSpaceTarget}
+        onTargetChange={setPhaseSpaceTarget}
+      />
+
       <HelpTopicsDialog
         open={openDialog === 'helpTopics'}
         onOpenChange={v => !v && setOpenDialog(null)}
@@ -3402,6 +3418,14 @@ export default function SwmmUI() {
                 <ContextMenuItem icon={<RotateCcw className="w-3 h-3" />} label="Reverse" onClick={handleReverseLink} testId="ctx-reverse" />
               )}
               <ContextMenuItem icon={<ArrowLeftRight className="w-3 h-3" />} label="Find Connected" onClick={handleFindConnected} testId="ctx-find-connected" />
+              {ctxObj && objTypeToElementType(ctxObj.objType) && (
+                <ContextMenuItem icon={<Activity className="w-3 h-3" />} label="Phase-Space Diagnostics" onClick={() => {
+                  const et = objTypeToElementType(ctxObj.objType)!;
+                  setPhaseSpaceTarget({ id: ctxObj.id, elementType: et });
+                  setOpenDialog('phaseSpace');
+                  closeContextMenu();
+                }} testId="ctx-phase-space" />
+              )}
               <div className="h-px my-0.5" style={{ backgroundColor: '#d0d0d8' }} />
               <ContextMenuItem icon={<Trash2 className="w-3 h-3" />} label="Delete" onClick={() => { if (contextMenu?.obj) deleteObject(contextMenu.obj); closeContextMenu(); }} danger testId="ctx-delete" />
             </>

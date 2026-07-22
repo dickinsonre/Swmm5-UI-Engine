@@ -36,6 +36,8 @@ Priority on startup: Local > WASM > Remote > Mock (first available wins).
 - `client/src/lib/swmm-out-parser.ts` — Binary .out file parser
 - `client/src/lib/swmm-engine.ts` — Engine adapters (local, wasm, remote, mock)
 - `client/src/lib/cfl-analysis.ts` — CFL stability analysis + discretization
+- `client/src/lib/phase-space.ts` — Phase-space instability metrics (depth reversal %, flow oscillation index, surcharge chatter, sign reversals, composite score), trajectory extraction with rising/falling branches, dQ/dt-dh/dt derivatives, Manning normal-flow curve Q(y) for conduits (circular/rect/trapezoidal/triangular/parabolic), model-wide attention sweep ranking
+- `client/src/components/swmm/PhaseSpaceDialog.tsx` — Phase-Space Diagnostics dialog: metric chips, flow-vs-depth scatter (green rising / red falling, dashed Manning overlay), derivative scatter, ranked attention-sweep table (click row to open phase plot). Opened via Project toolbar "Phase" button or context menu "Phase-Space Diagnostics" on nodes/links
 - `client/src/lib/import-export.ts` — CSV/DXF/GeoJSON import/export
 - Calibration File Creator — integrated in calibration dialog (Create File tab), supports variable selection (node depth/head/flooding, link flow/velocity/depth, subcatchment runoff/rainfall), template generation from simulation timesteps, CSV import, .dat file export
 - `server/routes.ts` — Express API routes (GitHub proxy, SWMM run, BatchSWMM proxy)
