@@ -179,6 +179,37 @@ export default function SwmmUI() {
   const [ghBrowseLoading, setGhBrowseLoading] = useState(false);
   const [ghBrowseError, setGhBrowseError] = useState('');
   const [preferences, setPreferences] = useState<SwmmPreferences>(loadPreferences);
+  const [uiMode, setUiMode] = useState<'standard' | 'expert'>(() => {
+    try {
+      const stored = localStorage.getItem('swmm5-ui-mode');
+      if (stored === 'expert' || stored === 'standard') return stored;
+    } catch {}
+    return 'standard';
+  });
+  const expertMode = uiMode === 'expert';
+  const toggleUiMode = useCallback(() => {
+    setUiMode(prev => {
+      const next = prev === 'expert' ? 'standard' : 'expert';
+      try { localStorage.setItem('swmm5-ui-mode', next); } catch {}
+      return next;
+    });
+  }, []);
+  const uiModeHintShown = useRef(false);
+  useEffect(() => {
+    if (uiModeHintShown.current) return;
+    uiModeHintShown.current = true;
+    try {
+      if (!localStorage.getItem('swmm5-ui-mode')) {
+        localStorage.setItem('swmm5-ui-mode', 'standard');
+        setTimeout(() => {
+          toast({
+            title: 'Standard mode',
+            description: 'You are in Standard mode with the core workflow. Switch to Expert in the menu bar for advanced diagnostics, calibration, and comparison tools.',
+          });
+        }, 1500);
+      }
+    } catch {}
+  }, [toast]);
 
   const updatePreference = useCallback(<K extends keyof SwmmPreferences>(key: K, value: SwmmPreferences[K]) => {
     setPreferences(prev => {
@@ -202,6 +233,17 @@ export default function SwmmUI() {
   const [loading, setLoading] = useState(false);
   const [showSamplesMenu, setShowSamplesMenu] = useState(false);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('select');
+  const suppressedExpertToolRef = useRef<InteractionMode | null>(null);
+  useEffect(() => {
+    const expertOnly = ['addDivider', 'addOrifice', 'addWeir', 'addOutlet', 'measure'];
+    if (!expertMode && expertOnly.includes(interactionMode)) {
+      suppressedExpertToolRef.current = interactionMode;
+      setInteractionMode('select');
+    } else if (expertMode && suppressedExpertToolRef.current) {
+      setInteractionMode(suppressedExpertToolRef.current);
+      suppressedExpertToolRef.current = null;
+    }
+  }, [expertMode, interactionMode]);
   const [showLocator, setShowLocator] = useState(false);
   const [showQueryPanel, setShowQueryPanel] = useState(false);
   const [mapQuery, setMapQuery] = useState<MapQuery>({
@@ -1530,6 +1572,20 @@ export default function SwmmUI() {
           </button>
         ))}
         <div className="flex-1" />
+        <button
+          onClick={toggleUiMode}
+          className="flex items-center gap-1.5 px-2 sm:px-2.5 my-1 mr-1 rounded text-[10px] font-medium transition-colors border"
+          style={{
+            backgroundColor: expertMode ? 'rgba(232,138,26,0.18)' : 'rgba(255,255,255,0.08)',
+            borderColor: expertMode ? '#e88a1a' : 'rgba(255,255,255,0.25)',
+            color: expertMode ? '#ffd9a8' : 'rgba(255,255,255,0.85)',
+          }}
+          title={expertMode ? 'Expert mode: full interface. Click for Standard mode.' : 'Standard mode: core workflow. Click for Expert mode with advanced tools.'}
+          data-testid="btn-ui-mode"
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${expertMode ? 'bg-[#e88a1a]' : 'bg-[#8ab4e8]'}`} />
+          {expertMode ? 'Expert' : 'Standard'}
+        </button>
         <div className="flex items-center gap-1 pr-2 sm:pr-3">
           <ToolbarIconButton icon={<Save className="w-3.5 h-3.5" />} onClick={handleSave} title="Save" testId="btn-save" />
           <ToolbarIconButton icon={<FolderOpen className="w-3.5 h-3.5" />} onClick={() => fileInputRef.current?.click()} title="Open" testId="btn-open" />
@@ -1586,20 +1642,20 @@ export default function SwmmUI() {
           <div className="flex items-center gap-2 sm:gap-4 px-1 sm:px-2 w-full overflow-x-auto">
             <ThemeCombo label="Sub" value={subcatchTheme} onChange={setSubcatchTheme}
               options={SUB_INPUT_VARS.map(v => [v.key, v.name] as [string, string])}
-              groups={getSubCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
+              groups={getSubCategories().filter(g => expertMode || g.label === 'Standard (EPA)').map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-subcatch" />
             <ThemeCombo label="Nodes" value={nodeTheme} onChange={setNodeTheme}
               options={NODE_INPUT_VARS.map(v => [v.key, v.name] as [string, string])}
-              groups={getNodeCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
+              groups={getNodeCategories().filter(g => expertMode || g.label === 'Standard (EPA)').map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-nodes" />
             <ThemeCombo label="Links" value={linkTheme} onChange={setLinkTheme}
               options={LINK_INPUT_VARS.map(v => [v.key, v.name] as [string, string])}
-              groups={getLinkCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
+              groups={getLinkCategories().filter(g => expertMode || g.label === 'Standard (EPA)').map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-links" />
-            <ThemeCombo label="System" value={systemTheme} onChange={(v) => { setSystemTheme(v); setShowSystemPanel(true); }}
+            {expertMode && <ThemeCombo label="System" value={systemTheme} onChange={(v) => { setSystemTheme(v); setShowSystemPanel(true); }}
               options={[]}
               groups={getSystemCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
-              testId="combo-system" />
+              testId="combo-system" />}
             <div className="flex-1 min-w-0" />
             {results && (
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -1670,11 +1726,11 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Options" onClick={() => setOpenDialog('analysisOptions')} testId="btn-analysis-options" />
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Locate" onClick={() => setShowLocator(!showLocator)} testId="btn-locate" />
             <ToolbarButton icon={<HeartPulse className="w-4 h-4" />} label="Health" onClick={() => setOpenDialog('modelHealth')} testId="btn-model-health" />
-            <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Phase" onClick={() => {
+            {expertMode && <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Phase" onClick={() => {
               const et = selectedObj ? objTypeToElementType(selectedObj.objType) : null;
               setPhaseSpaceTarget(selectedObj && et ? { id: selectedObj.id, elementType: et } : null);
               setOpenDialog('phaseSpace');
-            }} testId="btn-phase-space" />
+            }} testId="btn-phase-space" />}
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" testId="btn-summary" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" testId="btn-details" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
@@ -1690,21 +1746,21 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Calculator className="w-4 h-4" />} label="Stats" onClick={() => { if (results) setOpenDialog('statisticsReport'); else toast({ title: 'No Results', description: 'Run a simulation first to view statistics' }); }} testId="btn-statistics" />
             <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Profile" onClick={() => setOpenDialog('profilePlot')} testId="btn-profile-plot" />
             <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (results) setOpenDialog('timeSeries'); else toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); }} testId="btn-graph" />
-            <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => setOpenDialog('calibration')} testId="btn-calibration" />
+            {expertMode && <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => setOpenDialog('calibration')} testId="btn-calibration" />}
             <ToolbarButton icon={<Table2 className="w-4 h-4" />} label="Table" onClick={() => setOpenDialog('tableView')} testId="btn-table-view" />
-            <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Scatter" onClick={() => { if (results) setOpenDialog('scatterPlot'); else toast({ title: 'No Results', description: 'Run a simulation first' }); }} testId="btn-scatter-plot" />
-            <ToolbarButton icon={<Droplets className="w-4 h-4" />} label="Transect" onClick={() => setOpenDialog('transectEditor')} testId="btn-transect-editor" />
-            <ToolbarButton icon={<PanelLeftOpen className="w-4 h-4" />} label="Compare" onClick={() => setOpenDialog('splitScreen')} testId="btn-split-screen" />
+            {expertMode && <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Scatter" onClick={() => { if (results) setOpenDialog('scatterPlot'); else toast({ title: 'No Results', description: 'Run a simulation first' }); }} testId="btn-scatter-plot" />}
+            {expertMode && <ToolbarButton icon={<Droplets className="w-4 h-4" />} label="Transect" onClick={() => setOpenDialog('transectEditor')} testId="btn-transect-editor" />}
+            {expertMode && <ToolbarButton icon={<PanelLeftOpen className="w-4 h-4" />} label="Compare" onClick={() => setOpenDialog('splitScreen')} testId="btn-split-screen" />}
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Find" onClick={() => { setFindSearchTerm(''); setOpenDialog('findObject'); }} testId="btn-find" />
             <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
-            <ToolbarButton
+            {expertMode && <ToolbarButton
               icon={<Scissors className="w-4 h-4" />}
               label="CFL"
               onClick={() => setShowCflPanel(!showCflPanel)}
               testId="btn-cfl"
-            />
-            {cflAnalysis && cflAnalysis.flaggedCount > 0 && (
+            />}
+            {expertMode && cflAnalysis && cflAnalysis.flaggedCount > 0 && (
               <span className="text-[9px] text-[#d04040] font-medium -ml-1 mt-0.5" data-testid="cfl-badge">
                 {cflAnalysis.flaggedCount}
               </span>
@@ -1744,7 +1800,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<HelpCircle className="w-4 h-4" />} label="Topics" onClick={() => setOpenDialog('helpTopics')} testId="btn-topics" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Tutorial" onClick={() => setOpenDialog('helpTutorial')} testId="btn-tutorial" />
             <ToolbarButton icon={<AlertTriangle className="w-4 h-4" />} label="Errors" onClick={() => setOpenDialog('helpErrors')} testId="btn-errors" />
-            <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Engines" onClick={() => setOpenDialog('engineDiagnostics')} testId="btn-engine-diagnostics" />
+            {expertMode && <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Engines" onClick={() => setOpenDialog('engineDiagnostics')} testId="btn-engine-diagnostics" />}
             <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about-help" />
           </div>
         )}
@@ -1952,6 +2008,7 @@ export default function SwmmUI() {
           <SpeedBar
             interactionMode={interactionMode}
             onSetMode={(mode) => {
+              suppressedExpertToolRef.current = null;
               setInteractionMode(mode);
               setLinkDrawState(null);
               if (mode !== 'groupSelect') {
@@ -1964,6 +2021,7 @@ export default function SwmmUI() {
             onFullExtent={handleFullExtent}
             simRunning={simStatus === 'running'}
             isMobile={isMobile}
+            expertMode={expertMode}
           />
 
           {interactionMode !== 'select' && (
@@ -1983,7 +2041,7 @@ export default function SwmmUI() {
             </div>
           )}
 
-          {showCflPanel && cflAnalysis && (
+          {expertMode && showCflPanel && cflAnalysis && (
             <div
               className="absolute top-2 right-2 w-[calc(100%-16px)] md:w-[320px] max-h-[calc(100%-16px)] overflow-y-auto z-20 rounded-lg shadow-xl"
               style={{ backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid #d0d0d8' }}
@@ -2186,7 +2244,7 @@ export default function SwmmUI() {
             </div>
           )}
 
-          {showSystemPanel && results && results.timeSteps[timeStep]?.system && (
+          {expertMode && showSystemPanel && results && results.timeSteps[timeStep]?.system && (
             <div
               className="absolute top-2 left-2 w-[calc(100%-16px)] md:w-[300px] max-h-[calc(100%-16px)] overflow-y-auto z-20 rounded-lg shadow-xl"
               style={{ backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid #d0d0d8' }}
@@ -2372,7 +2430,7 @@ export default function SwmmUI() {
           bold={simStatus === 'current'}
           icon={simStatus === 'current' ? <CheckCircle2 className="w-3 h-3" /> : simStatus === 'running' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
         />
-        {cflAnalysis && cflAnalysis.flaggedCount > 0 && (
+        {expertMode && cflAnalysis && cflAnalysis.flaggedCount > 0 && (
           <StatusItem
             text={`CFL: ${cflAnalysis.flaggedCount}`}
             color="#d04040"
@@ -2380,7 +2438,7 @@ export default function SwmmUI() {
             onClick={() => setShowCflPanel(true)}
           />
         )}
-        {cflAnalysis && cflAnalysis.flaggedCount === 0 && cflAnalysis.totalCount > 0 && (
+        {expertMode && cflAnalysis && cflAnalysis.flaggedCount === 0 && cflAnalysis.totalCount > 0 && (
           <StatusItem
             text="CFL: OK"
             color="#2a8a4a"
@@ -3230,7 +3288,7 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openDialog === 'calibration'} onOpenChange={v => !v && setOpenDialog(null)}>
+      <Dialog open={expertMode && openDialog === 'calibration'} onOpenChange={v => !v && setOpenDialog(null)}>
         <DialogContent className="max-w-5xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="calibration-dialog">
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
@@ -3259,7 +3317,7 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openDialog === 'scatterPlot'} onOpenChange={v => !v && setOpenDialog(null)}>
+      <Dialog open={expertMode && openDialog === 'scatterPlot'} onOpenChange={v => !v && setOpenDialog(null)}>
         <DialogContent className="max-w-5xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="scatter-plot-dialog">
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
@@ -3271,7 +3329,7 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openDialog === 'transectEditor'} onOpenChange={v => !v && setOpenDialog(null)}>
+      <Dialog open={expertMode && openDialog === 'transectEditor'} onOpenChange={v => !v && setOpenDialog(null)}>
         <DialogContent className="max-w-4xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="transect-editor-dialog">
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
@@ -3283,7 +3341,7 @@ export default function SwmmUI() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openDialog === 'splitScreen'} onOpenChange={v => !v && setOpenDialog(null)}>
+      <Dialog open={expertMode && openDialog === 'splitScreen'} onOpenChange={v => !v && setOpenDialog(null)}>
         <DialogContent className="max-w-6xl w-[98vw] bg-white border-[#d0d0d8] max-h-[90vh] overflow-y-auto" data-testid="split-screen-dialog">
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
@@ -3366,7 +3424,7 @@ export default function SwmmUI() {
       />
 
       <EngineDiagnosticsDialog
-        open={openDialog === 'engineDiagnostics'}
+        open={expertMode && openDialog === 'engineDiagnostics'}
         onOpenChange={v => !v && setOpenDialog(null)}
         provenance={runProvenance}
       />
@@ -3380,7 +3438,7 @@ export default function SwmmUI() {
       />
 
       <PhaseSpaceDialog
-        open={openDialog === 'phaseSpace'}
+        open={expertMode && openDialog === 'phaseSpace'}
         onOpenChange={v => !v && setOpenDialog(null)}
         project={project}
         results={results}
@@ -3459,7 +3517,7 @@ export default function SwmmUI() {
                 <ContextMenuItem icon={<RotateCcw className="w-3 h-3" />} label="Reverse" onClick={handleReverseLink} testId="ctx-reverse" />
               )}
               <ContextMenuItem icon={<ArrowLeftRight className="w-3 h-3" />} label="Find Connected" onClick={handleFindConnected} testId="ctx-find-connected" />
-              {ctxObj && objTypeToElementType(ctxObj.objType) && (
+              {expertMode && ctxObj && objTypeToElementType(ctxObj.objType) && (
                 <ContextMenuItem icon={<Activity className="w-3 h-3" />} label="Phase-Space Diagnostics" onClick={() => {
                   const et = objTypeToElementType(ctxObj.objType)!;
                   setPhaseSpaceTarget({ id: ctxObj.id, elementType: et });

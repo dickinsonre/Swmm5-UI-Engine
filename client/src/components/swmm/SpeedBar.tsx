@@ -30,7 +30,10 @@ interface SpeedBarProps {
   onFullExtent: () => void;
   simRunning?: boolean;
   isMobile?: boolean;
+  expertMode?: boolean;
 }
+
+const EXPERT_ONLY_MODES: InteractionMode[] = ['addDivider', 'addOrifice', 'addWeir', 'addOutlet', 'measure'];
 
 const tools: { mode: InteractionMode; icon: typeof Circle; label: string; shortLabel: string; testId: string; group?: string }[] = [
   { mode: 'select', icon: MousePointer2, label: 'Select', shortLabel: 'Sel', testId: 'speed-select' },
@@ -58,7 +61,9 @@ export default function SpeedBar({
   onFullExtent,
   simRunning,
   isMobile,
+  expertMode = true,
 }: SpeedBarProps) {
+  const visibleTools = expertMode ? tools : tools.filter(t => !EXPERT_ONLY_MODES.includes(t.mode));
   if (isMobile) {
     return (
       <div
@@ -66,7 +71,7 @@ export default function SpeedBar({
         style={{ backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid #d0d0d8', boxShadow: '0 4px 16px rgba(0,0,0,0.18)', WebkitOverflowScrolling: 'touch' }}
         data-testid="speed-bar"
       >
-        {tools.map(({ mode, icon: Icon, shortLabel, label, testId }) => {
+        {visibleTools.map(({ mode, icon: Icon, shortLabel, label, testId }) => {
           const active = interactionMode === mode;
           return (
             <button
@@ -100,7 +105,7 @@ export default function SpeedBar({
       style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #d0d0d8' }}
       data-testid="speed-bar"
     >
-      {tools.map(({ mode, icon: Icon, label, shortLabel, testId }) => {
+      {visibleTools.map(({ mode, icon: Icon, label, shortLabel, testId }) => {
         const active = interactionMode === mode;
         return (
           <button
