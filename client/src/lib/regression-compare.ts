@@ -75,8 +75,7 @@ export function extractRunSnapshot(project: SwmmProject, results: SimulationResu
 
   for (let i = 0; i < steps.length; i++) {
     const ts = steps[i];
-    const dtHours = i > 0 ? Math.max(0, ts.time - steps[i - 1].time) : 0;
-    const dtSec = dtHours * 3600;
+    const dtSec = i > 0 ? Math.max(0, ts.time - steps[i - 1].time) : 0;
 
     let outfallSum = 0;
     let floodSum = 0;
