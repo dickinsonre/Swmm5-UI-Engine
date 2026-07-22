@@ -78,7 +78,9 @@ export default function SpeedBar({
               key={mode}
               onClick={() => onSetMode(mode)}
               title={label}
-              className="flex flex-col items-center justify-center min-w-[36px] h-11 rounded-lg transition-colors gap-0.5 px-1"
+              aria-label={label}
+              aria-pressed={active}
+              className="flex flex-col items-center justify-center min-w-[44px] h-11 rounded-lg transition-colors gap-0.5 px-1"
               style={{
                 backgroundColor: active ? 'rgba(44,110,181,0.12)' : 'transparent',
                 border: active ? '1.5px solid #2c6eb5' : '1.5px solid transparent',
@@ -92,9 +94,9 @@ export default function SpeedBar({
           );
         })}
         <div className="w-px h-10 mx-0.5 self-center" style={{ backgroundColor: '#d0d0d8' }} />
-        <button onClick={onDelete} title="Delete" className="flex flex-col items-center justify-center min-w-[36px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: '#d04040' }} data-testid="speed-delete"><Trash2 className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Del</span></button>
-        <button onClick={onRunSimulation} disabled={simRunning} title="Run" className="flex flex-col items-center justify-center min-w-[36px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: simRunning ? '#6b6b7b' : '#2a8a4a', opacity: simRunning ? 0.5 : 1 }} data-testid="speed-run"><Play className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Run</span></button>
-        <button onClick={onFullExtent} title="Fit" className="flex flex-col items-center justify-center min-w-[36px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: '#6b6b7b' }} data-testid="speed-extent"><Maximize className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Fit</span></button>
+        <button onClick={onDelete} title="Delete" aria-label="Delete selected object" className="flex flex-col items-center justify-center min-w-[44px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: '#d04040' }} data-testid="speed-delete"><Trash2 className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Del</span></button>
+        <button onClick={onRunSimulation} disabled={simRunning} title="Run" aria-label="Run simulation" className="flex flex-col items-center justify-center min-w-[44px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: simRunning ? '#6b6b7b' : '#2a8a4a', opacity: simRunning ? 0.5 : 1 }} data-testid="speed-run"><Play className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Run</span></button>
+        <button onClick={onFullExtent} title="Fit" aria-label="Zoom to full extent" className="flex flex-col items-center justify-center min-w-[44px] h-11 rounded-lg transition-colors gap-0.5 px-1" style={{ color: '#6b6b7b' }} data-testid="speed-extent"><Maximize className="w-4 h-4" /><span className="text-[7px] leading-none opacity-70">Fit</span></button>
       </div>
     );
   }
@@ -112,6 +114,8 @@ export default function SpeedBar({
             key={mode}
             onClick={() => onSetMode(mode)}
             title={label}
+            aria-label={label}
+            aria-pressed={active}
             className="flex flex-col items-center justify-center w-9 h-9 rounded transition-colors gap-px"
             style={{
               backgroundColor: active ? 'rgba(44,110,181,0.12)' : 'transparent',
@@ -131,6 +135,7 @@ export default function SpeedBar({
       <button
         onClick={onDelete}
         title="Delete Selected"
+        aria-label="Delete selected object"
         className="flex flex-col items-center justify-center w-9 h-9 rounded transition-colors gap-px"
         style={{ color: '#d04040', border: '1px solid transparent' }}
         data-testid="speed-delete"
@@ -143,6 +148,7 @@ export default function SpeedBar({
         onClick={onRunSimulation}
         disabled={simRunning}
         title="Run Simulation"
+        aria-label="Run simulation"
         className="flex flex-col items-center justify-center w-9 h-9 rounded transition-colors gap-px"
         style={{
           color: simRunning ? '#6b6b7b' : '#2a8a4a',
@@ -159,6 +165,7 @@ export default function SpeedBar({
       <button
         onClick={onFullExtent}
         title="Full Extent"
+        aria-label="Zoom to full extent"
         className="flex flex-col items-center justify-center w-9 h-9 rounded transition-colors gap-px"
         style={{ color: '#6b6b7b', border: '1px solid transparent' }}
         data-testid="speed-extent"

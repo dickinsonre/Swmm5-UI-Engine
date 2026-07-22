@@ -317,3 +317,32 @@
 @media (min-width: 769px) {
   .desktop-hidden { display: none !important; }
 }
+
+/* Accessibility: visible keyboard focus rings */
+*:focus-visible {
+  outline: 2px solid #2c6eb5 !important;
+  outline-offset: 2px;
+}
+
+/* Screen-reader-only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Touch devices: enforce 44px minimum touch targets on toolbars and speed bar */
+@media (pointer: coarse) {
+  [data-testid^="speed-"],
+  [data-testid^="btn-"],
+  [data-testid^="toolbar-"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

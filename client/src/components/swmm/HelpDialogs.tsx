@@ -54,6 +54,10 @@ const HELP_TOPICS: TopicSection[] = [
         content: 'Right-click on any object to access quick actions: view Properties, Copy ID, Copy/Paste objects, Reverse link direction, Find Connected elements, or Delete. Right-click on empty space to access Find Object.'
       },
       {
+        title: 'Keyboard Shortcuts',
+        content: 'Click or Tab to the map to give it keyboard focus, then use: Arrow keys to pan, + and - to zoom, Home to fit the full network, and [ or ] to cycle selection through every node and link (the map centers on each selected object). Escape cancels the active drawing tool. Anywhere in the app: Ctrl+F opens Find Object, Ctrl+Z undoes, and Ctrl+Y redoes.'
+      },
+      {
         title: 'Map Display Options',
         content: 'Use View > Map Options to configure the display: toggle node/link labels, adjust symbol sizes, show flow direction arrows, enable subcatchment fill, and set backdrop images. The Legend panel shows color coding for the currently displayed variable.'
       },

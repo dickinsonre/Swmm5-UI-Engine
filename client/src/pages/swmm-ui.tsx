@@ -3284,6 +3284,17 @@ export default function SwmmUI() {
             </DialogTitle>
             <DialogDescription>View simulation results over time for any node, link, or subcatchment.</DialogDescription>
           </DialogHeader>
+          {results && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-fit"
+              onClick={() => { setTableViewMode('byObject'); setOpenDialog('tableView'); }}
+              data-testid="button-graph-view-table"
+            >
+              <Table2 className="w-3.5 h-3.5 mr-1" /> View as Data Table
+            </Button>
+          )}
           {results && <TimeSeriesPlotContent project={project} results={results} selectedObj={selectedObj} timeStep={timeStep} />}
         </DialogContent>
       </Dialog>
@@ -3599,6 +3610,7 @@ function ToolbarIconButton({ icon, onClick, title, testId }: {
     <button
       onClick={onClick}
       title={title}
+      aria-label={title}
       className="p-1 text-[#6b6b7b] hover:text-[#2a2a3e] transition-colors"
       data-testid={testId}
     >
@@ -3621,6 +3633,7 @@ function ThemeCombo({ label, value, onChange, options, groups, testId }: {
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
+        aria-label={`${label} theme variable`}
         className="text-[9px] sm:text-[10px] rounded px-1 sm:px-1.5 py-0.5"
         style={{ backgroundColor: '#ffffff', color: '#2a2a3e', border: '1px solid #d0d0d8' }}
         data-testid={testId}

@@ -1428,9 +1428,9 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
         const hitNode = hitTestNode(sx, sy);
         const hitLink = hitTestLink(sx, sy);
         if (hitNode) {
-          onSelectObj?.({ type: 'node', id: hitNode.nodeId });
+          onSelectObj?.({ id: hitNode.nodeId, objType: hitNode.nodeType as any });
         } else if (hitLink) {
-          onSelectObj?.({ type: 'link', id: hitLink.linkId });
+          onSelectObj?.({ id: hitLink.linkId, objType: hitLink.linkType as any });
         } else if (interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage') {
           const wx = (sx - mapState.panX) / mapState.zoom;
           const wy = -(sy - mapState.panY) / mapState.zoom;
@@ -1463,6 +1463,98 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     }
   }, [hitTestNode, hitTestLink, onSelectObj, onCreateNode, onStartLink, onCompleteLink, onAddLinkVertex, interactionMode, mapState, linkDrawState]);
 
+  const cycleSelection = useCallback((dir: 1 | -1) => {
+    const nodeEntries = Object.keys(project.coordinates).map(id => ({
+      id,
+      objType: project.outfalls.find(o => o.id === id) ? 'outfall'
+        : project.storageUnits.find(s => s.id === id) ? 'storage'
+        : project.dividers.find(d => d.id === id) ? 'divider'
+        : 'junction',
+    }));
+    const linkEntries = [
+      ...project.conduits.map(c => ({ id: c.id, objType: 'conduit' })),
+      ...project.pumps.map(p => ({ id: p.id, objType: 'pump' })),
+      ...project.orifices.map(o => ({ id: o.id, objType: 'orifice' })),
+      ...project.weirs.map(w => ({ id: w.id, objType: 'weir' })),
+      ...project.outlets.map(o => ({ id: o.id, objType: 'outlet' })),
+    ];
+    const all = [...nodeEntries, ...linkEntries];
+    if (all.length === 0) return;
+    const curIdx = selectedObj ? all.findIndex(o => o.id === selectedObj.id && o.objType === selectedObj.objType) : -1;
+    let idx: number;
+    if (curIdx === -1) {
+      idx = dir === 1 ? 0 : all.length - 1;
+    } else {
+      idx = (curIdx + dir + all.length) % all.length;
+    }
+    const next = all[idx];
+    onSelectObj({ id: next.id, objType: next.objType as any });
+    const coord = project.coordinates[next.id];
+    if (coord) {
+      centerOnWorld(coord[0], coord[1]);
+    } else {
+      const link = [...project.conduits, ...project.pumps, ...project.orifices, ...project.weirs, ...project.outlets].find(l => l.id === next.id);
+      if (link) {
+        const f = project.coordinates[link.fromNode];
+        const t = project.coordinates[link.toNode];
+        if (f && t) centerOnWorld((f[0] + t[0]) / 2, (f[1] + t[1]) / 2);
+      }
+    }
+  }, [project, selectedObj, onSelectObj, centerOnWorld]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const panStep = 60;
+    switch (e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        setMapState(prev => ({ ...prev, panX: prev.panX + panStep }));
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        setMapState(prev => ({ ...prev, panX: prev.panX - panStep }));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setMapState(prev => ({ ...prev, panY: prev.panY + panStep }));
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        setMapState(prev => ({ ...prev, panY: prev.panY - panStep }));
+        break;
+      case '+':
+      case '=':
+        e.preventDefault();
+        setMapState(prev => ({
+          zoom: prev.zoom * 1.2,
+          panX: canvasSize.w / 2 - (canvasSize.w / 2 - prev.panX) * 1.2,
+          panY: canvasSize.h / 2 - (canvasSize.h / 2 - prev.panY) * 1.2,
+        }));
+        break;
+      case '-':
+      case '_':
+        e.preventDefault();
+        setMapState(prev => ({
+          zoom: prev.zoom / 1.2,
+          panX: canvasSize.w / 2 - (canvasSize.w / 2 - prev.panX) / 1.2,
+          panY: canvasSize.h / 2 - (canvasSize.h / 2 - prev.panY) / 1.2,
+        }));
+        break;
+      case 'Home':
+        e.preventDefault();
+        fitExtent();
+        break;
+      case ']':
+        e.preventDefault();
+        cycleSelection(1);
+        break;
+      case '[':
+        e.preventDefault();
+        cycleSelection(-1);
+        break;
+    }
+  }, [canvasSize, fitExtent, cycleSelection]);
+
   const cursorStyle = interactionMode === 'addJunction' || interactionMode === 'addOutfall' || interactionMode === 'addStorage' || interactionMode === 'addDivider' || interactionMode === 'addRaingage'
     ? 'copy'
     : interactionMode === 'addConduit' || interactionMode === 'addPump' || interactionMode === 'addOrifice' || interactionMode === 'addWeir' || interactionMode === 'addOutlet'
@@ -1474,7 +1566,19 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     : 'crosshair';
 
   return (
-    <div ref={containerRef} className="w-full h-full relative overflow-hidden" style={{ touchAction: 'none' }} data-testid="network-map-container">
+    <div
+      ref={containerRef}
+      className="w-full h-full relative overflow-hidden"
+      style={{ touchAction: 'none' }}
+      data-testid="network-map-container"
+      tabIndex={0}
+      role="application"
+      aria-label="Network map. Use arrow keys to pan, plus and minus to zoom, Home to fit the network, and square brackets to cycle object selection."
+      onKeyDown={handleKeyDown}
+    >
+      <div aria-live="polite" className="sr-only" data-testid="map-selection-announcer">
+        {selectedObj ? `Selected ${selectedObj.objType} ${selectedObj.id}` : 'No object selected'}
+      </div>
       <canvas
         ref={canvasRef}
         width={canvasSize.w}

@@ -7,6 +7,22 @@ import ProvenanceBadge from './ProvenanceBadge';
 
 const LEGEND_COLORS = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
 
+function makeLegendLabels(variable?: SwmmVariable): string[] {
+  if (variable?.labels && variable.labels.every(l => l)) return variable.labels;
+  if (variable && variable.maxVal > 0) {
+    const step = variable.maxVal / 5;
+    const fmt = (x: number) => step < 1 ? x.toFixed(2) : step < 10 ? x.toFixed(1) : x.toFixed(0);
+    return [
+      `< ${fmt(step)}`,
+      `${fmt(step)} \u2013 ${fmt(2 * step)}`,
+      `${fmt(2 * step)} \u2013 ${fmt(3 * step)}`,
+      `${fmt(3 * step)} \u2013 ${fmt(4 * step)}`,
+      `> ${fmt(4 * step)}`,
+    ];
+  }
+  return ['Lowest', 'Low', 'Medium', 'High', 'Highest'];
+}
+
 export function CrossSectionSvg({ xs, size = 80 }: { xs: XSection; size?: number }) {
   const s = size;
   const cx = s / 2, cy = s / 2;
@@ -129,9 +145,9 @@ export function LegendPanel({
   const linkVar = getLinkVarByKey(linkTheme);
   const subcatchVar = getSubVarByKey(subcatchTheme);
 
-  const nodeLabels = nodeTheme === 'none' ? [] : (nodeVar?.labels || ['Low', '', '', '', 'High']);
-  const linkLabels = linkTheme === 'none' ? [] : (linkVar?.labels || ['Low', '', '', '', 'High']);
-  const subcatchLabels = subcatchTheme === 'none' ? [] : (subcatchVar?.labels || ['Low', '', '', '', 'High']);
+  const nodeLabels = nodeTheme === 'none' ? [] : makeLegendLabels(nodeVar);
+  const linkLabels = linkTheme === 'none' ? [] : makeLegendLabels(linkVar);
+  const subcatchLabels = subcatchTheme === 'none' ? [] : makeLegendLabels(subcatchVar);
 
   const nodeTitle = nodeTheme === 'none' ? 'Nodes' : (nodeVar ? `${nodeVar.name}${nodeVar.units ? ' (' + nodeVar.units + ')' : ''}` : 'Nodes');
   const linkTitle = linkTheme === 'none' ? 'Links' : (linkVar ? `${linkVar.name}${linkVar.units ? ' (' + linkVar.units + ')' : ''}` : 'Links');
