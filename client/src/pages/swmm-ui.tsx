@@ -46,6 +46,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 
 export interface SwmmPreferences {
@@ -165,8 +166,12 @@ export default function SwmmUI() {
   const [geojsonType, setGeojsonType] = useState<'nodes' | 'links'>('nodes');
   const importFileRef = useRef<HTMLInputElement>(null);
   const [githubUrl, setGithubUrl] = useState('https://github.com/SWMMEnablement/1729-SWMM5-Models');
-  const [ghBrowseOwner] = useState('SWMMEnablement');
-  const [ghBrowseRepo] = useState('1729-SWMM5-Models');
+  const GH_REPOS = [
+    { owner: 'SWMMEnablement', repo: '1729-SWMM5-Models', branch: 'main' },
+    { owner: 'SWMMBobSWMM6', repo: '1729-SWMM5-Models-2030', branch: 'master' },
+  ];
+  const [ghBrowseOwner, setGhBrowseOwner] = useState('SWMMEnablement');
+  const [ghBrowseRepo, setGhBrowseRepo] = useState('1729-SWMM5-Models');
   const [ghBrowsePath, setGhBrowsePath] = useState('');
   const [ghBrowseItems, setGhBrowseItems] = useState<{name:string;type:string;path:string;size?:number;download_url?:string}[]>([]);
   const [ghBrowseLoading, setGhBrowseLoading] = useState(false);
@@ -440,7 +445,7 @@ export default function SwmmUI() {
   }, [ghBrowseOwner, ghBrowseRepo]);
 
   const handleGhFileSelect = useCallback(async (item: {name:string;path:string;download_url?:string}) => {
-    const dlUrl = item.download_url || `https://raw.githubusercontent.com/${ghBrowseOwner}/${ghBrowseRepo}/main/${item.path}`;
+    const dlUrl = item.download_url || `https://raw.githubusercontent.com/${ghBrowseOwner}/${ghBrowseRepo}/${GH_REPOS.find(r => r.owner === ghBrowseOwner && r.repo === ghBrowseRepo)?.branch || 'main'}/${item.path}`;
     setLoading(true);
     try {
       const resp = await fetch(`/api/fetch-github?url=${encodeURIComponent(dlUrl)}`);
@@ -462,6 +467,12 @@ export default function SwmmUI() {
     }
     setLoading(false);
   }, [toast, ghBrowseOwner, ghBrowseRepo]);
+
+  const ghRepoMounted = useRef(false);
+  useEffect(() => {
+    if (!ghRepoMounted.current) { ghRepoMounted.current = true; return; }
+    ghBrowse('');
+  }, [ghBrowseOwner, ghBrowseRepo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNewProject = useCallback(() => {
     setProject(createEmptyProject());
@@ -2404,6 +2415,28 @@ export default function SwmmUI() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-[10px] text-[#6b6b7b] shrink-0">Repository</Label>
+              <Select
+                value={`${ghBrowseOwner}/${ghBrowseRepo}`}
+                onValueChange={(v) => {
+                  const [owner, repo] = v.split('/');
+                  setGhBrowseOwner(owner);
+                  setGhBrowseRepo(repo);
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs bg-white border-[#d0d0d8] text-[#2a2a3e]" data-testid="select-gh-repo">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GH_REPOS.map(r => (
+                    <SelectItem key={`${r.owner}/${r.repo}`} value={`${r.owner}/${r.repo}`} className="text-xs" data-testid={`gh-repo-${r.repo}`}>
+                      {r.owner}/{r.repo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center gap-1.5 text-xs text-[#6b6b7b] bg-[#f0f0f4] rounded px-2 py-1.5 border border-[#d0d0d8]">
               <Folder className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate font-mono" data-testid="text-gh-path">/{ghBrowsePath || ''}</span>

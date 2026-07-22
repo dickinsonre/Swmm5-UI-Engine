@@ -95,5 +95,5 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - EPA SWMM 5.2.4 Binary (local dev only)
 - SWMM WASM Engine v5.2.4 (compiled from source via Emscripten, bundled in client/public/)
 - BatchSWMM cloud API (remote fallback)
-- GitHub API (file fetching via proxy)
+- GitHub API (file fetching via proxy). GitHub browse dialog has a repository selector (`GH_REPOS` in swmm-ui.tsx): SWMMEnablement/1729-SWMM5-Models (main) and SWMMBobSWMM6/1729-SWMM5-Models-2030 (master branch)
 - Recharts (time series graphs, profile plots)
