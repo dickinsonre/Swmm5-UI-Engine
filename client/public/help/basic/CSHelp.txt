@@ -1,0 +1,29 @@
+.topic 213500
+A subcatchment is an area of land containing a mix of pervious and impervious surfaces whose runoff drains to a common outlet point, which could be either a node of the drainage network or another subcatchment.
+.topic 213600
+Normally when running a Dynamic Wave analysis, one would also want to reduce the routing time step (on the Time Steps page of the dialog) and perhaps select the Variable Time Step option (on the Dynamic Wave page of the dialog) as well.
+.topic 213590
+Aside from direct runoff, EPA SWMM allows pollutants to be introduced into the nodes of a drainage system through:
+- user-defined time series of direct inflows
+- dry weather inflows
+- groundwater interflow
+- rainfall derived inflow/infiltration.
+.topic 213630
+The example data sets can be found in My Documents | EPA SWMM Projects | Sample Projects.
+.topic 213510
+If you wanted to save these choices for all future new projects you could check the Save box at the bottom of the form before accepting it.
+.topic 213520
+Drawing objects on the map is just one way of creating a project. For large projects it will be more convenient to first construct an EPA SWMM project file external to the program. The project file is a text file that describes each object in a specified format as described in the Users Manual. Data extracted from various sources, such as CAD drawings or GIS files, can be used to create the project file.
+.topic 213530
+If you right-click (or press Enter) after adding the first point of a subcatchment's outline, the subcatchment will be shown as just a single point.
+.topic 213540
+Although all of our conduits were drawn as straight lines, it is possible to draw a curved link by left-clicking at intermediate points where the direction of the link changes before clicking on the end node.
+.topic 213550
+An alternative way to move from one object of a given type to the next in order (or to the previous one) in the Property Editor is to hit the Page Down (or Page Up) key.
+
+.topic 213560
+The Time Series Editor can also be launched directly from the Rain Gage Property Editor by selecting the editor's Series Name field and double clicking on it.
+.topic 213570
+Leaving off the dates for a time series means that SWMM will interpret the time values as hours from the start of the simulation. Otherwise, the time series follows the date/time values specified by the user.
+.topic 213610
+In EPA SWMM, flooding will occur whenever the water surface at a node exceeds the maximum defined depth. Normally such water will be lost from the system. The option also exists to have this water pond atop the node and be re-introduced into the drainage system when capacity exists to do so.

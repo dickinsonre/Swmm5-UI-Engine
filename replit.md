@@ -89,6 +89,10 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - File-load toasts (local, GitHub URL, GitHub browser) include model summary via `describeProject()` (nodes/links/subcatchments)
 - PropertyEditor header shows a units chip (SI/US · FLOW_UNITS) via `isSIProject()`
 
+## Help Manuals (CHM)
+- `client/public/help/{userguide,basic,inlets}/` — Static HTML extracted from 3 EPA SWMM CHM files (User Guide, Basic Tutorial, Inlets Tutorial). TOC files: epaswmm5.hhc, tutorial.hhc, InletTutorial.hhc (CHM sitemap format).
+- `client/src/components/swmm/HelpManualsDialog.tsx` — Help > Manuals dialog: manual tab selector, parseHhc() token-based .hhc TOC parser (nested UL/OBJECT sitemap), collapsible tree, sandboxed iframe viewer (`sandbox=""` — scripts blocked, opaque origin), page path allowlist validation, "Open in new tab" link. Inlets home page is inlet_analysis_with_swmm.htm (no introduction.htm).
+
 ## New Features (Session 2)
 - **Animation Speed Control**: Speed slider (20-500ms range, inverted for intuition) next to play/pause button, adjusts requestAnimationFrame interval
 - **Enhanced Report Viewer**: Searchable `.rpt` viewer with match count, search highlighting (deterministic split-based), section navigation buttons (scrolls to first match), 9 quick-jump sections

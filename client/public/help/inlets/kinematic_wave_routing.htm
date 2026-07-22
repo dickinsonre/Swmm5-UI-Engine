@@ -1,0 +1,117 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Kinematic Wave Routing</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Kinematic Wave Routing</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="sewer_backflow.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="computational_methods.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>All of our previous analyses have been run using SWMM's dynamic wave flow routing option. It is also possible to analyze inlet performance using kinematic wave routing. However, kinematic wave routing is unable to create a backwater effect for excess water that remains on the street at a sag node after its inflow has passed through an inlet. Instead, since the junction node has no outlet conduits, it is treated as if it were an outfall node and any excess water is simply lost from the system (i.e., listed as external outflow in the flow balance appearing in the project's Status Report). This will produce a much different result for the sag point than that obtained using dynamic wave analysis. You can verify this by running the original example project under kinematic wave and comparing its Street Summary report with the one found using dynamic wave analysis.</p>
+<p>&nbsp;</p>
+<p>This issue can be resolved by replacing sag junction nodes with storage nodes whose maximum depth equals the street's curb height and whose surface area equals the spread (i.e., top width) at a given height times half the length of all of the streets converging on the node. The latter can be expressed with the equation:</p>
+<p>&nbsp;</p>
+<p style="line-height: 1.15; margin: 0px 0px 13px 24px;"><img src="embim1.gif" width="101" height="36" vspace="1" hspace="1" border="0" alt=""></p>
+<p>where the summation is made over all streets that converge on the node in question with <span style="font-family: 'Cambria'; font-style: italic;">A</span> = storage surface area, <span style="font-family: 'Cambria'; font-style: italic;">Ns</span> = 1 for a one-sided street or 2 for a two-sided street, <span style="font-family: 'Cambria'; font-style: italic;">L</span> = street length, <span style="font-family: 'Cambria'; font-style: italic;">Sx</span> = street cross slope and <span style="font-family: 'Cambria'; font-style: italic;">y</span> = storage depth.</p>
+<p>&nbsp;</p>
+<p>To apply this modification to our original example project:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">1.</span></td><td>Right-click on node 4 and select <span style="font-style: italic; font-weight: bold;">Convert To | Storage Unit</span> from the pop-up menu that appears</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">2.</span></td><td>Bring up the storage unit's Property Editor and set its <span style="font-style: italic; font-weight: bold;">Max. Depth</span> to 0.5</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">3.</span></td><td>Select the <span style="font-style: italic; font-weight: bold;">Storage Shape</span> property and click the ellipsis button (or hit Enter)</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">4.</span></td><td>In the Storage Shape Editor that appears select the <span style="font-style: italic; font-weight: bold;">Functional</span> shape option and set <span style="font-style: italic; font-weight: bold;">a0</span> = 0, <span style="font-style: italic; font-weight: bold;">a1</span> = 20000 and <span style="font-style: italic; font-weight: bold;">a2</span> = 1. (The value of 20000 is derived from having two converging streets, both two-sided with a length of 200 and a cross slope of 0.02).</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">5.</span></td><td>Run the analysis under kinematic wave.</td></tr></table></div><p>&nbsp;</p>
+<p style="margin: 0px 0px 6px 0px;">The resulting Street Summary report, shown below, looks very similar to the <a href="street_summary_report.htm">one found under dynamic wave</a>.</p>
+<p><img src="streetresults-d.png" width="756" height="134" border="0" alt="StreetResults-D"></p>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Drop Inlets</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Drop Inlets</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="on_sag_capture.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="custom_inlets.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p><span style="font-weight: bold; text-decoration: underline;">Drop Grate Inlets</span></p>
+<p>&nbsp;</p>
+<p style="margin: 0px 0px 6px 0px;">The flow capture equation for a drop grate inlet located on-grade in a channel is the same as for a street grate except that the ratio <span style="font-family: 'Cambria'; font-style: italic;">E</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span> of flow over the grate to total cross-section flow <span style="font-family: 'Cambria'; font-style: italic;">Q</span><span style="font-family: 'Cambria'; font-style: italic; font-weight: bold;"> </span>is given by:</p>
+<p style="margin: 0px 0px 0px 24px;"><img src="embim10.gif" width="163" height="48" vspace="1" hspace="1" border="0" alt=""></p>
+<p>where</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 24px;"><table cellspacing="2" cellpadding="2" border="0" style="border: none; border-spacing:2px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="442" style="width:442px;"><p>side length of grate parallel to flow direction (ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">y</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="442" style="width:442px;"><p>flow depth in the channel (ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">n</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="442" style="width:442px;"><p>Manning's roughness coefficient for the channel</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">S</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">L</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="442" style="width:442px;"><p>channel longitudinal slope (ft/ft)</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p>A cross slope <span style="font-family: 'Cambria'; font-style: italic;">S</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">X</span> of 1% is assumed unless the grate extends across the entire bottom width of a trapezoidal channel. In that case  <span style="font-family: 'Cambria'; font-style: italic;">S</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">X</span> &nbsp;is taken as the slope of the channel’s side wall.</p>
+<p>&nbsp;</p>
+<p>Drop grates located on-sag use the same weir and orifice equations as do street grates with the only difference being that for weir flow the effective length of the inlet’s sides (<span style="font-family: 'Cambria'; font-style: italic;">L</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span> ) is the sum of the lengths of all four sides.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold; text-decoration: underline;">Drop Curb Inlets</span></p>
+<p>&nbsp;</p>
+<p>Flow capture for drop curb inlets is computed the same as for curb opening inlets located on sag. The only difference is that the effective length of the opening is the total length of all four sides and the open area is the height of the opening times the total length of all four sides.</p>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>

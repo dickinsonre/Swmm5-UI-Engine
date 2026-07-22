@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Storage Shape Editor</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Storage Shape Editor</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="introduction.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="statisticsselectiondialog.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="street_section_editor.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>The <span style="font-weight: bold;">Storage Shape Editor</span> is used to describe how a storage unit's surface area varies with depth above the bottom of the unit. . It is invoked when the <a href="storageunitproperties.htm">Storage Shape</a> property of a storage node is selected for editing. There are six types of shapes one can choose from:</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Cylindrical</span></p>
+<p>The storage unit has vertical sides and an elliptical base. The equation for surface area is:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table cellspacing="0" cellpadding="0" border="0" style="border: none; border-spacing:0px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="90" style="width:90px;"><p><img src="cylindrical.png" width="80" height="64" border="0" alt="cylindrical"></p>
+</td>
+<td valign="top" width="668" style="width:668px;"><p><span style="font-style: italic;">Area = (</span><span style="font-family: 'Arial Unicode MS', 'Lucida Sans Unicode', 'Arial'; font-style: italic;">&pi;</span><span style="font-style: italic;"> / 4) * ( L * W )</span></p>
+<p>where L = base major axis length and W = base minor axis width. If only the surface area is known then one can use the <span style="font-weight: bold;">Functional</span> storage option instead.</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Conical</span></p>
+<p>The storage unit is shaped as a truncated elliptical cone. The equation for surface area is:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table cellspacing="0" cellpadding="0" border="0" style="border: none; border-spacing:0px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="90" style="width:90px;"><p><img src="conicstorageshape.gif" width="67" height="54" border="0" alt="ConicStorageShape"></p>
+</td>
+<td valign="top" width="668" style="width:668px;"><p><span style="font-style: italic;">Area = </span><span style="font-family: 'Arial Unicode MS', 'Lucida Sans Unicode', 'Arial'; font-style: italic;">&pi;</span><span style="font-style: italic;"> * ( L * W / 4 + W * Z * Depth + (W / L) * (Z * Depth)^2 )</span></p>
+<p>where L = base major axis length, W = base minor axis width and Z = side slope (run / rise) of a vertical slice through the major axis.</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Parabolic</span></p>
+<p>The storage unit has the shape of an elliptical paraboloid. The equation for surface area is:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table cellspacing="0" cellpadding="0" border="0" style="border: none; border-spacing:0px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="90" style="width:90px;"><p><img src="paraboloid.png" width="80" height="68" border="0" alt="paraboloid"></p>
+</td>
+<td valign="top" width="668" style="width:668px;"><p><span style="font-style: italic;">Area = (</span><span style="font-family: 'Arial Unicode MS', 'Lucida Sans Unicode', 'Arial'; font-style: italic;">&pi;</span><span style="font-style: italic;"> / 4) * ( L * W / H) * Depth</span></p>
+<p>where L = major axis length at height H and W = minor axis width at height H. This shape can also be described using the <span style="font-weight: bold;">Functional</span> storage option.</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Pyramidal</span></p>
+<p>This is for storage units shaped as a truncated rectangular pyramid or a rectangular box. The equation for surface area is:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table width="100%" cellspacing="0" cellpadding="0" border="0" style="border: none; border-spacing:0px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="middle" width="105" style="width:105px;"><p><img src="prismaticstorageshape.gif" width="93" height="41" border="0" alt="PrismaticStorageShape"></p>
+</td>
+<td valign="top" width="463" style="width:463px;"><p><span style="font-style: italic;">Area = L * W + 2 * (L + W) * Z * Depth +(2 * Z * Depth)^2</span></p>
+<p>where L = base length, W = base width and Z = side slope (run / rise) (which would be 0 for a box).</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Functional</span></p>
+<p>The following general function is used to relate surface area to depth:</p>
+<p style="margin: 6px 0px 6px 24px;"><span style="font-style: italic;">Area = a0 + a1 * Depth ^a2</span></p>
+<p>where <span style="font-style: italic;">a0, a1</span>, and <span style="font-style: italic;">a2</span> are user supplied coefficients. Here are coefficient values for some particular shapes:</p>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="13"><span style="font-size: 11pt; font-family: 'Symbol'; font-style: normal; color: #000000; text-decoration: none;">&#183;</span></td><td>Shapes with vertical sides (such as a cylinder or rectangular prism):</td></tr></table></div><p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a0</span> = area of the base</p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a1</span> = <span style="font-style: italic;">a2</span> = 0</p>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="13"><span style="font-size: 11pt; font-family: 'Symbol'; font-style: normal; color: #000000; text-decoration: none;">&#183;</span></td><td>Open channel with a trapezoidal cross section and vertical ends:</td></tr></table></div><p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a0 = W * L</span></p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a1 = 2 * Z * L</span></p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a2 = 1</span></p>
+<p style="margin: 0px 0px 0px 24px;">where <span style="font-style: italic;">W</span> = bottom width of cross section, <span style="font-style: italic;">L</span> = channel length, and <span style="font-style: italic;">Z</span> = side slope.</p>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="13"><span style="font-size: 11pt; font-family: 'Symbol'; font-style: normal; color: #000000; text-decoration: none;">&#183;</span></td><td>Open channel with a parabolic cross section and vertical ends:</td></tr></table></div><p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a0 = 0</span></p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a1 = W * L * H^0.5</span></p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a2 = 1</span></p>
+<p style="margin: 0px 0px 0px 24px;">where <span style="font-style: italic;">W</span> = top width, <span style="font-style: italic;">L</span> = channel length and <span style="font-style: italic;">H</span> = full height.</p>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="13"><span style="font-size: 11pt; font-family: 'Symbol'; font-style: normal; color: #000000; text-decoration: none;">&#183;</span></td><td>Elliptical paraboloid:</td></tr></table></div><p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a0 = 0</span></p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a1 = </span><span style="font-family: 'Arial Unicode MS', 'Lucida Sans Unicode', 'Arial'; font-style: italic;">&pi;</span><span style="font-style: italic;"> * L * W / H</span></p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a2 = 1</span></p>
+<p style="margin: 0px 0px 0px 24px;">where <span style="font-style: italic;">L</span> is the length of the major axis and <span style="font-style: italic;">W</span> the length of the minor axis at full height <span style="font-style: italic;">H</span>.</p>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="13"><span style="font-size: 11pt; font-family: 'Symbol'; font-style: normal; color: #000000; text-decoration: none;">&#183;</span></td><td>Circular non-truncated cone:</td></tr></table></div><p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a0 = 0</span></p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a1 = (</span><span style="font-family: 'Arial Unicode MS', 'Lucida Sans Unicode', 'Arial'; font-style: italic;">&pi;</span><span style="font-style: italic;">/4) * (W / H)^2</span></p>
+<p><span style="width:48px">&nbsp;</span><span style="font-style: italic;">a2 = 2</span></p>
+<p style="margin: 0px 0px 0px 24px;">where W is the cone's diameter at height <span style="font-style: italic;">H</span>.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Tabular</span></p>
+<p>This method uses a tabular <a href="curves.htm">Storage Curve</a> to relate surface area to depth. It can represent natural depressions with irregular shaped contour intervals, spheroid storage vessels or conventional shapes with different base sizes stacked on top of one another. The first point supplied to the curve should be the surface area of the unit's base at a depth of 0. Otherwise it will be assumed that the unit has zero surface area at its base. The curve will be extrapolated outwards to meet the unit's maximum depth if need be.</p>
+<p>&nbsp;</p>
+<p>For each of these methods, depth is measured in feet and surface area in square feet for US units, while meters and square meters, respectively, are used for SI units.</p>
+<p>&nbsp;</p>
+<p>Clicking the <span style="font-weight: bold;">Show Volume Calculator</span> label will display a panel where one can see what the surface area and stored volume will be at a specified water depth in the selected storage shape.</p>
+
+</div>
+
+</body>
+</html>

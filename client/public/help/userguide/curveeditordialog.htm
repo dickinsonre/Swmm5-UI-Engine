@@ -1,0 +1,137 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Curve Editor</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="Curves,Curves Editing">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Curve Editor</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="introduction.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="cross_sectioneditordialog.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="events_editor.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>The <span style="font-weight: bold;">Curve Editor</span> dialog is invoked whenever a new <a href="curves.htm">Curve</a> object is created or an existing Curve object is selected for editing. The Editor adapts itself to the category of curve being edited (Storage, Shape, Tidal, Diversion, Pump, Rating, Control or Weir). To use the Curve Editor:</p>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">1.</span></td><td>Enter values for the following dialog items:</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 10px;"><table cellspacing="0" cellpadding="4" border="0" style="border: none; border-spacing:0px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="102" style="width:102px;"><p style="margin: 0px 0px 0px 19px;"><span style="font-style: italic;">Name</span></p>
+</td>
+<td valign="top" width="391" style="width:391px;"><p style="margin: 0px 0px 0px 19px;">Name of the curve.</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="102" style="width:102px;"><p style="margin: 0px 0px 0px 19px;"><span style="font-style: italic;">Type</span></p>
+<p style="margin: 0px 0px 0px 19px;"><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+</td>
+<td valign="top" width="391" style="width:391px;"><p style="margin: 0px 0px 0px 19px;">(Pump Curves Only) Choice of pump curve type (see <a href="pumps.htm">Pumps</a> for a description of each curve type).</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="102" style="width:102px;"><p style="margin: 0px 0px 0px 19px;"><span style="font-style: italic;">Description</span></p>
+</td>
+<td valign="top" width="391" style="width:391px;"><p style="margin: 0px 0px 0px 19px;">Optional comment or description of what the curve represents. Click the <img src="edit.gif" width="16" height="16" border="0" alt="edit"> button to launch a multi-line comment editor if more than one line is needed. </p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="102" style="width:102px;"><p style="margin: 0px 0px 0px 19px;"><span style="font-style: italic;">Data Grid</span></p>
+</td>
+<td valign="top" width="391" style="width:391px;"><p style="margin: 0px 0px 0px 19px;">The curve's X,Y data.</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">2.</span></td><td>Click the <span style="font-weight: bold;">View</span> button to see a graphical plot of the curve drawn in a separate window.</td></tr></table></div><p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">3.</span></td><td>If additional rows are needed in the Data Grid, simply press the &lt;<span style="font-weight: bold;">Enter</span>&gt; key when in the last row.</td></tr></table></div><p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">4.</span></td><td>Right-clicking over the Data Grid will make a popup Edit menu appear. It contains commands to cut, copy, insert, and paste selected cells in the grid as well as options to insert or delete a row.</td></tr></table></div><p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">5.</span></td><td>Press <span style="font-weight: bold;">OK</span> to accept the curve entries or <span style="font-weight: bold;">Cancel</span> to cancel the edits made.</td></tr></table></div><p>&nbsp;</p>
+<p>You can also click the <span style="font-weight: bold;">Load</span> button to load in a curve that was previously saved to file or click the <span style="font-weight: bold;">Save</span> button to save the current curve's data to a file.</p>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Example Project</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Example Project</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="inlet_analysis_workflow.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="layout_the_network.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>A simple example will be used to illustrate how street drainage analysis is made with SWMM. The project's layout is shown below with the node and link ID names displayed.</p>
+<p><img src="finalmodel.png" width="416" height="160" border="0" alt="FinalModel"></p>
+<p>It contains three street segments with inlets placed in two of them. These divert captured flow into a two-pipe sewer line. External runoff inflows are applied at each end of the street system. Node 4 represents a sag (low elevation) point where any street flow not captured by the inlets will cause water to pond atop the street. Each street is two-sided with each side 20 feet wide with a cross slope of 2%, a 6-inch high curb and a roughness coefficient of 0.016. Each sewer pipe is circular with a 1-foot diameter and 0.01 roughness. The streets and sewers each have a 1% slope and are 200 feet long. Street1 contains a 2'x2' grate inlet on each side while a 2' long by 6&quot; high curb opening is located on each side of Street 3.</p>
+<p>&nbsp;</p>
+<p>We wish to determine the maximum spread and depth of water on the streets when both inflows are from a triangular 6-hour hydrograph with peak flow of 0.6 cfs at 3 hours.</p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>

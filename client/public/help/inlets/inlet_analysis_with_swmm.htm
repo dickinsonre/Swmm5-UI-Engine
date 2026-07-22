@@ -1,0 +1,128 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Inlet Analysis with SWMM</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+<object width=0 id=hhctrl_1 type="application/x-oleobject" classid="clsid:adb880a6-d8ff-11cf-9377-00aa003b7a11"><param name="Command" value="ShortCut"><param name="Item1" value=",tutorial.chm,"></object></head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><img src="dwrd.gif" width="33" height="31" border="0" alt="DWRD"><span class="f_Heading1"> Inlet Analysis with SWMM</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     
+     <img src="button_prev_d.gif" border="0">
+
+     <a href="inlet_types.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>Storm drain inlets are structures that convey runoff from street pavements into below ground storm sewers. Inlet type, sizing and spacing are normally chosen to meet limits on the spread and depth of water across roadways as set by local drainage agencies to maintain public safety. This tutorial demonstrates how SWMM can be used to model street drainage using inlets.</p>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table cellspacing="0" cellpadding="0" border="0" style="border: none; border-spacing:0px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="234" style="width:234px;"><p><img src="grate.zoom54.gif" width="204" height="172" border="0" alt="Grate"></p>
+</td>
+<td valign="top" width="318" style="width:318px;"><p><img src="curbopening.zoom108.gif" width="293" height="166" border="0" alt="CurbOpening"></p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p>To analyze street drainage with SWMM a site is represented as a dual drainage system consisting of both street conduits along the ground surface and sewer conduits below it. An inlet structure will divert some portion of the street flow it sees into a designated node of the sewer system with the rest being bypassed to downstream streets. When an inlet’s sewer node reaches its full depth any excess flow that would cause it to flood is sent back through the inlet and onto the street.</p>
+<p><img src="dualdrainage.png" width="471" height="316" border="0" alt="DualDrainage"></p>
+<p>&nbsp;</p>
+<p>To view the rest of this tutorial use the  <img src="button_next.gif" width="19" height="17" border="0" alt="button_next"> &nbsp;button to move to the next topic, the  <img src="button_prev.gif" width="19" height="17" border="0" alt="button_prev"> &nbsp;button to return to the previous topic, and the &nbsp;  <img src="button_main.gif" width="19" height="17" border="0" alt="button_main"> &nbsp;button to return to the start of the tutorial.</p>
+<p>&nbsp;</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table cellspacing="0" cellpadding="2" border="2" style="border-color : #808080 #e0e0e0 #e0e0e0 #808080; border-style: solid; border-width: 2px; border-spacing:0px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" style="border-color : #e0e0e0 #808080 #808080 #e0e0e0; border-style: solid; border-width: 2px;"><p>This tutorial assumes you are familiar with the basics of using the SWMM 5 user interface to develop a simple drainage system. If need be, please consult the <a href="javascript:hhctrl_1.hhclick()" class="filelink">SWMM 5 Basic Tutorial</a> before proceeding further.</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>

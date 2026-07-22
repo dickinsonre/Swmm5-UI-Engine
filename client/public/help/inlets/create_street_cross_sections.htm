@@ -1,0 +1,113 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Step 3 - Create Street Cross-Sections</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Step 3 - Create Street Cross-Sections</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="add_external_inflows.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="assign_street_cross_sections.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>We next specify the cross-section shape and roughness of our street conduits. SWMM includes a special Street cross-section object that is consistent with the shape used by the HEC-22 inlet procedures. Similar to the way that Transects are used with irregular channels, a collection of Street cross-sections can be created to be re-used across multiple streets.</p>
+<p>&nbsp;</p>
+<p>Our example project utilizes the same cross-section for all of its streets. To create it:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">1.</span></td><td>Select the Streets category from the Project Browser.</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">2.</span></td><td>Click &nbsp;the <img src="plus.gif" width="16" height="16" border="0" alt="Plus">button to bring up The Street Section Editor.</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">3.</span></td><td>Enter the ID name and dimensions shown in the screen shot below.</td></tr></table></div><p>&nbsp;</p>
+<p><img src="streetsectioneditor.zoom89.gif" width="453" height="512" border="0" alt="StreetSectionEditor"></p>
+<p>&nbsp;</p>
+<p>These dimensions refer to one half of the street, from its crown to its curb (or backing if present). Because our streets are two-sided, the same dimensions apply to both halves.</p>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>

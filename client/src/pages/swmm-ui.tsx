@@ -25,6 +25,7 @@ import PropertyEditor from '@/components/swmm/PropertyEditor';
 import { SubDialogRouter, type SubDialogState } from '@/components/swmm/SubDialogs';
 import AIAssistPanel, { runDiagnostics } from '@/components/swmm/AIAssistPanel';
 import { HelpTopicsDialog, HelpTutorialDialog, HelpErrorsDialog } from '@/components/swmm/HelpDialogs';
+import HelpManualsDialog from '@/components/swmm/HelpManualsDialog';
 import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
 import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@/components/swmm/PhaseSpaceDialog';
@@ -149,7 +150,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
   const [detailsView, setDetailsView] = useState<'grid' | 'inp'>('grid');
   const [findSearchTerm, setFindSearchTerm] = useState('');
@@ -1922,6 +1923,7 @@ export default function SwmmUI() {
         )}
         {activeMenu === 'Help' && (
           <div className="flex items-center gap-0.5">
+            <ToolbarButton icon={<BookOpen className="w-4 h-4" />} label="Manuals" onClick={() => setOpenDialog('helpManuals')} testId="btn-manuals" />
             <ToolbarButton icon={<HelpCircle className="w-4 h-4" />} label="Topics" onClick={() => setOpenDialog('helpTopics')} testId="btn-topics" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Tutorial" onClick={() => setOpenDialog('helpTutorial')} testId="btn-tutorial" />
             <ToolbarButton icon={<AlertTriangle className="w-4 h-4" />} label="Errors" onClick={() => setOpenDialog('helpErrors')} testId="btn-errors" />
@@ -3727,6 +3729,11 @@ export default function SwmmUI() {
 
       <HelpTopicsDialog
         open={openDialog === 'helpTopics'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+      />
+
+      <HelpManualsDialog
+        open={openDialog === 'helpManuals'}
         onOpenChange={v => !v && setOpenDialog(null)}
       />
 

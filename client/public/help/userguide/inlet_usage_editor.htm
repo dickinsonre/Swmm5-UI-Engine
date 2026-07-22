@@ -1,0 +1,129 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Inlet Usage Editor</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Inlet Usage Editor</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="introduction.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="custom_inlet.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="interfacefilecombinedialog.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>The <span style="font-weight: bold;">Inlet Usage Editor</span> is used to place an <a href="inlet_structure_editor.htm">Inlet Structure</a> into a <a href="streets.htm">Street</a> or channel conduit. It is accessed by selecting &nbsp;a conduit into the <a href="propertyeditor.htm">Property Editor</a> and then clicking the ellipsis button in its <span style="font-weight: bold;">Inlets</span> property. The following information is requested by the editor:</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Inlet Structure</span></p>
+<p>The name of the inlet structure to use. Select a previously defined structure from the drop-down list. The list will contain only those inlets that are compatible with the conduit's cross section (i.e., curb and gutter inlets for street sections or drop inlets for trapezoidal or rectangular channel sections). Selecting the blank first item will remove the inlet from the conduit.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Capture Node</span></p>
+<p>The name of the node that receives flow captured by the inlet. You can select the node by clicking it on the <a href="studyareamap.htm">Study Area Map</a> or by selecting it from the <a href="projectbrowser.htm">Project Browser</a>.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Number of Inlets</span></p>
+<p>The number of identical inlets placed in the conduit. For two-sided street conduits this number refers to pairs of inlets placed on each side of the street. For example if 2 inlets are specified for a two-sided street, then a total of 4 inlets will be utilized, two on each side of the street.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Percent Clogged</span></p>
+<p>The percentage to which each inlet is clogged. Suppose a value of 50% was used. Then the normal flow capture computed for the inlet would be reduced by half.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Flow Restriction</span></p>
+<p>The maximum flow (in the project's flow units) that can be captured by a single inlet. A value of 0 indicates that flow capture is unrestricted.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Depression Height</span></p>
+<p>The height of any local gutter depression that exists over the length of the inlet (in feet or meters). This local depression will be added onto any continuous depression that the conduit's Street section might have. A value of 0 indicates no local depression. This parameter is ignored for drop inlets.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold;">Depression Width</span></p>
+<p>The width of any local gutter depression in feet or meters. It should be at least as large as the width that the inlet extends out into the gutter. This value is ignored if the depression height is 0 or if a drop inlet is used.</p>
+<p><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+<p><span style="font-weight: bold;">Inlet Placement</span></p>
+<p>Specifies whether the inlet is placed in an on-grade or on-sag location. Selecting <span style="font-family: 'Arial'; font-weight: bold;">AUTOMATIC</span> has the program determine the placement based on the topography of the street layout.</p>
+<p><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+<p style="text-indent: -24px; margin: 0px 0px 0px 24px;"><img src="icon_tip.gif" width="24" height="24" border="0" alt="icon_tip">Grated, curb opening and slotted drain inlets can only be used by Street conduits. Drop grates and drop curb inlets can only be used by rectangular or trapezoidal channels. Custom inlets can be used in any conduit.</p>
+<p style="margin: 5px 0px 0px 0px;"><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+
+</div>
+
+</body>
+</html>

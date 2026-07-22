@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML>
+<BODY>
+<OBJECT type="text/site properties">
+	<param name="Window Styles" value="0x800025">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Inlet Analysis with SWMM">
+	<param name="Local" value="inlet_analysis_with_swmm.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Inlet Types">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="inlet_types.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Inlet Concepts">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="inlet_concepts.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Inlet Analysis Workflow">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="inlet_analysis_workflow.htm">
+</OBJECT>
+</UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Example Project">
+	<param name="Local" value="example_project.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Step 1 - Lay Out the Network">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="layout_the_network.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Step 2 - Add External Inflows">
+	<param name="Local" value="add_external_inflows.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Step 3 - Create Street Cross-Sections">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="create_street_cross_sections.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Step 4 - Assign Street Cross-Sections">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="assign_street_cross_sections.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Step 5 - Create Inlet Designs">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="create_inlet_designs.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Step 6 - Assign Inlet Designs">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="assign_inlet_designs.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Step 7 - Run a Simulation">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="run_a_simulation.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Step 8 - View Simulation Results">
+	<param name="Local" value="view_simulation_results.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Street Summary Report">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="street_summary_report.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Flow Capture Time Series">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="flow_capture_time_series.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Flow Depth Profile Plot">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="flow_depth_profile_plot.htm">
+</OBJECT>
+</UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Additional Analyses">
+	<param name="Local" value="additional_analyses.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Depressed Gutters">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="depressed_gutters.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Sewer Backflow">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="sewer_backflow.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Kinematic Wave Routing">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="kinematic_wave_routing.htm">
+</OBJECT>
+</UL>
+</UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Computational Methods">
+	<param name="Local" value="computational_methods.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Curb and Gutter Inlets">
+	<param name="Local" value="curb_and_gutter_inlets.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="On-Grade Capture">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="on_grade_capture.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="On-Sag Capture">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="on_sag_capture.htm">
+</OBJECT>
+</UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Drop Inlets">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="drop_inlets.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Custom Inlets">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="custom_inlets.htm">
+</OBJECT>
+</UL>
+</UL>
+</BODY></HTML>

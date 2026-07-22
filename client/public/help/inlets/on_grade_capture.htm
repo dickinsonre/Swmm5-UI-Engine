@@ -1,0 +1,266 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>On-Grade Capture</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">On-Grade Capture</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="curb_and_gutter_inlets.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="on_sag_capture.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p><span style="font-weight: bold; text-decoration: underline;">Grate Inlets</span></p>
+<p><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+<p style="margin: 0px 0px 6px 0px;">Flow capture for grated inlets located on-grade is computed as follows:</p>
+<p style="margin: 0px 0px 6px 24px;"><img src="embim2.gif" width="188" height="26" vspace="1" hspace="1" border="0" alt=""></p>
+<p style="margin: 0px 0px 6px 24px;"><img src="embim3.gif" width="202" height="24" vspace="1" hspace="1" border="0" alt=""></p>
+<p style="margin: 0px 0px 6px 24px;"><img src="embim4.gif" width="211" height="23" vspace="1" hspace="1" border="0" alt=""></p>
+<p>where: </p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 24px;"><table cellspacing="2" cellpadding="2" border="0" style="border: none; border-spacing:2px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">Q</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">C</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>captured flow (cfs)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">Q</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>approach flow (cfs)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">E</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>ratio of flow over grate to total flow (depends on grate width)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">R</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">F</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>frontal capture efficiency</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">R</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">S</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>side capture efficiency</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">V</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>velocity of flow over the grate (ft/s)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">V</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>velocity at which water begins to splash over the inlet (depends on grate length) (ft/s)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">S</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">X</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>street cross slope (ft/ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="733" style="width:733px;"><p>grate length (ft)</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p>More information on determining values for <span style="font-family: 'Cambria'; font-style: italic;">E</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span> and <span style="font-family: 'Cambria'; font-style: italic;">V</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span> &nbsp;can be found in the HEC-22 Manual.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold; text-decoration: underline;">Curb Opening Inlets</span></p>
+<p>&nbsp;</p>
+<p style="margin: 0px 0px 6px 0px;">Flow capture for curb opening inlets placed on-grade is computed as follows:</p>
+<p style="text-align: justify; margin: 0px 0px 6px 24px;"><img src="embim5.gif" width="221" height="24" vspace="1" hspace="1" border="0" alt=""></p>
+<p style="text-align: justify; margin: 0px 0px 6px 24px;"><img src="embim6.gif" width="180" height="23" vspace="1" hspace="1" border="0" alt=""></p>
+<p style="text-align: justify; margin: 0px 0px 6px 24px;"><img src="embim7.gif" width="134" height="23" vspace="1" hspace="1" border="0" alt=""></p>
+<p>where:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 24px;"><table cellspacing="2" cellpadding="2" border="0" style="border: none; border-spacing:2px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="27" style="width:27px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L</span></p>
+</td>
+<td valign="middle" width="31" style="width:31px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="729" style="width:729px;"><p>length of curb opening (ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="27" style="width:27px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">T</span></p>
+</td>
+<td valign="middle" width="31" style="width:31px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="729" style="width:729px;"><p>length at which full capture is achieved (ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="27" style="width:27px;"><p><span style="font-family: 'Cambria'; font-style: italic;">S</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">L</span></p>
+</td>
+<td valign="middle" width="31" style="width:31px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="729" style="width:729px;"><p>longitudinal street slope (ft/ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="27" style="width:27px;"><p><span style="font-family: 'Cambria'; font-style: italic;">n</span></p>
+</td>
+<td valign="middle" width="31" style="width:31px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="729" style="width:729px;"><p>Manning's roughness coefficient for the street surface</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="27" style="width:27px;"><p><span style="font-family: 'Cambria'; font-style: italic;">a</span></p>
+</td>
+<td valign="middle" width="31" style="width:31px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="729" style="width:729px;"><p>curb depression (ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="27" style="width:27px;"><p><span style="font-family: 'Cambria'; font-style: italic;">W</span></p>
+</td>
+<td valign="middle" width="31" style="width:31px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="729" style="width:729px;"><p>depressed gutter width (ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="27" style="width:27px;"><p><span style="font-family: 'Cambria'; font-style: italic;">E</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span></p>
+</td>
+<td valign="middle" width="31" style="width:31px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="729" style="width:729px;"><p>ratio of flow over depressed gutter width to total flow</p>
+</td>
+</tr>
+</table>
+</div>
+<p>and <span style="font-size: 10pt; font-family: 'Cambria'; font-style: italic;">a</span>, <span style="font-family: 'Cambria'; font-style: italic;">W</span> and <span style="font-family: 'Cambria'; font-style: italic;">E</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span> only apply to composite street sections with depressed gutters. </p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold; text-decoration: underline;">Combination Inlets</span></p>
+<p><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+<p>A combination inlet consists of both a grate and curb opening placed together at the same location. Its on-grade flow capture equals that of the grate plus any flow captured by the portion of the curb opening that extends upstream of the grate’s length. The latter flow capture is computed first and is subtracted from the approach flow used to determine the grate’s flow capture.</p>
+<p>&nbsp;</p>
+<p><span style="font-weight: bold; text-decoration: underline;">Slotted Inlets</span></p>
+<p><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+<p>The flow capture capability of a slotted inlet located on-grade is the same as that of a curb opening inlet of equal length.</p>
+<p><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+
+</div>
+
+</body>
+</html>

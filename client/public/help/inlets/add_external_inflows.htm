@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Step 2 - Add External Inflows</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Step 2 - Add External Inflows</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="layout_the_network.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="create_street_cross_sections.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>A street drainage system will typically receive inflows from computed subcatchment runoff or from user-defined &nbsp;time series. These inflows need to be assigned to their respective locations within the street layout. For subcatchment runoff this involves setting the subcatchment's <span style="font-style: italic; font-weight: bold;">Outlet</span> property to the appropriate street node ID. For user-defined inflows, a user-supplied flow time series is assigned directly to the desired node's <span style="font-style: italic; font-weight: bold;">Inflows</span> property. In addition, the sewer sub-system may have direct inflows associated with its nodes, such as from Rainfall Dependent Inflow/Infiltration (RDII) or sanitary flows (for combined sewer systems).</p>
+<p>&nbsp;</p>
+<p style="margin: 0px 0px 6px 0px;">Our example project does not include subcatchment areas with their associated rainfall/runoff hydrology nor any direct sewer inflow. Instead it uses an external inflow time series assigned to street nodes 1 and 3. To do this, first create a Time Series object named <span style="font-style: italic; font-weight: bold;">TS1</span> with the following data:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table cellspacing="0" cellpadding="0" border="1" style="border: solid 2px #000000; border-spacing:0px; border-collapse: collapse;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="82" style="width:82px; border: solid 1px #000000;"><p><span style="font-weight: bold;"> &nbsp;Hour</span></p>
+</td>
+<td valign="middle" width="47" style="width:47px; border: solid 1px #000000;"><p style="text-align: center;">0</p>
+</td>
+<td valign="middle" width="46" style="width:46px; border: solid 1px #000000;"><p style="text-align: center;">1</p>
+</td>
+<td valign="middle" width="41" style="width:41px; border: solid 1px #000000;"><p style="text-align: center;">2</p>
+</td>
+<td valign="middle" width="33" style="width:33px; border: solid 1px #000000;"><p style="text-align: center;">3</p>
+</td>
+<td valign="middle" width="39" style="width:39px; border: solid 1px #000000;"><p style="text-align: center;">4</p>
+</td>
+<td valign="middle" width="40" style="width:40px; border: solid 1px #000000;"><p style="text-align: center;">5</p>
+</td>
+<td valign="middle" width="40" style="width:40px; border: solid 1px #000000;"><p style="text-align: center;">6</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="82" style="width:82px; border: solid 1px #000000;"><p><span style="font-weight: bold;"> &nbsp;Flow (cfs)</span></p>
+</td>
+<td valign="middle" width="47" style="width:47px; border: solid 1px #000000;"><p style="text-align: center;">0</p>
+</td>
+<td valign="middle" width="46" style="width:46px; border: solid 1px #000000;"><p style="text-align: center;">0.2</p>
+</td>
+<td valign="middle" width="41" style="width:41px; border: solid 1px #000000;"><p style="text-align: center;">0.4</p>
+</td>
+<td valign="middle" width="33" style="width:33px; border: solid 1px #000000;"><p style="text-align: center;">0.6</p>
+</td>
+<td valign="middle" width="39" style="width:39px; border: solid 1px #000000;"><p style="text-align: center;">0.4</p>
+</td>
+<td valign="middle" width="40" style="width:40px; border: solid 1px #000000;"><p style="text-align: center;">0.2</p>
+</td>
+<td valign="middle" width="40" style="width:40px; border: solid 1px #000000;"><p style="text-align: center;">0</p>
+</td>
+</tr>
+</table>
+</div>
+<p style="margin: 6px 0px 0px 0px;">Then edit the <span style="font-style: italic; font-weight: bold;">Inflows</span> property of nodes 1 and 3, assigning <span style="font-style: italic; font-weight: bold;">TS1</span> as a Direct Flow inflow for each.</p>
+<p style="margin: 6px 0px 0px 0px;"><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+
+</div>
+
+</body>
+</html>

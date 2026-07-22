@@ -1,0 +1,117 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Computational Methods</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Computational Methods</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="kinematic_wave_routing.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="curb_and_gutter_inlets.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>SWMM employs a simple lateral flow adjustment method to exchange street inlet captured flow and sewer overflow between the two sub-systems as diagrammed below. </p>
+<p>&nbsp;</p>
+<p><img src="lateralflowadjustment.png" width="295" height="203" border="0" alt="LateralFlowAdjustment"></p>
+<p>&nbsp;</p>
+<p>When implementing this approach the following actions are taken at each flow routing time step:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">1.</span></td><td>The flow captured at each inlet is computed using current values of street flow rates and flow depths.</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">2.</span></td><td>Each inlet’s captured flow is added to the lateral inflow<span style="font-size: 7pt; vertical-align: super;">1</span> that enters the inlet’s assigned sewer node and is subtracted from the lateral inflow seen by the downstream node of the inlet’s street conduit.</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">3.</span></td><td>Any current overflow (i.e., flooding) that an inlet’s sewer node experiences is added onto the lateral inflow for the inlet’s street node instead of having it leave the system as it normally would. This allows for a two-way flow exchange between the street and sewer once the water level in the sewer node reaches the ground elevation.</td></tr></table></div><div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 6px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="16"><span style="font-size: 11pt; font-family: 'Calibri'; color: #000000;">4.</span></td><td>The usual flow routing step normally taken by SWMM is then applied to update system hydraulics to the next point in time.</td></tr></table></div><p>&nbsp;</p>
+<p>By convention, two-sided Street conduits have pairs of identical inlets placed on each side. Inlet flow capture is computed for only one side of the street using half of the street's current flow and is then doubled to determine how much total flow is diverted to the street's sewer node.</p>
+<p>&nbsp;</p>
+<p>The next set of topics describe the methods used for computing flow capture for the different types of inlets.</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 7pt; vertical-align: super;">1</span> Lateral inflow refers to flow that a node receives from external sources (such as surface runoff, groundwater, rainfall dependent inflow/infiltration, user-supplied values, etc.) and can be either positive for inflow or negative for outflow.</p>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>

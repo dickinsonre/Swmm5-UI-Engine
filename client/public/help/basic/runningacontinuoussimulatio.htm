@@ -1,0 +1,117 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Running a Continuous Simulation</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<object width=0 id=hhpopuplink type="application/x-oleobject" classid="clsid:adb880a6-d8ff-11cf-9377-00aa003b7a11"></object>
+<script type="text/javascript" src="tutorial_popup_text.js"></script>
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+<object id=hhctrl_27 type="application/x-oleobject" classid="clsid:adb880a6-d8ff-11cf-9377-00aa003b7a11"><param name="Command" value="ALink"><param name="Window" value="Map"><param name="Item1" value=""><param name="Item2" value="$topicid_Map"></object></head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Running a Continuous Simulation</span></p>
+<p class="p_Heading1"><input type="button" style="font-family:MS Sans Serif;font-size:8pt;color:#000000" value="View Map" onclick="self.location.href='javascript:hhctrl_27.hhclick()'"></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="introduction.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="runningawaterqualityanalys.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="performingafrequencyanalysi.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>As a final exercise in this tutorial we will demonstrate how to run a long term continuous simulation using a historical rainfall record and how to perform a statistical frequency analysis on the results. The rainfall record will come from a file named sta310301.dat which was included with the example data sets provided with EPA SWMM. <span style="font-size: 8pt; font-weight: bold;"><a href="javascript:hhpopuplink.TextPopup(popid_224169951,FontFace,-1,-1,-1,-1)" class="popuplink">Note</a></span>. It contains several years of hourly rainfall beginning in January 1998. The data are stored in the National Climatic Data Center's DSI 3240 format which SWMM can automatically recognize.</p>
+<p>&nbsp;</p>
+<p>To run a continuous simulation with this rainfall record:</p>
+<p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">1.</td><td>Select the rain gage <span style="font-weight: bold;">Gage1</span> into the Property Editor.</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">2.</td><td>Change the selection of Data Source to <span style="font-weight: bold;">FILE</span>.</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">3.</td><td>Select the File Name data field and click the ellipsis button (or press the <span style="font-weight: bold;">Enter</span> key) to bring up a Windows File Selection dialog.</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">4.</td><td>Navigate to the folder where the SWMM example files were stored, select the file named <span style="font-weight: bold;">sta310301.dat</span>, and click <span style="font-weight: bold;">Open</span> to select the file and close the dialog.</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">5.</td><td>In the Station No. field of the Property Editor enter <span style="font-weight: bold;">310301</span>.</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">6.</td><td>Select the Options category in the Project Browser and click the <img src="edit.gif" width="16" height="16" border="0" alt="edit"> button to bring up the Simulation Options form.</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">7.</td><td>On the General page of the form, select <span style="font-weight: bold;">Kinematic Wave</span> as the Routing Method (this will help speed up the computations).</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">8.</td><td>On the Dates page of the form, set both the Start Analysis and Start Reporting dates to <span style="font-weight: bold;">01/01/1998</span>, and set the End Analysis date to <span style="font-weight: bold;">01/01/2000</span>.</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">9.</td><td>On the Time Steps page of the form, set the Routing Time Step to <span style="font-weight: bold;">300</span> seconds.</td></tr></table></div><p><span style="font-size: 5pt;">&nbsp;</span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table border="0" cellpadding="0" cellspacing="0" style="line-height: normal;"><tr style="vertical-align:baseline" valign="baseline"><td width="27">10.</td><td>Close the Simulation Options form by clicking the <span style="font-weight: bold;">OK</span> button and start the simulation by selecting <span style="font-weight: bold;">Project | Run Simulation</span> (or by clicking <img src="run.gif" width="16" height="16" border="0" alt="Run">on the Main Toolbar).</td></tr></table></div>
+</div>
+
+</body>
+</html>

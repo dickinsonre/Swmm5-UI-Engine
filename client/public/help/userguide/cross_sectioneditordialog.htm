@@ -1,0 +1,115 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Cross-Section Editor</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Cross-Section Editor</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="introduction.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="copydialog.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="curveeditordialog.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>The <span style="font-weight: bold;">Cross-Section Editor</span> dialog is used to specify the shape and dimensions of a conduit's cross-section.</p>
+<p>&nbsp;</p>
+<p><img src="crosssectioneditor.png" width="676" height="382" border="0" alt="CrossSectionEditor"></p>
+<p>&nbsp;</p>
+<p>When a shape is selected from the image list an appropriate set of edit fields appears for describing the dimensions of that shape. Length dimensions are in units of feet for US units and meters for SI units. Slope values represent ratios of horizontal to vertical distance. The Barrels field specifies how many identical parallel conduits exist between its end nodes.</p>
+<p>&nbsp;</p>
+<p>The <span style="font-weight: bold;">Force Main</span> shape option is a circular conduit that uses either the Hazen-Williams or Darcy-Weisbach formulas to compute friction losses for pressurized flow during Dynamic Wave flow routing. In this case the appropriate C-factor (for Hazen-Williams) or roughness height (for Darcy-Weisbach) is supplied as a cross-section property. The choice of friction loss equation is made on the <a href="simulationoptions_dynamicwave.htm">Dynamic Wave Simulation Options</a> dialog. Note that a conduit does not have to be assigned a Force Main shape for it to pressurize. Any of the other closed cross-section shapes can potentially pressurize and thus function as force mains using the Manning equation to compute friction losses.</p>
+<p>&nbsp;</p>
+<p>If a <span style="font-weight: bold;">Custom</span> shaped section is chosen, a drop-down edit box will appear where you can enter or select the name of a <a href="curves.htm">Shape Curve</a> that will be used to define the geometry of the section. This curve specifies how the width of the cross-section varies with height, where both width and height are scaled relative to the section's maximum depth. This allows the same shape curve to be used for conduits of differing sizes. Clicking the <span style="font-weight: bold;">Edit</span> button <img src="edit.gif" width="16" height="16" border="0" alt="edit"> next to the shape curve box will bring up the <a href="curveeditordialog.htm">Curve Editor</a> where the shape curve's coordinates can be edited.</p>
+<p>&nbsp;</p>
+<p>If a <span style="font-weight: bold;">Street</span> shaped section is chosen, &nbsp;a drop-down edit box will appear where you can enter or select the name of a <a href="streets.htm">Street</a> object that describes the cross-section's geometry. Clicking the <span style="font-weight: bold;">Edit</span> button <img src="edit.gif" width="16" height="16" border="0" alt="edit"> next to the edit box will bring up the <a href="street_section_editor.htm">Street Section Editor</a> where one can edit the street's geometry.</p>
+<p>&nbsp;</p>
+<p>If an <span style="font-weight: bold;">Irregular</span> shaped section is chosen, a drop-down edit box will appear where you can enter or select the name of a <a href="transects.htm">Transect</a> object that describes the cross-section's geometry. Clicking the <span style="font-weight: bold;">Edit</span> button <img src="edit.gif" width="16" height="16" border="0" alt="edit"> next to the edit box will bring up the <a href="transecteditordialog.htm">Transect Editor</a> which allows you to edit the transect's data.</p>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>

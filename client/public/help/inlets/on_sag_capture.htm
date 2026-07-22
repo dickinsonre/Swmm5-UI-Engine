@@ -1,0 +1,316 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>On-Sag Capture</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   
+<!--	a:link { color: #002682 }
+	a:hover { color: #FF0000; }
+	a:visited { color: #D63078 }  -->
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">On-Sag Capture</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="inlet_analysis_with_swmm.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="on_grade_capture.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="drop_inlets.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>Flow capture efficiency for an inlet in a sag location depends on the size of the inlet’s opening and the depth of water that collects next to it at the street curb. At low flow depths the inlet acts as a weir with</p>
+<p>&nbsp;</p>
+<p style="text-align: justify; line-height: 1.20; margin: 0px 0px 0px 24px;"><img src="embim8.gif" width="105" height="23" vspace="1" hspace="1" border="0" alt=""></p>
+<p>&nbsp;</p>
+<p>while at higher depths it acts as an orifice with</p>
+<p style="text-align: justify; line-height: 1.20;"><span style="font-size: 10pt; font-family: 'Arial'; color: #000000;">&nbsp;</span></p>
+<p style="text-align: justify; line-height: 1.20; margin: 0px 0px 0px 24px;"><img src="embim9.gif" width="115" height="27" vspace="1" hspace="1" border="0" alt=""></p>
+<p>&nbsp;</p>
+<p>where:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 24px;"><table cellspacing="2" cellpadding="2" border="0" style="border: none; border-spacing:2px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">Q</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">C</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="307" style="width:307px;"><p>captured flow (cfs)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="307" style="width:307px;"><p>weir coefficient (ft<span style="font-size: 7pt; vertical-align: super;">0.5</span>/sec)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="307" style="width:307px;"><p>orifice coefficient</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">g</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="307" style="width:307px;"><p>acceleration of gravity (ft/sec<span style="font-size: 7pt; vertical-align: super;">2</span><span style="font-size: 10pt;">)</span></p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="307" style="width:307px;"><p>effective length of inlet (ft)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">A</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="307" style="width:307px;"><p>open area of inlet (ft<span style="font-size: 7pt; vertical-align: super;">2</span><span style="font-size: 10pt;">)</span></p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">d</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="307" style="width:307px;"><p>effective depth of water seen by the inlet (ft)</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p>The values of <span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span> and <span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span> depend on the type of inlet (grate, curb opening, or slotted inlet).</p>
+<p>&nbsp;</p>
+<p><span style="text-decoration: underline;">Grates</span></p>
+<p>&nbsp;</p>
+<p>For grate inlets the following values are used in the flow capture equations:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 24px;"><table cellspacing="2" cellpadding="2" border="0" style="border: none; border-spacing:2px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="196" style="width:196px;"><p>3.0</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="196" style="width:196px;"><p>0.67</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="196" style="width:196px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L + 2W</span></p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">d</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="196" style="width:196px;"><p><span style="font-family: 'Cambria'; font-style: italic;">d</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">i</span><span style="font-size: 10pt; font-family: 'Cambria'; font-style: italic;"> + (W/2) S</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span><span style="font-size: 10pt; font-family: 'Cambria'; font-style: italic;"> </span></p>
+</td>
+</tr>
+</table>
+</div>
+<p>where <span style="font-family: 'Cambria'; font-style: italic;">W</span> is the grate's width, <span style="font-family: 'Cambria'; font-style: italic;">L</span> its length, <span style="font-family: 'Cambria'; font-style: italic;">S</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span> the gutter slope, and <span style="font-family: 'Cambria'; font-style: italic;">d</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">i</span><span style="font-size: 7pt; vertical-align: sub;"> </span>the depth of water at the street's curb. It is assumed that the depth at which weir flow becomes orifice flow is the depth at which the two flows are the same. This results in weir flow for depths <span style="font-family: 'Cambria'; font-style: italic;">d </span>below <span style="font-family: 'Cambria'; font-style: italic;">1.79 A</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span><span style="font-family: 'Cambria'; font-style: italic;"> / L</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span> and orifice flow for depths above it.</p>
+<p>&nbsp;</p>
+<p><span style="text-decoration: underline;">Curb Openings</span></p>
+<p>&nbsp;</p>
+<p>For curb opening inlets the following values are used in the flow capture equations:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 24px;"><table cellspacing="2" cellpadding="2" border="0" style="border: none; border-spacing:2px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p>3.0 for uniform cross slope or <span style="font-family: 'Cambria'; font-style: italic;">L</span> &gt; 12 ft</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><br>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p>2.3 otherwise</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p>0.67</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L </span>for uniform cross slope or <span style="font-family: 'Cambria'; font-style: italic;">L</span> &gt; 12 ft</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><br>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L + 2W </span>otherwise</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">d</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p><span style="font-family: 'Cambria'; font-style: italic;">d</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">i</span><span style="font-size: 10pt; font-family: 'Cambria'; font-style: italic;"> - (h/2) sin(</span><span style="font-size: 10pt; font-family: 'Arial Unicode MS', 'Lucida Sans Unicode', 'Arial'; font-style: italic;">&theta;</span><span style="font-size: 10pt; font-family: 'Cambria'; font-style: italic;">) </span></p>
+</td>
+</tr>
+</table>
+</div>
+<p>where <span style="font-family: 'Cambria'; font-style: italic;">L</span> is the length of the curb opening, <span style="font-family: 'Cambria'; font-style: italic;">h </span>its height, <span style="font-family: 'Cambria'; font-style: italic;">W</span> the width of a depressed gutter, <span style="font-family: 'Arial Unicode MS', 'Lucida Sans Unicode', 'Arial'; font-style: italic;">&theta;</span> &nbsp;the angle that the inlet's throat makes with the vertical (0 degrees for a vertical throat, 90 degrees for a horizontal throat), and <span style="font-family: 'Cambria'; font-style: italic;">d</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">i</span> is the depth of water at the curb.</p>
+<p>&nbsp;</p>
+<p>Weir flow occurs at effective depths below <span style="font-family: 'Cambria'; font-style: italic;">h</span> while orifice flow occurs at depths greater than 1.4<span style="font-family: 'Cambria'; font-style: italic;">h</span>. For depths in between these flow capture is linearly interpolated between the flow capture at these two depths.</p>
+<p>&nbsp;</p>
+<p><span style="text-decoration: underline;">Slotted Inlets</span></p>
+<p>&nbsp;</p>
+<p>For slotted inlets the variables in the flow capture equations are:</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 24px;"><table cellspacing="2" cellpadding="2" border="0" style="border: none; border-spacing:2px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p>2.48</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">C</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">O</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p>0.8</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">W</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p><span style="font-family: 'Cambria'; font-style: italic;">L </span></p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="29" style="width:29px;"><p><span style="font-family: 'Cambria'; font-style: italic;">d</span></p>
+</td>
+<td valign="middle" width="25" style="width:25px;"><p style="text-align: center;">=</p>
+</td>
+<td valign="top" width="396" style="width:396px;"><p><span style="font-family: 'Cambria'; font-style: italic;">d</span><span style="font-size: 7pt; font-family: 'Cambria'; font-style: italic; vertical-align: sub;">i</span></p>
+</td>
+</tr>
+</table>
+</div>
+<p>where <span style="font-family: 'Cambria'; font-style: italic;">L</span> is the inlet length. Weir flow holds for d = &nbsp;0.2 feet while orifice flow occurs for d = 0.4 feet. In between these depths flow capture is linearly interpolated between the flow capture at these two depths.</p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>

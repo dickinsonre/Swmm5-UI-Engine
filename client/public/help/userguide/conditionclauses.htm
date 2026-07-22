@@ -1,0 +1,286 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+   <title>Condition Clauses</title>
+   <meta name="generator" content="Help & Manual">
+   <meta name="keywords" content="Control Rules,Control Rules Condition Clauses">
+
+   <style type="text/css">
+	a:link { color: blue; text-decoration: none; }
+	a:visited { color: blue; }
+	a:hover { text-decoration: underline; }
+   </style>
+
+<!-- This style sheet goes into compiled HTML HELP -->
+   <style type="text/css" media="screen">
+	#nsr
+	 {
+	 padding: 6px 6px 0px 6px;
+	 border-bottom: none;
+	 background: #649CCC;
+	 vertical-align: top;
+	 z-index: 2;
+	 visibility: visible;
+	 left: 0;
+	 top: 0;
+	 position: absolute;
+	 width: 100%;
+	 }
+	#mainbody
+	 {
+	 left: 0;
+	 top: 0px;
+	 margin: 0;
+	 position: absolute;
+	 padding: 10px;
+	 overflow: auto;
+	 height: 100%;
+	 z-index: 1;
+	 background-repeat: no-repeat;
+	 background-position: bottom right;
+	 background-attachment: fixed;
+	 }
+   </style>
+   <style type="text/css" media="print">
+	#nsr
+	 { visibility: none; }
+	#mainbody
+	 { overflow: visible; }
+   </style>
+   <script type="text/javascript" language="JavaScript" src="nonscroll.js"></script>
+
+
+
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+   <link type="text/css" href="default.css" rel="stylesheet" />
+
+<script type="text/javascript" src="helpman_topicinit.js"></script>
+</head>
+<body bgcolor="#FFFFFF" 
+ marginheight="0" marginwidth="0" leftmargin="0" topmargin="0"
+ scroll="no"
+>
+
+
+<div id="nsr">
+<table width="100%" border="0" cellspacing="0" cellpadding="2"
+ bgcolor="#649CCC">
+  <tr valign="top">
+    <td align="left">
+      <p class="p_Heading1"><span class="f_Heading1">Condition Clauses</span></p>
+
+    </td>
+    <td align="right">
+     <font face="Arial" size="2">
+     <a href="introduction.htm"
+        onmouseover="document.images.main.src='button_main_h.gif'" 
+  	onmouseout="document.images.main.src='button_main.gif'">
+        <img name=main src="button_main.gif" border=0 alt="Return to Introduction"></a>&nbsp;
+     <a href="ruleformat.htm"
+        onmouseover="document.images.prev.src='button_prev_h.gif'" 
+  	onmouseout="document.images.prev.src='button_prev.gif'"><img name=prev src="button_prev.gif" border=0 alt="Previous page"></a>&nbsp;
+     
+
+     <a href="actionclauses.htm"
+        onmouseover="document.images.next.src='button_next_h.gif'" 
+  	onmouseout="document.images.next.src='button_next.gif'"><img name=next src="button_next.gif" border=0 alt="Next page"></a>
+     
+     </font>
+    </td>
+  </tr>
+</table>
+</div>
+
+
+<div id="mainbody">
+<p>A Condition Clause of a Control Rule has the following formats:</p>
+<p><span style="font-size: 10pt; font-family: 'Segoe UI';">&nbsp;</span></p>
+<p><span style="font-size: 10pt; font-family: 'Courier New';">object id attribute relation value</span></p>
+<p><span style="font-size: 10pt; font-family: 'Courier New';">object id attribute relation object id attribute</span></p>
+<p>&nbsp;</p>
+<p>where</p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table cellspacing="0" cellpadding="1" border="0" style="border: none; border-spacing:0px;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px;"><p style="margin: 0px 0px 0px 13px;"><span style="font-size: 10pt; font-family: 'Courier New';">object</span></p>
+</td>
+<td valign="top" width="20" style="width:20px;"><p>=</p>
+</td>
+<td valign="top" width="288" style="width:288px;"><p> &nbsp;a category of object</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px;"><p style="margin: 0px 0px 0px 13px;"><span style="font-size: 10pt; font-family: 'Courier New';">id</span></p>
+</td>
+<td valign="top" width="20" style="width:20px;"><p>=</p>
+</td>
+<td valign="top" width="288" style="width:288px;"><p> &nbsp;the object's ID label</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px;"><p style="margin: 0px 0px 0px 13px;"><span style="font-size: 10pt; font-family: 'Courier New';">attribute</span></p>
+</td>
+<td valign="top" width="20" style="width:20px;"><p>=</p>
+</td>
+<td valign="top" width="288" style="width:288px;"><p> &nbsp;an attribute or property of the object</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px;"><p style="margin: 0px 0px 0px 13px;"><span style="font-size: 10pt; font-family: 'Courier New';">relation</span></p>
+</td>
+<td valign="top" width="20" style="width:20px;"><p>=</p>
+</td>
+<td valign="top" width="288" style="width:288px;"><p> &nbsp;a relational operator (=, &lt;&gt;, &lt;, &lt;=, &gt;, &gt;=)</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px;"><p style="margin: 0px 0px 0px 13px;"><span style="font-size: 10pt; font-family: 'Courier New';">value</span></p>
+</td>
+<td valign="top" width="20" style="width:20px;"><p>=</p>
+</td>
+<td valign="top" width="288" style="width:288px;"><p> &nbsp;an attribute value</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p>Some examples of condition clauses are:</p>
+<p><span style="font-size: 10pt; font-family: 'Arial';">&nbsp;</span></p>
+<p><span style="font-size: 10pt; font-family: 'Courier New';">GAGE &nbsp;G1 &nbsp; 6-HR_DEPTH &gt; 0.5</span></p>
+<p><span style="font-size: 10pt; font-family: 'Courier New';">NODE &nbsp;N23 &nbsp;DEPTH &nbsp;&gt; &nbsp;10</span></p>
+<p><span style="font-size: 10pt; font-family: 'Courier New';">NODE &nbsp;N23 &nbsp;DEPTH &nbsp;&gt; &nbsp;NODE 25 DEPTH</span></p>
+<p><span style="font-size: 10pt; font-family: 'Courier New';">PUMP &nbsp;P45 &nbsp;STATUS = &nbsp;OFF</span></p>
+<p><span style="font-size: 10pt; font-family: 'Courier New';">LINK &nbsp;P45 &nbsp;TIMEOPEN &gt;= 6:30</span></p>
+<p><span style="font-size: 10pt; font-family: 'Courier New';">SIMULATION CLOCKTIME = 22:45:00</span></p>
+<p>&nbsp;</p>
+<p>The objects and attributes that can appear in a condition clause are as follows:</p>
+<p><span style="font-size: 10pt; font-family: 'Arial';">  </span></p>
+<div style="text-align: left; text-indent: 0px; padding: 0px 0px 0px 0px; margin: 0px 0px 0px 0px;"><table cellspacing="0" cellpadding="2" border="0" style="border: none; border-spacing:0px; border-collapse: collapse;">
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p><span style="font-weight: bold;">Object</span></p>
+</td>
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p><span style="font-weight: bold;">Attributes</span></p>
+</td>
+<td valign="top" width="171" style="width:171px; border: solid 1px #000000;"><p><span style="font-weight: bold;">Value</span></p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>GAGE</p>
+</td>
+<td valign="middle" width="96" style="width:96px; border: solid 1px #000000;"><p>INTENSITY</p>
+<p>n-HR_DEPTH</p>
+</td>
+<td valign="middle" width="171" style="width:171px; border: solid 1px #000000;"><p>numerical value</p>
+<p>numerical value</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>NODE</p>
+</td>
+<td valign="middle" width="96" style="width:96px; border: solid 1px #000000;"><p>DEPTH</p>
+<p>MAXDEPTH</p>
+<p>HEAD</p>
+<p>VOLUME</p>
+<p>INFLOW</p>
+</td>
+<td valign="middle" width="171" style="width:171px; border: solid 1px #000000;"><p>numerical value</p>
+<p>numerical value</p>
+<p>numerical value</p>
+<p>numerical value</p>
+<p>numerical value</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>LINK or</p>
+<p>CONDUIT</p>
+</td>
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>FLOW</p>
+<p>FULLFLOW</p>
+<p>DEPTH</p>
+<p>MAXDEPTH</p>
+<p>VELOCITY</p>
+<p>LENGTH</p>
+<p>SLOPE</p>
+<p>STATUS</p>
+<p>TIMEOPEN</p>
+<p>TIMECLOSED</p>
+</td>
+<td valign="top" width="171" style="width:171px; border: solid 1px #000000;"><p>numerical value</p>
+<p>numerical value</p>
+<p>numerical value</p>
+<p>numerical value</p>
+<p>numerical value</p>
+<p>numerical value</p>
+<p>fractional value</p>
+<p>OPEN or CLOSED</p>
+<p>decimal hours or hr:min</p>
+<p>decimal hours or hr:min</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>PUMP</p>
+</td>
+<td valign="middle" width="96" style="width:96px; border: solid 1px #000000;"><p>STATUS</p>
+<p>SETTING</p>
+<p>FLOW</p>
+</td>
+<td valign="middle" width="171" style="width:171px; border: solid 1px #000000;"><p>ON or OFF</p>
+<p>pump curve multiplier</p>
+<p>numerical value</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>ORIFICE</p>
+</td>
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>SETTING</p>
+</td>
+<td valign="top" width="171" style="width:171px; border: solid 1px #000000;"><p>fraction open</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>WEIR</p>
+</td>
+<td valign="middle" width="96" style="width:96px; border: solid 1px #000000;"><p>SETTING</p>
+</td>
+<td valign="middle" width="171" style="width:171px; border: solid 1px #000000;"><p>fraction open</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>OUTLET</p>
+</td>
+<td valign="middle" width="96" style="width:96px; border: solid 1px #000000;"><p>SETTING</p>
+</td>
+<td valign="middle" width="171" style="width:171px; border: solid 1px #000000;"><p>rating curve multiplier</p>
+</td>
+</tr>
+<tr style="text-align:left;vertical-align:top;">
+<td valign="top" width="96" style="width:96px; border: solid 1px #000000;"><p>SIMULATION</p>
+</td>
+<td valign="middle" width="96" style="width:96px; border: solid 1px #000000;"><p>TIME</p>
+<p>&nbsp;</p>
+<p>DATE</p>
+<p>MONTH</p>
+<p>DAY</p>
+<p>DAYOFYEAR</p>
+<p>CLOCKTIME</p>
+</td>
+<td valign="middle" width="171" style="width:171px; border: solid 1px #000000;"><p>elapsed time in decimal hours or hr:min:sec</p>
+<p>month/day/year</p>
+<p>month of year (1 - 12)</p>
+<p>day of week (Sunday = 1)</p>
+<p>day of year (month/day)</p>
+<p>time of day in hr:min:sec</p>
+</td>
+</tr>
+</table>
+</div>
+<p>&nbsp;</p>
+<p>Gage <span style="font-family: 'Courier New';">INTENSITY</span> is the rainfall intensity for a specific rain gage in the current simulation time period. Gage <span style="font-family: 'Courier New';">n-HR_DEPTH</span> is a gage's total rainfall depth over the past <span style="font-family: 'Courier New';">n</span> hours where <span style="font-family: 'Courier New';">n</span> is a number between 1 and 48.</p>
+<p>&nbsp;</p>
+<p><span style="font-family: 'Courier New';">TIMEOPEN</span> is the duration a link has been in an <span style="font-family: 'Courier New';">OPEN</span> or <span style="font-family: 'Courier New';">ON</span> state or have its <span style="font-family: 'Courier New';">SETTING</span> be greater than zero; <span style="font-family: 'Courier New';">TIMECLOSED</span> is the duration it has remained in a <span style="font-family: 'Courier New';">CLOSED</span> or <span style="font-family: 'Courier New';">OFF</span> state or have its <span style="font-family: 'Courier New';">SETTING</span> be zero.</p>
+<p>&nbsp;</p>
+
+</div>
+
+</body>
+</html>
