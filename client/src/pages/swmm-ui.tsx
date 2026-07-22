@@ -29,6 +29,7 @@ import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
 import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@/components/swmm/PhaseSpaceDialog';
 import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
+import { REGRESSION_METRICS, extractRunSnapshot, compareSnapshots, comparisonToCsv, getDefaultTolerances, type RunSnapshot, type ToleranceSet } from '@/lib/regression-compare';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
@@ -232,6 +233,7 @@ export default function SwmmUI() {
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [splitScreenProject, setSplitScreenProject] = useState<{ project: SwmmProject; results: SimulationResults; fileName: string } | null>(null);
+  const [regressionBaseline, setRegressionBaseline] = useState<RunSnapshot | null>(null);
   const animRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const networkMapRef = useRef<NetworkMapHandle>(null);
@@ -3292,6 +3294,8 @@ export default function SwmmUI() {
             timeStep={timeStep}
             projectB={splitScreenProject}
             onLoadB={(p, r, n) => setSplitScreenProject({ project: p, results: r, fileName: n })}
+            regressionBaseline={regressionBaseline}
+            onSetBaseline={setRegressionBaseline}
           />
         </DialogContent>
       </Dialog>
@@ -6016,16 +6020,58 @@ function TransectEditorContent({ project, onUpdateProject }: {
   );
 }
 
-function SplitScreenContent({ projectA, resultsA, fileNameA, timeStep, projectB, onLoadB }: {
+function SplitScreenContent({ projectA, resultsA, fileNameA, timeStep, projectB, onLoadB, regressionBaseline, onSetBaseline }: {
   projectA: SwmmProject;
   resultsA: SimulationResults | null;
   fileNameA: string;
   timeStep: number;
   projectB: { project: SwmmProject; results: SimulationResults; fileName: string } | null;
   onLoadB: (p: SwmmProject, r: SimulationResults, n: string) => void;
+  regressionBaseline: RunSnapshot | null;
+  onSetBaseline: (s: RunSnapshot | null) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [diffMetrics, setDiffMetrics] = useState<{ name: string; varA: number; varB: number; diff: number }[]>([]);
+  const [compareTab, setCompareTab] = useState<'topology' | 'regression'>('topology');
+  const [tolerances, setTolerances] = useState<ToleranceSet>(getDefaultTolerances);
+
+  const revisedSnapshot = useMemo(() => {
+    if (!resultsA || resultsA.timeSteps.length === 0) return null;
+    return extractRunSnapshot(projectA, resultsA, fileNameA);
+  }, [projectA, resultsA, fileNameA]);
+
+  const regressionRows = useMemo(() => {
+    if (!regressionBaseline || !revisedSnapshot) return null;
+    return compareSnapshots(regressionBaseline, revisedSnapshot, tolerances);
+  }, [regressionBaseline, revisedSnapshot, tolerances]);
+
+  const regressionSummary = useMemo(() => {
+    if (!regressionRows) return null;
+    const counts = { Pass: 0, Review: 0, Fail: 0, 'N/A': 0 };
+    for (const r of regressionRows) counts[r.status]++;
+    return counts;
+  }, [regressionRows]);
+
+  const handleExportRegressionCsv = () => {
+    if (!regressionRows || !regressionBaseline || !revisedSnapshot) return;
+    const csv = comparisonToCsv(regressionRows, regressionBaseline, revisedSnapshot, tolerances);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'regression_comparison.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const updateTolerance = (key: string, field: 'passPct' | 'reviewPct', value: string) => {
+    const num = parseFloat(value);
+    if (isNaN(num) || num < 0) return;
+    setTolerances(prev => ({ ...prev, [key]: { ...prev[key], [field]: num } }));
+  };
+
+  const statusColor = (s: string) => s === 'Pass' ? '#2a8a4a' : s === 'Review' ? '#c08820' : s === 'Fail' ? '#d04040' : '#9090a0';
+  const statusBg = (s: string) => s === 'Pass' ? '#eaf6ee' : s === 'Review' ? '#fdf6e8' : s === 'Fail' ? '#fdeaea' : '#f4f4f6';
 
   const [loadingB, setLoadingB] = useState(false);
 
@@ -6088,6 +6134,156 @@ function SplitScreenContent({ projectA, resultsA, fileNameA, timeStep, projectB,
 
   return (
     <div className="space-y-3" data-testid="split-screen-content">
+      <div className="flex gap-1 border-b border-[#d0d0d8]">
+        <button
+          onClick={() => setCompareTab('topology')}
+          className={`px-3 py-1.5 text-[11px] font-medium border-b-2 -mb-px ${compareTab === 'topology' ? 'border-[#2c6eb5] text-[#2c6eb5]' : 'border-transparent text-[#6b6b7b] hover:text-[#2a2a3e]'}`}
+          data-testid="tab-topology"
+        >
+          Topology Comparison
+        </button>
+        <button
+          onClick={() => setCompareTab('regression')}
+          className={`px-3 py-1.5 text-[11px] font-medium border-b-2 -mb-px ${compareTab === 'regression' ? 'border-[#2c6eb5] text-[#2c6eb5]' : 'border-transparent text-[#6b6b7b] hover:text-[#2a2a3e]'}`}
+          data-testid="tab-regression"
+        >
+          Regression Check
+        </button>
+      </div>
+
+      {compareTab === 'regression' && (
+        <div className="space-y-3" data-testid="regression-content">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="border border-[#d0d0d8] rounded p-3 bg-[#f0f7ff]">
+              <div className="text-[11px] font-bold text-[#2c3e6b] mb-1">Baseline Run</div>
+              {regressionBaseline ? (
+                <div className="text-[10px] text-[#6b6b7b] space-y-0.5">
+                  <div data-testid="text-baseline-info">{regressionBaseline.fileName} — {regressionBaseline.engineUsed} engine, {regressionBaseline.timeSteps} steps</div>
+                  <div>Captured: {new Date(regressionBaseline.capturedAt).toLocaleString()}</div>
+                  <Button variant="outline" size="sm" onClick={() => onSetBaseline(null)} className="text-[10px] h-6 mt-1" data-testid="btn-clear-baseline">
+                    <X className="w-3 h-3 mr-1" /> Clear Baseline
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] text-[#9090a0]">No baseline captured. Run a simulation, then capture it as the baseline.</div>
+                  <Button
+                    variant="outline" size="sm"
+                    disabled={!revisedSnapshot}
+                    onClick={() => revisedSnapshot && onSetBaseline(revisedSnapshot)}
+                    className="text-[10px] h-6"
+                    data-testid="btn-set-baseline"
+                  >
+                    <Check className="w-3 h-3 mr-1" /> Capture Current Run as Baseline
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="border border-[#d0d0d8] rounded p-3 bg-[#fff7f0]">
+              <div className="text-[11px] font-bold text-[#2c3e6b] mb-1">Revised Run (Current)</div>
+              {revisedSnapshot ? (
+                <div className="text-[10px] text-[#6b6b7b] space-y-0.5">
+                  <div data-testid="text-revised-info">{revisedSnapshot.fileName} — {revisedSnapshot.engineUsed} engine, {revisedSnapshot.timeSteps} steps</div>
+                  {regressionBaseline && (
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => onSetBaseline(revisedSnapshot)}
+                      className="text-[10px] h-6 mt-1"
+                      data-testid="btn-promote-baseline"
+                    >
+                      <ArrowLeftRight className="w-3 h-3 mr-1" /> Promote to Baseline
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[10px] text-[#9090a0]">No current results. Run a simulation (Project &gt; Run) to compare against the baseline.</div>
+              )}
+            </div>
+          </div>
+
+          {regressionRows && regressionSummary ? (
+            <>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] px-2 py-0.5 rounded font-bold" style={{ background: '#eaf6ee', color: '#2a8a4a' }} data-testid="count-pass">Pass: {regressionSummary.Pass}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded font-bold" style={{ background: '#fdf6e8', color: '#c08820' }} data-testid="count-review">Review: {regressionSummary.Review}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded font-bold" style={{ background: '#fdeaea', color: '#d04040' }} data-testid="count-fail">Fail: {regressionSummary.Fail}</span>
+                <div className="ml-auto">
+                  <Button variant="outline" size="sm" onClick={handleExportRegressionCsv} className="text-[10px] h-6" data-testid="btn-export-regression-csv">
+                    <Download className="w-3 h-3 mr-1" /> Export CSV
+                  </Button>
+                </div>
+              </div>
+              <div className="max-h-[380px] overflow-auto border border-[#d0d0d8] rounded">
+                <table className="w-full text-[10px]">
+                  <thead className="bg-[#f0f0f4] sticky top-0 z-10">
+                    <tr>
+                      <th className="text-left px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Metric</th>
+                      <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Baseline</th>
+                      <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Revised</th>
+                      <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Diff</th>
+                      <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">% Change</th>
+                      <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]" title="Pass if |% change| is at or below this">Pass ≤ %</th>
+                      <th className="text-right px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]" title="Review if |% change| is at or below this; Fail above">Review ≤ %</th>
+                      <th className="text-center px-2 py-1 text-[#4a4a5a] border-b border-[#d0d0d8]">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {regressionRows.map((row) => {
+                      const higherIsWorse = REGRESSION_METRICS.find(m => m.key === row.key)?.higherIsWorse ?? true;
+                      const worsening = row.diff !== null ? (higherIsWorse ? row.diff : -row.diff) : 0;
+                      return (
+                      <tr key={row.key} className="border-b border-[#f0f0f4] last:border-b-0" data-testid={`row-regression-${row.key}`}>
+                        <td className="px-2 py-1">{row.label}</td>
+                        <td className="px-2 py-1 text-right font-mono">{row.baseline !== null ? row.baseline.toPrecision(5) : '—'}</td>
+                        <td className="px-2 py-1 text-right font-mono">{row.revised !== null ? row.revised.toPrecision(5) : '—'}</td>
+                        <td className="px-2 py-1 text-right font-mono" style={{ color: worsening > 0 ? '#d04040' : worsening < 0 ? '#2a8a4a' : '#6b6b7b' }}>
+                          {row.diff !== null ? `${row.diff > 0 ? '+' : ''}${row.diff.toPrecision(4)}` : '—'}
+                        </td>
+                        <td className="px-2 py-1 text-right font-mono">{row.pctChange !== null ? `${row.pctChange > 0 ? '+' : ''}${row.pctChange.toFixed(2)}%` : '—'}</td>
+                        <td className="px-1 py-0.5 text-right">
+                          <input
+                            type="number" min="0" step="1"
+                            value={tolerances[row.key]?.passPct ?? 0}
+                            onChange={e => updateTolerance(row.key, 'passPct', e.target.value)}
+                            className="w-14 text-right text-[10px] border border-[#d0d0d8] rounded px-1 py-0.5 bg-white"
+                            data-testid={`input-pass-tol-${row.key}`}
+                          />
+                        </td>
+                        <td className="px-1 py-0.5 text-right">
+                          <input
+                            type="number" min="0" step="1"
+                            value={tolerances[row.key]?.reviewPct ?? 0}
+                            onChange={e => updateTolerance(row.key, 'reviewPct', e.target.value)}
+                            className="w-14 text-right text-[10px] border border-[#d0d0d8] rounded px-1 py-0.5 bg-white"
+                            data-testid={`input-review-tol-${row.key}`}
+                          />
+                        </td>
+                        <td className="px-2 py-1 text-center">
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ color: statusColor(row.status), background: statusBg(row.status) }} data-testid={`status-${row.key}`}>
+                            {row.status}
+                          </span>
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-[9px] text-[#9090a0]">
+                Status is direction-aware: only changes in the bad direction (e.g. more flooding, less outfall flow) can Fail — Pass ≤ pass tolerance, Review ≤ review tolerance, Fail above. Improvements never Fail but large ones are flagged for Review. Tiny absolute differences always pass. Volumes are approximate (rate × reporting interval).
+              </div>
+            </>
+          ) : (
+            <div className="text-[10px] text-[#9090a0] border border-dashed border-[#d0d0d8] rounded p-4 text-center" data-testid="text-regression-empty">
+              {regressionBaseline
+                ? 'Run a simulation to compare the current results against the baseline.'
+                : 'Capture a baseline first, then modify your model, re-run, and reopen this tab to see the pass/fail comparison.'}
+            </div>
+          )}
+        </div>
+      )}
+
+      {compareTab === 'topology' && (<>
       <div className="grid grid-cols-2 gap-4">
         <div className="border border-[#d0d0d8] rounded p-3 bg-[#f0f7ff]">
           <div className="text-[11px] font-bold text-[#2c3e6b] mb-2">Scenario A: {fileNameA || 'Current Model'}</div>
@@ -6164,6 +6360,7 @@ function SplitScreenContent({ projectA, resultsA, fileNameA, timeStep, projectB,
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 }
