@@ -51,12 +51,12 @@ async function probeEngine(): Promise<boolean> {
         settled = true;
         resolve(ok);
       };
-      proc.on('error', () => done(false));
-      proc.on('close', () => done(true));
-      setTimeout(() => {
+      const probeTimer = setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch {}
         done(true); // it spawned; treat slow help output as executable
       }, 5000);
+      proc.on('error', () => { clearTimeout(probeTimer); done(false); });
+      proc.on('close', () => { clearTimeout(probeTimer); done(true); });
     } catch {
       resolve(false);
     }
@@ -69,20 +69,105 @@ function readBodyWithLimit(req: Request): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
-    req.on('data', (chunk: Buffer) => {
+    const onData = (chunk: Buffer) => {
       total += chunk.length;
       if (total > MAX_INP_BYTES) {
         const err = new Error(`Request body exceeds ${MAX_INP_BYTES / (1024 * 1024)} MB limit`) as any;
         err.statusCode = 413;
+        // Stop buffering and drain the rest so the 413 response can be
+        // delivered cleanly instead of aborting the connection mid-upload.
+        req.removeListener('data', onData);
+        chunks.length = 0;
+        req.resume();
         reject(err);
-        req.destroy();
         return;
       }
       chunks.push(chunk);
-    });
+    };
+    req.on('data', onData);
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+
+// Unified structured response when the local engine cannot run. Both run
+// endpoints return this same shape (HTTP 503) so the client can always
+// detect it and fall back to WASM/remote.
+function sendEngineUnavailable(res: Response, detail?: string) {
+  if (res.headersSent) return;
+  res.status(503).json({
+    engine: 'local',
+    available: false,
+    fallbackRecommended: 'wasm',
+    error: detail || 'Local SWMM engine not available',
+  });
+}
+
+// Shared simulation service used by both run endpoints:
+// validate → execute → timeout → cleanup → normalized errors → engine metadata.
+async function runLocalSimulation(inpText: string, res: Response): Promise<void> {
+  if (!(await probeEngine())) {
+    sendEngineUnavailable(res);
+    return;
+  }
+
+  const jobId = randomUUID();
+  const tmpDir = join('/tmp', `swmm-${jobId}`);
+  await mkdir(tmpDir, { recursive: true });
+  const cleanup = async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} };
+  const inpPath = join(tmpDir, 'model.inp');
+  const rptPath = join(tmpDir, 'model.rpt');
+  const outPath = join(tmpDir, 'model.out');
+
+  try {
+    await writeFile(inpPath, inpText, 'utf-8');
+    const proc = spawn(SWMM_ENGINE_PATH, [inpPath, rptPath, outPath]);
+    let stdout = '';
+    let stderr = '';
+    let responded = false;
+    const respond = (fn: () => void) => {
+      if (responded || res.headersSent) return;
+      responded = true;
+      fn();
+    };
+    const killTimer = setTimeout(async () => {
+      try { proc.kill('SIGKILL'); } catch {}
+      respond(() => res.status(500).json({ error: `Simulation timed out after ${SIM_TIMEOUT_MS / 1000} seconds` }));
+      await cleanup();
+    }, SIM_TIMEOUT_MS);
+
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    proc.on('close', async (code) => {
+      clearTimeout(killTimer);
+      let reportContent = '';
+      try { reportContent = await readFile(rptPath, 'utf-8'); } catch (e: any) { console.log('[swmm] Failed to read rpt:', e.message); }
+      let outBase64 = '';
+      try { const outBuf = await readFile(outPath); outBase64 = outBuf.toString('base64'); } catch (e: any) { console.log('[swmm] Failed to read out:', e.message); }
+      console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outBase64.length} base64 chars, exit=${code}`);
+      const hasErrors = reportContent.includes('ERROR') || stdout.includes('There are errors') || stdout.includes('has errors');
+      await cleanup();
+      respond(() => {
+        if (hasErrors) {
+          res.json({ status: 'failed', error: 'SWMM simulation completed with errors', reportContent, stdout, exitCode: code, engineUsed: 'local' });
+        } else {
+          res.json({ status: 'success', reportContent, outBase64, stdout, exitCode: code, engineUsed: 'local' });
+        }
+      });
+    });
+
+    proc.on('error', async (err) => {
+      clearTimeout(killTimer);
+      markEngineUnavailable(err as NodeJS.ErrnoException);
+      console.log(`[swmm] spawn failed (${err.message}); marking local engine unavailable`);
+      await cleanup();
+      respond(() => sendEngineUnavailable(res, `Local engine cannot execute: ${err.message}`));
+    });
+  } catch (error: any) {
+    await cleanup();
+    if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
+  }
 }
 
 export async function registerRoutes(
@@ -173,15 +258,6 @@ export async function registerRoutes(
   });
 
   app.post("/api/swmm/run", async (req: Request, res: Response) => {
-    const jobId = randomUUID();
-    const tmpDir = join('/tmp', `swmm-${jobId}`);
-    await mkdir(tmpDir, { recursive: true });
-    const cleanup = async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} };
-
-    const inpPath = join(tmpDir, 'model.inp');
-    const rptPath = join(tmpDir, 'model.rpt');
-    const outPath = join(tmpDir, 'model.out');
-
     try {
       const body = await readBodyWithLimit(req);
       const contentType = req.headers['content-type'] || '';
@@ -207,140 +283,18 @@ export async function registerRoutes(
         inpText = body.toString('utf-8');
       }
 
-      await writeFile(inpPath, inpText, 'utf-8');
-
-      if (!(await probeEngine())) {
-        await cleanup();
-        return res.status(500).json({ error: 'SWMM engine binary not found or not executable' });
-      }
-
-      const proc = spawn(SWMM_ENGINE_PATH, [inpPath, rptPath, outPath]);
-      let stdout = '';
-      let stderr = '';
-      let responded = false;
-      const respond = (fn: () => void) => {
-        if (responded || res.headersSent) return;
-        responded = true;
-        fn();
-      };
-      const killTimer = setTimeout(async () => {
-        try { proc.kill('SIGKILL'); } catch {}
-        respond(() => res.status(500).json({ error: `Simulation timed out after ${SIM_TIMEOUT_MS / 1000} seconds` }));
-        await cleanup();
-      }, SIM_TIMEOUT_MS);
-
-      proc.stdout.on('data', (data) => { stdout += data.toString(); });
-      proc.stderr.on('data', (data) => { stderr += data.toString(); });
-
-      proc.on('close', async (code) => {
-        clearTimeout(killTimer);
-        let reportContent = '';
-        try { reportContent = await readFile(rptPath, 'utf-8'); } catch {}
-
-        let outBase64 = '';
-        try {
-          const outBuf = await readFile(outPath);
-          outBase64 = outBuf.toString('base64');
-        } catch {}
-
-        const hasErrors = reportContent.includes('ERROR') ||
-          (stdout.includes('There are errors') || stdout.includes('has errors'));
-
-        await cleanup();
-
-        respond(() => {
-          if (hasErrors) {
-            res.json({
-              status: 'failed',
-              error: 'SWMM simulation completed with errors',
-              reportContent,
-              stdout,
-              exitCode: code,
-            });
-          } else {
-            res.json({
-              status: 'success',
-              reportContent,
-              outBase64,
-              stdout,
-              exitCode: code,
-            });
-          }
-        });
-      });
-
-      proc.on('error', async (err) => {
-        clearTimeout(killTimer);
-        markEngineUnavailable(err as NodeJS.ErrnoException);
-        await cleanup();
-        respond(() => res.status(500).json({ error: `Failed to spawn SWMM engine: ${err.message}` }));
-      });
+      await runLocalSimulation(inpText, res);
     } catch (error: any) {
-      await cleanup();
       if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
     }
   });
 
   app.post("/api/swmm/run-or-proxy", async (req: Request, res: Response) => {
-    const localFound = await probeEngine();
-    if (localFound) {
-      const jobId = randomUUID();
-      const tmpDir = join('/tmp', `swmm-${jobId}`);
-      await mkdir(tmpDir, { recursive: true });
-      const cleanup = async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} };
-      const inpPath = join(tmpDir, 'model.inp');
-      const rptPath = join(tmpDir, 'model.rpt');
-      const outPath = join(tmpDir, 'model.out');
-      try {
-        const body = await readBodyWithLimit(req);
-        const inpText = body.toString('utf-8');
-        await writeFile(inpPath, inpText, 'utf-8');
-        const proc = spawn(SWMM_ENGINE_PATH, [inpPath, rptPath, outPath]);
-        let stdout = '';
-        let stderr = '';
-        let responded = false;
-        const respond = (fn: () => void) => {
-          if (responded || res.headersSent) return;
-          responded = true;
-          fn();
-        };
-        const killTimer = setTimeout(async () => {
-          try { proc.kill('SIGKILL'); } catch {}
-          respond(() => res.status(500).json({ error: `Simulation timed out after ${SIM_TIMEOUT_MS / 1000} seconds` }));
-          await cleanup();
-        }, SIM_TIMEOUT_MS);
-        proc.stdout.on('data', (data) => { stdout += data.toString(); });
-        proc.stderr.on('data', (data) => { stderr += data.toString(); });
-        proc.on('close', async (code) => {
-          clearTimeout(killTimer);
-          let reportContent = '';
-          try { reportContent = await readFile(rptPath, 'utf-8'); } catch (e: any) { console.log('[swmm] Failed to read rpt:', e.message); }
-          let outBase64 = '';
-          try { const outBuf = await readFile(outPath); outBase64 = outBuf.toString('base64'); } catch (e: any) { console.log('[swmm] Failed to read out:', e.message); }
-          console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outBase64.length} base64 chars, exit=${code}, stdout=${stdout.substring(0, 200)}`);
-          const hasErrors = reportContent.includes('ERROR') || stdout.includes('There are errors') || stdout.includes('has errors');
-          await cleanup();
-          respond(() => {
-            if (hasErrors) {
-              res.json({ status: 'failed', error: 'SWMM simulation completed with errors', reportContent, stdout, exitCode: code });
-            } else {
-              res.json({ status: 'success', reportContent, outBase64, stdout, exitCode: code, engineUsed: 'local' });
-            }
-          });
-        });
-        proc.on('error', async (err) => {
-          clearTimeout(killTimer);
-          markEngineUnavailable(err as NodeJS.ErrnoException);
-          console.log(`[swmm] spawn failed (${err.message}); marking local engine unavailable`);
-          await cleanup();
-          respond(() => res.status(404).json({ error: `Local engine cannot execute: ${err.message}`, useRemote: true }));
-        });
-      } catch (error: any) {
-        await cleanup();
-        if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
-      }
-    } else {
-      res.status(404).json({ error: 'Local engine not available', useRemote: true });
+    try {
+      const body = await readBodyWithLimit(req);
+      await runLocalSimulation(body.toString('utf-8'), res);
+    } catch (error: any) {
+      if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
     }
   });
 
@@ -378,32 +332,24 @@ export async function registerRoutes(
 
   app.post("/api/swmm-proxy/upload", async (req: Request, res: Response) => {
     try {
-      const chunks: Buffer[] = [];
-      req.on('data', (chunk: Buffer) => chunks.push(chunk));
-      req.on('end', async () => {
-        try {
-          const body = Buffer.concat(chunks);
-          const contentType = req.headers['content-type'] || '';
+      const body = await readBodyWithLimit(req);
+      const contentType = req.headers['content-type'] || '';
 
-          const response = await fetch(`${BATCH_SWMM_URL}/api/upload`, {
-            method: 'POST',
-            headers: { 'Content-Type': contentType },
-            body: body,
-          });
-
-          if (!response.ok) {
-            const text = await response.text();
-            return res.status(response.status).json({ error: text });
-          }
-
-          const data = await response.json();
-          res.json(data);
-        } catch (error: any) {
-          res.status(500).json({ error: error.message });
-        }
+      const response = await fetch(`${BATCH_SWMM_URL}/api/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body: body,
       });
+
+      if (!response.ok) {
+        const text = await response.text();
+        return res.status(response.status).json({ error: text });
+      }
+
+      const data = await response.json();
+      res.json(data);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      res.status(error.statusCode || 500).json({ error: error.message });
     }
   });
 

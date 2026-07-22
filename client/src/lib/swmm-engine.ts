@@ -98,10 +98,19 @@ export async function loadWasmModule(onProgress?: (pct: number, msg: string) => 
 
 export async function checkWasmEngine(): Promise<boolean> {
   try {
-    const resp = await fetch('/swmm_engine.js', { method: 'HEAD' });
-    if (!resp.ok) return false;
-    const ct = resp.headers.get('content-type') || '';
-    return ct.includes('javascript');
+    // Verify BOTH the JS loader and the .wasm binary exist before reporting
+    // WASM available — a missing binary would otherwise fail only after a
+    // long initialization timeout.
+    const [jsResp, wasmResp] = await Promise.all([
+      fetch('/swmm_engine.js', { method: 'HEAD' }),
+      fetch('/swmm_engine.wasm', { method: 'HEAD' }),
+    ]);
+    if (!jsResp.ok || !wasmResp.ok) return false;
+    const jsCt = jsResp.headers.get('content-type') || '';
+    if (!jsCt.includes('javascript')) return false;
+    // Guard against SPA fallback serving index.html for the .wasm path
+    const wasmCt = wasmResp.headers.get('content-type') || '';
+    return !wasmCt.includes('text/html');
   } catch {
     return false;
   }
@@ -187,9 +196,11 @@ export function createLocalEngine(): SwmmEngine {
         body: inpText,
       });
 
-      if (resp.status === 404) {
+      // Structured engine-unavailable response (503 with available:false) from
+      // either run endpoint; 404 + useRemote kept for backward compatibility.
+      if (resp.status === 503 || resp.status === 404) {
         const data = await resp.json().catch(() => ({}));
-        if (data.useRemote) {
+        if (data.available === false || data.useRemote) {
           const wasmOk = await checkWasmEngine();
           if (wasmOk) {
             if (onProgress) onProgress(8, 'Local engine unavailable, using in-browser SWMM 5.2.4 (WASM)...');
