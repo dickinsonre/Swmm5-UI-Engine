@@ -386,13 +386,18 @@ function parseCurves(lines: string[]): Record<string, CurvePoint[]> {
   return result;
 }
 
-function parseTimeseries(lines: string[]): Record<string, TimeSeriesPoint[]> {
+function parseTimeseries(lines: string[]): { series: Record<string, TimeSeriesPoint[]>; files: Record<string, string> } {
   const result: Record<string, TimeSeriesPoint[]> = {};
+  const files: Record<string, string> = {};
   let currentName = '';
   for (const line of lines) {
     const p = splitFields(line);
     if (p.length >= 2) {
-      if (p[0].toUpperCase() === 'FILE' || (p.length >= 2 && p[1].toUpperCase() === 'FILE')) continue;
+      if (p[1].toUpperCase() === 'FILE') {
+        files[p[0]] = p.slice(2).join(' ');
+        continue;
+      }
+      if (p[0].toUpperCase() === 'FILE') continue;
       if (p.length >= 4 && p[1].includes('/') && p[2].includes(':')) {
         currentName = p[0];
         if (!result[currentName]) result[currentName] = [];
@@ -424,7 +429,7 @@ function parseTimeseries(lines: string[]): Record<string, TimeSeriesPoint[]> {
       }
     }
   }
-  return result;
+  return { series: result, files };
 }
 
 function parsePatterns(lines: string[]): Record<string, PatternData> {
@@ -721,19 +726,24 @@ function parseInletUsage(lines: string[]): InletUsage[] {
   }).filter(i => i.linkId);
 }
 
-function parseMapExtent(lines: string[]): { x1: number; y1: number; x2: number; y2: number } | null {
+function parseMapExtent(lines: string[]): { x1: number; y1: number; x2: number; y2: number; units?: string } | null {
+  let extent: { x1: number; y1: number; x2: number; y2: number; units?: string } | null = null;
+  let units: string | undefined;
   for (const line of lines) {
     const p = splitFields(line);
     if (p[0] === 'DIMENSIONS' && p.length >= 5) {
-      return {
+      extent = {
         x1: parseFloat2(p[1]),
         y1: parseFloat2(p[2]),
         x2: parseFloat2(p[3]),
         y2: parseFloat2(p[4]),
       };
+    } else if (p[0]?.toUpperCase() === 'UNITS' && p[1]) {
+      units = p[1];
     }
   }
-  return null;
+  if (extent && units) extent.units = units;
+  return extent;
 }
 
 export function parseInpFile(text: string): SwmmProject {
@@ -811,9 +821,12 @@ export function parseInpFile(text: string): SwmmProject {
       case 'CURVES':
         project.curves = parseCurves(lines);
         break;
-      case 'TIMESERIES':
-        project.timeseries = parseTimeseries(lines);
+      case 'TIMESERIES': {
+        const tsResult = parseTimeseries(lines);
+        project.timeseries = tsResult.series;
+        project.timeseriesFiles = tsResult.files;
         break;
+      }
       case 'PATTERNS':
         project.patterns = parsePatterns(lines);
         break;
@@ -979,7 +992,12 @@ export function projectToInp(project: SwmmProject): string {
   if (project.storageUnits.length) {
     lines.push('[STORAGE]');
     for (const s of project.storageUnits) {
-      lines.push(`${s.id.padEnd(16)} ${s.elevation}    ${s.maxDepth}    ${s.initDepth}    ${s.shape}    ${s.curveParams.join('    ')}    ${s.surDepth}    ${s.fevap}`);
+      let stLine = `${s.id.padEnd(16)} ${s.elevation}    ${s.maxDepth}    ${s.initDepth}    ${s.shape}    ${s.curveParams.join('    ')}    ${s.surDepth}    ${s.fevap}`;
+      const seep = [s.psi, s.ksat, s.imd];
+      if (seep.some(v => v !== undefined)) {
+        stLine += `    ${s.psi ?? 0}    ${s.ksat ?? 0}    ${s.imd ?? 0}`;
+      }
+      lines.push(stLine);
     }
     lines.push('');
   }
@@ -1027,7 +1045,9 @@ export function projectToInp(project: SwmmProject): string {
   if (validWeirs.length) {
     lines.push('[WEIRS]');
     for (const w of validWeirs) {
-      lines.push(`${w.id.padEnd(16)} ${w.fromNode.padEnd(16)} ${w.toNode.padEnd(16)} ${w.type}    ${w.crestHeight}    ${w.cd}    ${w.gated}    ${w.ec}    ${w.cd2}    ${w.surcharge}`);
+      let weirLine = `${w.id.padEnd(16)} ${w.fromNode.padEnd(16)} ${w.toNode.padEnd(16)} ${w.type}    ${w.crestHeight}    ${w.cd}    ${w.gated}    ${w.ec}    ${w.cd2}    ${w.surcharge}`;
+      if (w.width !== undefined) weirLine += `    ${w.width}`;
+      lines.push(weirLine);
     }
     lines.push('');
   }
@@ -1059,7 +1079,9 @@ export function projectToInp(project: SwmmProject): string {
     if (validXsections.length) {
       lines.push('[XSECTIONS]');
       for (const [id, xs] of validXsections) {
-        lines.push(`${padField(id, 16)} ${padField(xs.shape, 12)} ${padField(xs.geom1, 10)} ${padField(xs.geom2, 10)} ${padField(xs.geom3, 10)} ${padField(xs.geom4, 10)} ${xs.barrels}`);
+        let xsLine = `${padField(id, 16)} ${padField(xs.shape, 12)} ${padField(xs.geom1, 10)} ${padField(xs.geom2, 10)} ${padField(xs.geom3, 10)} ${padField(xs.geom4, 10)} ${xs.barrels}`;
+        if (xs.culvert !== undefined && xs.culvert !== '') xsLine += `    ${xs.culvert}`;
+        lines.push(xsLine);
       }
       lines.push('');
     }
@@ -1196,8 +1218,12 @@ export function projectToInp(project: SwmmProject): string {
     lines.push('');
   }
 
-  if (Object.keys(project.timeseries).length) {
+  const tsFiles = project.timeseriesFiles || {};
+  if (Object.keys(project.timeseries).length || Object.keys(tsFiles).length) {
     lines.push('[TIMESERIES]');
+    for (const [name, fileName] of Object.entries(tsFiles)) {
+      lines.push(`${name.padEnd(16)} FILE ${fileName}`);
+    }
     for (const [name, points] of Object.entries(project.timeseries)) {
       for (const pt of points) {
         lines.push(`${name.padEnd(16)} ${pt.dateTime.padEnd(16)} ${pt.value}`);
@@ -1296,7 +1322,7 @@ export function projectToInp(project: SwmmProject): string {
   if (project.mapExtent) {
     lines.push('[MAP]');
     lines.push(`DIMENSIONS ${project.mapExtent.x1} ${project.mapExtent.y1} ${project.mapExtent.x2} ${project.mapExtent.y2}`);
-    lines.push('Units      None');
+    lines.push(`Units      ${project.mapExtent.units || 'None'}`);
     lines.push('');
   }
 

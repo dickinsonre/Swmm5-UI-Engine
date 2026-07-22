@@ -180,6 +180,7 @@ export interface MapExtent {
   y1: number;
   x2: number;
   y2: number;
+  units?: string;
 }
 
 export interface Pollutant {
@@ -326,6 +327,7 @@ export interface SwmmProject {
   losses: Record<string, LossData>;
   curves: Record<string, CurvePoint[]>;
   timeseries: Record<string, TimeSeriesPoint[]>;
+  timeseriesFiles: Record<string, string>;
   patterns: Record<string, PatternData>;
   controls: string[];
   dwf: DWFEntry[];
@@ -437,6 +439,7 @@ export function createEmptyProject(): SwmmProject {
     losses: {},
     curves: {},
     timeseries: {},
+    timeseriesFiles: {},
     patterns: {},
     controls: [],
     dwf: [],

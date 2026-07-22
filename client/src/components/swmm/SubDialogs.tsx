@@ -369,6 +369,11 @@ export function TimeSeriesEditor({ project, objId, onClose, onProjectChange }: S
             <label className="text-[11px] text-[#4a4a5a] font-semibold whitespace-nowrap">Name:</label>
             <input className={`${inputClass} w-[180px]`} value={name} onChange={e => setName(e.target.value)} data-testid="ts-name" />
           </div>
+          {project.timeseriesFiles?.[objId] && (
+            <div className="text-[10px] text-[#b06000] bg-[#fff8ec] border border-[#f0d8a8] rounded px-2 py-1.5" data-testid="ts-file-notice">
+              This time series is backed by an external file ({project.timeseriesFiles[objId]}). The file reference is preserved when saving the project. Editing values here creates in-project data that overrides nothing in the external file.
+            </div>
+          )}
 
           <div className="h-[140px] border border-[#d0d8e8] rounded overflow-hidden">
             <canvas ref={canvasRef} className="w-full h-full block" />
@@ -696,7 +701,7 @@ export function PatternEditor({ project, objId, onClose, onProjectChange }: SubD
 }
 
 export function LIDUsageEditor({ project, objId, onClose, onProjectChange }: SubDialogProps) {
-  type LIDRow = { lidControl: string; number: number; area: number; width: number; initSat: number; fromImperv: number; toPerv: number };
+  type LIDRow = { lidControl: string; number: number; area: number; width: number; initSat: number; fromImperv: number; toPerv: number; rptFile: string; drainTo: string; fromPerv: number };
   const [rows, setRows] = useState<LIDRow[]>([]);
 
   useEffect(() => {
@@ -708,11 +713,21 @@ export function LIDUsageEditor({ project, objId, onClose, onProjectChange }: Sub
       initSat: l.initSat,
       fromImperv: l.fromImperv,
       toPerv: l.toPerv,
+      rptFile: l.rptFile === '*' ? '' : (l.rptFile || ''),
+      drainTo: l.drainTo === '*' ? '' : (l.drainTo || ''),
+      fromPerv: l.fromPerv || 0,
     }));
     setRows(existing);
   }, [project, objId]);
 
   const lidControlNames = project.lidControls?.map(c => c.id) || [];
+  const drainTargets = [
+    ...project.junctions.map(j => j.id),
+    ...project.outfalls.map(o => o.id),
+    ...project.storageUnits.map(s => s.id),
+    ...project.dividers.map(d => d.id),
+    ...project.subcatchments.map(s => s.id),
+  ];
   const update = (i: number, field: keyof LIDRow, val: string | number) => {
     setRows(prev => { const u = [...prev]; u[i] = { ...u[i], [field]: val }; return u; });
   };
@@ -728,9 +743,9 @@ export function LIDUsageEditor({ project, objId, onClose, onProjectChange }: Sub
       initSat: r.initSat,
       fromImperv: r.fromImperv,
       toPerv: r.toPerv,
-      rptFile: '',
-      drainTo: '',
-      fromPerv: 0,
+      rptFile: r.rptFile,
+      drainTo: r.drainTo,
+      fromPerv: r.fromPerv,
     }));
     onProjectChange({ ...project, lidUsage: [...otherUsage, ...newUsage] });
     onClose();
@@ -755,6 +770,7 @@ export function LIDUsageEditor({ project, objId, onClose, onProjectChange }: Sub
                 <th className={thClass}>Init Sat (%)</th>
                 <th className={thClass}>From Imperv (%)</th>
                 <th className={thClass}>To Perv</th>
+                <th className={thClass}>Drain To</th>
                 <th className={thClass}></th>
               </tr></thead>
               <tbody>
@@ -772,14 +788,99 @@ export function LIDUsageEditor({ project, objId, onClose, onProjectChange }: Sub
                     <td className={tdClass}><input className={inputClass} type="number" value={r.initSat} min="0" max="100" step="1" onChange={e => update(i, 'initSat', parseFloat(e.target.value) || 0)} /></td>
                     <td className={tdClass}><input className={inputClass} type="number" value={r.fromImperv} min="0" max="100" step="1" onChange={e => update(i, 'fromImperv', parseFloat(e.target.value) || 0)} /></td>
                     <td className={tdClass}><input className={inputClass} type="number" value={r.toPerv} min="0" max="1" step="1" onChange={e => update(i, 'toPerv', parseInt(e.target.value) || 0)} /></td>
+                    <td className={tdClass}>
+                      <select className={selectClass} value={r.drainTo} onChange={e => update(i, 'drainTo', e.target.value)} data-testid={`lid-drainto-${i}`}>
+                        <option value="">-- Default --</option>
+                        {drainTargets.map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </td>
                     <td className={tdClass}><button className={deleteBtn} onClick={() => setRows(prev => prev.filter((_, j) => j !== i))}><Trash2 className="w-3 h-3" /></button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <button className={addRowClass} onClick={() => setRows(prev => [...prev, { lidControl: '', number: 1, area: 0, width: 0, initSat: 0, fromImperv: 0, toPerv: 0 }])} data-testid="lid-add-row"><Plus className="w-3 h-3" /> Add LID Control</button>
+          <button className={addRowClass} onClick={() => setRows(prev => [...prev, { lidControl: '', number: 1, area: 0, width: 0, initSat: 0, fromImperv: 0, toPerv: 0, rptFile: '', drainTo: '', fromPerv: 0 }])} data-testid="lid-add-row"><Plus className="w-3 h-3" /> Add LID Control</button>
           {rows.length === 0 && <div className="text-center py-5 text-[11px] text-[#9090a0] italic">No LID controls assigned. Click "+ Add LID Control" to add green infrastructure.</div>}
+        </div>
+        <div className={footerClass}>
+          <button className={btnCancel} onClick={onClose}>Cancel</button>
+          <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function RDIIEditor({ project, objId, onClose, onProjectChange }: SubDialogProps) {
+  const [unitHydrograph, setUnitHydrograph] = useState('');
+  const [sewerArea, setSewerArea] = useState(0);
+
+  useEffect(() => {
+    const raw = project.rawSections['RDII'] || [];
+    for (const line of raw) {
+      const t = line.trim();
+      if (!t || t.startsWith(';') || t.startsWith('[')) continue;
+      const parts = t.split(/\s+/);
+      if (parts[0] === objId) {
+        setUnitHydrograph(parts[1] || '');
+        setSewerArea(parseFloat(parts[2]) || 0);
+        break;
+      }
+    }
+  }, [project, objId]);
+
+  const uhNames = Array.from(new Set(
+    (project.rawSections['HYDROGRAPHS'] || [])
+      .map(l => l.trim().split(/\s+/)[0])
+      .filter(n => n && !n.startsWith(';'))
+  ));
+
+  const handleSave = () => {
+    const otherLines = (project.rawSections['RDII'] || []).filter(l => {
+      const t = l.trim();
+      if (!t || t.startsWith(';') || t.startsWith('[')) return true;
+      return t.split(/\s+/)[0] !== objId;
+    });
+    const newLines = unitHydrograph ? [`${objId.padEnd(16)} ${unitHydrograph.padEnd(16)} ${sewerArea}`] : [];
+    onProjectChange({ ...project, rawSections: { ...project.rawSections, RDII: [...otherLines, ...newLines] } });
+    onClose();
+  };
+
+  return (
+    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-rdiiInflow">
+      <div className={`${modalClass} w-[460px] max-w-[90vw]`}>
+        <div className={headerClass}>
+          <span className={titleClass}>RDII Inflow — {objId}</span>
+          <CloseBtn onClick={onClose} />
+        </div>
+        <div className={bodyClass}>
+          <div className={helpTextClass}>
+            Rainfall-Derived Infiltration/Inflow (RDII) at this node is computed from a unit hydrograph group applied over a sewershed area.
+            Unit hydrograph groups are defined in the [HYDROGRAPHS] section.
+          </div>
+          <div className="flex items-center gap-2 py-1">
+            <label className="text-[11px] text-[#4a4a5a] w-[150px] shrink-0">Unit Hydrograph Group</label>
+            {uhNames.length > 0 ? (
+              <select className={`${selectClass} flex-1`} value={unitHydrograph} onChange={e => setUnitHydrograph(e.target.value)} data-testid="rdii-uh">
+                <option value="">-- None --</option>
+                {uhNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            ) : (
+              <input className={`${inputClass} flex-1`} value={unitHydrograph} onChange={e => setUnitHydrograph(e.target.value)} placeholder="Hydrograph group name" data-testid="rdii-uh" />
+            )}
+          </div>
+          <div className="flex items-center gap-2 py-1">
+            <label className="text-[11px] text-[#4a4a5a] w-[150px] shrink-0">Sewershed Area</label>
+            <input className={`${inputClass} w-[120px]`} type="number" step="any" min="0" value={sewerArea}
+              onChange={e => setSewerArea(parseFloat(e.target.value) || 0)} data-testid="rdii-area" />
+            <span className="text-[9px] text-[#9090a0]">acres (or hectares in SI)</span>
+          </div>
+          {uhNames.length === 0 && (
+            <div className="text-[10px] text-[#b06000] bg-[#fff8ec] border border-[#f0d8a8] rounded px-2 py-1.5 mt-2">
+              No [HYDROGRAPHS] groups found in this project. Enter a group name manually or add hydrographs to the INP file.
+            </div>
+          )}
         </div>
         <div className={footerClass}>
           <button className={btnCancel} onClick={onClose}>Cancel</button>
@@ -1094,7 +1195,7 @@ export function SubDialogRouter({ state, project, onClose, onProjectChange }: {
   switch (state.type) {
     case 'directInflow': return <DirectInflowEditor {...props} />;
     case 'dwfInflow': return <DWFEditor {...props} />;
-    case 'rdiiInflow': return <DWFEditor {...props} />;
+    case 'rdiiInflow': return <RDIIEditor {...props} />;
     case 'timeSeries': return <TimeSeriesEditor {...props} />;
     case 'curve': return <CurveEditor {...props} />;
     case 'pattern': return <PatternEditor {...props} />;
