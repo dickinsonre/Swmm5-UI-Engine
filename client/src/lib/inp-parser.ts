@@ -186,17 +186,34 @@ function parseOutfalls(lines: string[]): Outfall[] {
 function parseDividers(lines: string[]): Divider[] {
   return lines.map(line => {
     const p = splitFields(line);
+    const type = (p[3] || 'CUTOFF').toUpperCase();
+    let cutoffFlow: number | undefined;
+    let curve: string | undefined;
+    let restIdx: number;
+    if (type === 'CUTOFF') {
+      cutoffFlow = p[4] ? parseFloat2(p[4]) : undefined;
+      restIdx = 5;
+    } else if (type === 'TABULAR') {
+      curve = p[4];
+      restIdx = 5;
+    } else if (type === 'WEIR') {
+      cutoffFlow = p[4] ? parseFloat2(p[4]) : undefined;
+      curve = p[5];
+      restIdx = 6;
+    } else {
+      restIdx = 4;
+    }
     return {
       id: p[0],
       elevation: parseFloat2(p[1]),
       divertedLink: p[2] || '',
-      type: p[3] || 'CUTOFF',
-      cutoffFlow: p[4] ? parseFloat2(p[4]) : undefined,
-      curve: p[5],
-      maxDepth: parseFloat2(p[6]),
-      initDepth: parseFloat2(p[7]),
-      surDepth: parseFloat2(p[8]),
-      aponded: parseFloat2(p[9]),
+      type,
+      cutoffFlow,
+      curve,
+      maxDepth: parseFloat2(p[restIdx]),
+      initDepth: parseFloat2(p[restIdx + 1]),
+      surDepth: parseFloat2(p[restIdx + 2]),
+      aponded: parseFloat2(p[restIdx + 3]),
     };
   }).filter(d => d.id);
 }
@@ -558,7 +575,7 @@ function parseLabels(lines: string[]): MapLabel[] {
         y: parseFloat(match[2]),
         text: match[3],
         anchorNode: rest[0] || undefined,
-        font: rest[1] || undefined,
+        font: rest[1] ? rest[1].replace(/^"|"$/g, '') : undefined,
         size: rest[2] ? parseInt(rest[2]) : undefined,
         bold: rest[3] === '1',
         italic: rest[4] === '1',
@@ -943,7 +960,9 @@ export function projectToInp(project: SwmmProject): string {
   if (project.subcatchments.length) {
     lines.push('[SUBCATCHMENTS]');
     for (const s of project.subcatchments) {
-      lines.push(`${s.id.padEnd(16)} ${s.rainGage.padEnd(16)} ${s.outlet.padEnd(16)} ${s.area.toString().padEnd(8)} ${s.pctImperv.toString().padEnd(8)} ${s.width.toString().padEnd(8)} ${s.slope}    ${s.curbLen}`);
+      let subLine = `${s.id.padEnd(16)} ${s.rainGage.padEnd(16)} ${s.outlet.padEnd(16)} ${s.area.toString().padEnd(8)} ${s.pctImperv.toString().padEnd(8)} ${s.width.toString().padEnd(8)} ${s.slope}    ${s.curbLen}`;
+      if (s.snowPack) subLine += `    ${s.snowPack}`;
+      lines.push(subLine);
     }
     lines.push('');
   }
@@ -951,7 +970,9 @@ export function projectToInp(project: SwmmProject): string {
   if (Object.keys(project.subareas).length) {
     lines.push('[SUBAREAS]');
     for (const [id, sa] of Object.entries(project.subareas)) {
-      lines.push(`${id.padEnd(16)} ${sa.nImperv}    ${sa.nPerv}    ${sa.sImperv}    ${sa.sPerv}    ${sa.pctZero}    ${sa.routeTo}`);
+      let saLine = `${id.padEnd(16)} ${sa.nImperv}    ${sa.nPerv}    ${sa.sImperv}    ${sa.sPerv}    ${sa.pctZero}    ${sa.routeTo}`;
+      if (sa.pctRouted !== undefined) saLine += `    ${sa.pctRouted}`;
+      lines.push(saLine);
     }
     lines.push('');
   }
