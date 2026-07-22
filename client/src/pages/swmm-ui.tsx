@@ -6,7 +6,7 @@ import {
   getNodeCategories, getLinkCategories, getSubCategories, getSystemCategories,
   getNodeVarByKey, getLinkVarByKey, getSubVarByKey, getSystemVarByKey,
 } from '@/lib/swmm-variables';
-import { parseInpFile } from '@/lib/inp-parser';
+import { parseInpFile, projectToInp } from '@/lib/inp-parser';
 import { createMockEngine, createRemoteEngine, createLocalEngine, createWasmEngine, checkRemoteEngine, checkLocalEngine, checkWasmEngine } from '@/lib/swmm-engine';
 import { computeCflAnalysis, discretizeProject, getDefaultSettings } from '@/lib/cfl-analysis';
 import type { CflAnalysisResult, DiscretizationSettings, DiscretizationResult } from '@/lib/cfl-analysis';
@@ -144,7 +144,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
   const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
@@ -1731,8 +1731,8 @@ export default function SwmmUI() {
               setPhaseSpaceTarget(selectedObj && et ? { id: selectedObj.id, elementType: et } : null);
               setOpenDialog('phaseSpace');
             }} testId="btn-phase-space" />}
-            <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" testId="btn-summary" />
-            <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" testId="btn-details" />
+            <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" onClick={() => setOpenDialog('projectSummary')} testId="btn-summary" />
+            <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" onClick={() => setOpenDialog('projectDetails')} testId="btn-details" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <ToolbarButton
               icon={simStatus === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
@@ -3409,6 +3409,76 @@ export default function SwmmUI() {
               ))}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'projectSummary'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-lg bg-white border-[#d0d0d8] max-h-[85vh] overflow-y-auto" data-testid="project-summary-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <List className="w-4 h-4" /> Project Summary
+            </DialogTitle>
+            <DialogDescription>Object counts and key analysis options for the current model.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+            {([
+              ['Rain Gages', project.raingages.length],
+              ['Subcatchments', project.subcatchments.length],
+              ['Junctions', project.junctions.length],
+              ['Outfalls', project.outfalls.length],
+              ['Dividers', project.dividers.length],
+              ['Storage Units', project.storageUnits.length],
+              ['Conduits', project.conduits.length],
+              ['Pumps', project.pumps.length],
+              ['Orifices', project.orifices.length],
+              ['Weirs', project.weirs.length],
+              ['Outlets', project.outlets.length],
+              ['Cross-Sections', Array.isArray(project.xsections) ? project.xsections.length : Object.keys(project.xsections || {}).length],
+              ['Time Series', Object.keys(project.timeseries || {}).length],
+              ['Curves', Object.keys(project.curves || {}).length],
+              ['Patterns', Object.keys(project.patterns || {}).length],
+              ['Pollutants', (project.pollutants || []).length],
+            ] as [string, number][]).map(([name, count]) => (
+              <div key={name} className="flex justify-between border-b border-[#f0f0f4] py-0.5" data-testid={`summary-count-${name.toLowerCase().replace(/[^a-z]+/g, '-')}`}>
+                <span className="text-[#6b6b7b]">{name}</span>
+                <span className="font-semibold text-[#2a2a3e]">{count}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2">
+            <div className="text-[11px] font-bold text-[#2c3e6b] mb-1">Analysis Options</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+              {([
+                ['Flow Units', project.options['FLOW_UNITS']],
+                ['Routing', project.options['FLOW_ROUTING']],
+                ['Infiltration', project.options['INFILTRATION']],
+                ['Start Date', project.options['START_DATE']],
+                ['End Date', project.options['END_DATE']],
+                ['Routing Step', project.options['ROUTING_STEP']],
+              ] as [string, string | undefined][]).map(([name, val]) => (
+                <div key={name} className="flex justify-between border-b border-[#f0f0f4] py-0.5">
+                  <span className="text-[#6b6b7b]">{name}</span>
+                  <span className="font-semibold text-[#2a2a3e]">{val || '—'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDialog === 'projectDetails'} onOpenChange={v => !v && setOpenDialog(null)}>
+        <DialogContent className="max-w-4xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] flex flex-col" data-testid="project-details-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
+              <FileText className="w-4 h-4" /> Project Details (INP)
+            </DialogTitle>
+            <DialogDescription>Full SWMM5 input file text generated from the current model.</DialogDescription>
+          </DialogHeader>
+          {openDialog === 'projectDetails' && (
+            <pre className="flex-1 overflow-auto border border-[#e0e0e8] rounded bg-[#f8f8fa] p-3 text-[10px] leading-[1.5] text-[#2a2a3e] whitespace-pre font-mono" data-testid="project-details-text">
+              {projectToInp(project)}
+            </pre>
+          )}
         </DialogContent>
       </Dialog>
 
