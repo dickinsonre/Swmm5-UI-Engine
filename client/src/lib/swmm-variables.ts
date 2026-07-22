@@ -392,3 +392,201 @@ export function isExtendedLinkVar(key: string): boolean {
 export function isExtendedSubVar(key: string): boolean {
   return SUB_VARS.some(v => v.key === key) && !stdSubKeys.has(key);
 }
+
+export type Provenance = 'engine' | 'derived' | 'reconstructed' | 'estimated' | 'unavailable';
+
+export interface ProvenanceExplain {
+  sources: string;
+  calc: string;
+  assumptions: string;
+  limitations: string;
+}
+
+export const PROVENANCE_INFO: Record<Provenance, { label: string; short: string; color: string; bg: string; desc: string }> = {
+  engine: { label: 'Engine output', short: 'ENG', color: '#2a8a4a', bg: '#eaf6ee', desc: 'Read directly from the SWMM5 engine binary output file. Highest trust.' },
+  derived: { label: 'Directly derived', short: 'DRV', color: '#2c6eb5', bg: '#eaf1fa', desc: 'Computed exactly from engine outputs and model input geometry using standard hydraulic formulas.' },
+  reconstructed: { label: 'Reconstructed', short: 'RCN', color: '#8b5cf6', bg: '#f2eafd', desc: 'Post-hoc reconstruction of internal solver state the engine does not report. Follows SWMM5 source-code formulas but is not the actual runtime value.' },
+  estimated: { label: 'Estimated', short: 'EST', color: '#c08820', bg: '#fdf6e8', desc: 'Approximated from available results using simplifying assumptions. Use qualitatively, not quantitatively.' },
+  unavailable: { label: 'Unavailable', short: 'N/A', color: '#9090a0', bg: '#f0f0f4', desc: 'Not computed by the current engine adapters. Registered for future use; values shown are placeholders or zeros.' },
+};
+
+const CATEGORY_PROVENANCE: Record<VarCategory, Provenance> = {
+  NODE_STD: 'engine',
+  NODE_SOLVER: 'reconstructed',
+  NODE_RDII: 'estimated',
+  LINK_STD: 'engine',
+  LINK_MOMENTUM: 'reconstructed',
+  LINK_GEOMETRY: 'derived',
+  LINK_ENERGY: 'derived',
+  LINK_COMPAT: 'derived',
+  LINK_PROPS: 'derived',
+  SUB_STD: 'engine',
+  SUB_RUNOFF: 'estimated',
+  SUB_LID: 'estimated',
+  SUB_GW: 'estimated',
+  SUB_SNOW: 'estimated',
+  SUB_INFIL: 'reconstructed',
+  SUB_POLLUT: 'estimated',
+  SYS: 'derived',
+  SYS_QA: 'reconstructed',
+  FLOW_CLASS: 'derived',
+};
+
+const PLACEHOLDER_KEYS = new Set([
+  'snowATI', 'snowWATI', 'snowPackSWE', 'snowPackDepth',
+  'lidSoilEvap', 'lidDrainCoeff', 'lidRetention',
+  'pollutWashoff', 'pollutBuildup', 'pollutConcRunoff', 'pollutConcGW', 'pollutLoad',
+]);
+
+const PLACEHOLDER_EXPLAIN: ProvenanceExplain = {
+  sources: 'Reported subcatchment results (runoff, snow depth, evaporation) scaled by fixed coefficients',
+  calc: 'Simple placeholder heuristic (fixed multipliers or constants applied to reported values), not the SWMM5 process model for this variable.',
+  assumptions: 'Fixed generic coefficients; no site-specific calibration or process physics.',
+  limitations: 'Indicative order-of-magnitude only. Do not use quantitatively; the engine does not report the true internal state for this variable.',
+};
+
+const CATEGORY_EXPLAIN: Record<VarCategory, ProvenanceExplain> = {
+  NODE_STD: {
+    sources: 'Binary .out file node results (depth, head, volume, inflows, flooding)',
+    calc: 'Written by the SWMM5 engine at each reporting time step and parsed without modification.',
+    assumptions: 'None beyond the model itself.',
+    limitations: 'Accuracy depends on the routing method and time steps chosen in Analysis Options.',
+  },
+  NODE_SOLVER: {
+    sources: 'Node depth/head/inflow, connected link flows and geometry, reporting interval',
+    calc: 'Newton-Raphson solver state (dQ/dH Jacobian, residual F(H), head correction) reconstructed from connected link sensitivities using SWMM5 dynwave.c formulas.',
+    assumptions: 'Solver state is approximated from reported values at reporting intervals, not the actual internal iteration time steps.',
+    limitations: 'The real engine iterates at much finer time steps; reconstructed values indicate patterns, not exact solver behavior.',
+  },
+  NODE_RDII: {
+    sources: 'Node lateral inflow, dry-weather flow inputs, RDII unit hydrograph parameters',
+    calc: 'Inflow components split by proportional decomposition of total lateral inflow.',
+    assumptions: 'Component split assumes stationary proportions between reporting steps.',
+    limitations: 'The engine does not report per-component inflows; this split is an estimate.',
+  },
+  LINK_STD: {
+    sources: 'Binary .out file link results (flow, depth, velocity, volume, capacity)',
+    calc: 'Written by the SWMM5 engine at each reporting time step and parsed without modification.',
+    assumptions: 'None beyond the model itself.',
+    limitations: 'Accuracy depends on the routing method and time steps chosen in Analysis Options.',
+  },
+  LINK_MOMENTUM: {
+    sources: 'Link flow/depth/velocity, cross-section geometry, roughness, node heads',
+    calc: 'St. Venant momentum terms (DQ1-DQ6: inertia, pressure, friction, losses, lateral, convective) reconstructed per SWMM5 dynwave.c using reported end-of-step values.',
+    assumptions: 'Uses reporting-interval values instead of the internal routing time step; sigma damping recomputed from Froude number.',
+    limitations: 'Term magnitudes are indicative; the actual solver evaluates them at each internal iteration.',
+  },
+  LINK_GEOMETRY: {
+    sources: 'Link depth results plus cross-section shape and dimensions from the INP file',
+    calc: 'Exact geometric relations (area, hydraulic radius, top width) for the section shape evaluated at the reported depth.',
+    assumptions: 'Depth at upstream/downstream ends approximated from node heads and conduit offsets.',
+    limitations: 'Closed-form geometry only for supported shapes; irregular/custom sections use approximations.',
+  },
+  LINK_ENERGY: {
+    sources: 'Node heads, link velocity/depth results, loss coefficients from the INP file',
+    calc: 'Bernoulli energy balance terms (velocity heads, friction loss via Manning inversion, entry/exit losses) computed from reported values.',
+    assumptions: 'Steady-state energy balance within each reporting step.',
+    limitations: 'Transient energy storage between reporting steps is not captured.',
+  },
+  LINK_COMPAT: {
+    sources: 'Upstream/downstream flow areas from geometry evaluation',
+    calc: 'Area weighting schemes replicating SWMM 3, 4, and 5 conventions.',
+    assumptions: 'Same end-area values as the geometry category.',
+    limitations: 'For comparison purposes only.',
+  },
+  LINK_PROPS: {
+    sources: 'INP file link properties and reported results',
+    calc: 'Static properties read from input; dynamic factors (roughness factor, beta) computed from current results.',
+    assumptions: 'Control settings assumed constant within a reporting step.',
+    limitations: 'RTC setting changes between reporting steps are not visible.',
+  },
+  SUB_STD: {
+    sources: 'Binary .out file subcatchment results (rainfall, evaporation, infiltration, runoff)',
+    calc: 'Written by the SWMM5 engine at each reporting time step and parsed without modification.',
+    assumptions: 'None beyond the model itself.',
+    limitations: 'Accuracy depends on the infiltration method and wet/dry time steps chosen.',
+  },
+  SUB_RUNOFF: {
+    sources: 'Subcatchment runoff results, area/imperviousness/width parameters from the INP file',
+    calc: 'Runoff split across the three sub-areas (impervious with/without depression storage, pervious) using nonlinear-reservoir proportions.',
+    assumptions: 'Sub-area depths approximated from total runoff assuming equilibrium between reporting steps.',
+    limitations: 'The engine does not report per-sub-area state; treat as an approximation.',
+  },
+  SUB_LID: {
+    sources: 'LID usage/controls from the INP file, subcatchment runoff and infiltration results',
+    calc: 'LID layer fluxes estimated from layer parameters and available surface fluxes.',
+    assumptions: 'LID units assumed to receive their configured share of runoff; layer states not tracked by the engine output.',
+    limitations: 'Actual per-layer moisture and flux are internal to the engine and not reported.',
+  },
+  SUB_GW: {
+    sources: 'Groundwater/aquifer parameters from the INP file, reported GW flow and elevation',
+    calc: 'Two-zone groundwater flow terms (A1/A2/A3) evaluated from the reported water table using the model coefficients.',
+    assumptions: 'Reported GW elevation taken as the zone boundary state.',
+    limitations: 'Percolation and ET split are estimates; the engine reports only net GW flow.',
+  },
+  SUB_SNOW: {
+    sources: 'Snowpack parameters from the INP file, reported snow depth',
+    calc: 'Melt components estimated from degree-day relations applied to reported snow depth changes.',
+    assumptions: 'Uniform pack temperature; ATI/WATI history approximated.',
+    limitations: 'The engine does not report internal snowpack state.',
+  },
+  SUB_INFIL: {
+    sources: 'Infiltration method parameters from the INP file, reported infiltration and rainfall',
+    calc: 'Green-Ampt / Horton / Curve Number internal state (cumulative F, moisture deficit, recovery) reconstructed by integrating reported rates per the SWMM5 infil.c formulas.',
+    assumptions: 'Integration at reporting intervals; initial state from model defaults.',
+    limitations: 'State drift can accumulate over long simulations; the engine integrates at wet time steps.',
+  },
+  SUB_POLLUT: {
+    sources: 'Reported runoff and groundwater flow scaled by fixed coefficients',
+    calc: 'Water-quality quantities (washoff, buildup, concentrations, load) approximated with fixed generic coefficients applied to runoff.',
+    assumptions: 'Generic buildup/washoff coefficients; actual pollutant routing is not performed.',
+    limitations: 'Indicative only. The engine adapters do not run SWMM5 quality routing; values are placeholder estimates.',
+  },
+  SYS: {
+    sources: 'Per-object engine results aggregated each reporting step',
+    calc: 'System totals summed or averaged across all nodes, links, and subcatchments.',
+    assumptions: 'Aggregation over reported objects only.',
+    limitations: 'Objects excluded from reporting are not included in totals.',
+  },
+  SYS_QA: {
+    sources: 'Aggregated inflow/outflow/storage results per reporting step',
+    calc: 'Continuity errors and solver statistics recomputed from mass balance of reported values.',
+    assumptions: 'Reporting-interval mass balance approximates the engine internal accounting.',
+    limitations: 'The engine .rpt continuity summary is authoritative; these are step-wise indicators.',
+  },
+  FLOW_CLASS: {
+    sources: 'Link flow, depth, Froude number, capacity results',
+    calc: 'Flow regime classified from Froude number and depth ratio thresholds (dry, subcritical, supercritical, critical, full).',
+    assumptions: 'Classification from midpoint values.',
+    limitations: 'End-of-conduit regimes may differ from the midpoint classification.',
+  },
+};
+
+const INPUT_EXPLAIN: ProvenanceExplain = {
+  sources: 'INP file input data',
+  calc: 'Model input value read directly from the project file; not a simulation result.',
+  assumptions: 'None.',
+  limitations: 'Reflects the input as entered, whether or not a simulation has run.',
+};
+
+export function getVarProvenance(v: SwmmVariable): { prov: Provenance; explain: ProvenanceExplain } {
+  if (v.isInput) return { prov: 'engine', explain: INPUT_EXPLAIN };
+  if (PLACEHOLDER_KEYS.has(v.key)) return { prov: 'estimated', explain: PLACEHOLDER_EXPLAIN };
+  const prov = CATEGORY_PROVENANCE[v.cat] ?? 'derived';
+  return { prov, explain: CATEGORY_EXPLAIN[v.cat] ?? CATEGORY_EXPLAIN.SYS };
+}
+
+const KEY_ALIASES: Record<string, string> = {
+  evapLoss: 'evap',
+  infilLoss: 'infiltration',
+  soilMoisture: 'moisture',
+  gwOutflow: 'gwOutflow',
+};
+
+export function findVarByKey(key: string, scope: VarScope): SwmmVariable | undefined {
+  const k = KEY_ALIASES[key] ?? key;
+  if (scope === 'node') return getNodeVarByKey(k);
+  if (scope === 'link') return getLinkVarByKey(k);
+  if (scope === 'subcatch') return getSubVarByKey(k);
+  return getSystemVarByKey(k);
+}

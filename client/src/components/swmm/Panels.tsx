@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import type { SwmmProject, SelectedObject, XSection } from '@/lib/swmm-types';
 import { ChevronDown, ChevronRight, Droplets, CircleDot, Minus, CloudRain, Triangle, Square, ArrowLeftRight, X, Search, List } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { getNodeVarByKey, getLinkVarByKey, getSubVarByKey } from '@/lib/swmm-variables';
+import { getNodeVarByKey, getLinkVarByKey, getSubVarByKey, type SwmmVariable } from '@/lib/swmm-variables';
+import ProvenanceBadge from './ProvenanceBadge';
 
 const LEGEND_COLORS = ['#7092BE', '#99D9EA', '#B5E61D', '#FFC90E', '#FF7F27'];
 
@@ -177,6 +178,7 @@ export function LegendPanel({
           swatchType="rect"
           checked={showLegendSubcatch}
           onCheckedChange={setShowLegendSubcatch}
+          variable={subcatchTheme !== 'none' ? subcatchVar : undefined}
         />
 
         <LegendSection
@@ -185,6 +187,7 @@ export function LegendPanel({
           swatchType="circle"
           checked={showLegendNodes}
           onCheckedChange={setShowLegendNodes}
+          variable={nodeTheme !== 'none' ? nodeVar : undefined}
         />
 
         <LegendSection
@@ -193,6 +196,7 @@ export function LegendPanel({
           swatchType="line"
           checked={showLegendLinks}
           onCheckedChange={setShowLegendLinks}
+          variable={linkTheme !== 'none' ? linkVar : undefined}
         />
 
         <div className="border-t border-[#d0d0d8] pt-2">
@@ -227,12 +231,13 @@ export function LegendPanel({
   );
 }
 
-function LegendSection({ title, labels, swatchType, checked, onCheckedChange }: {
+function LegendSection({ title, labels, swatchType, checked, onCheckedChange, variable }: {
   title: string;
   labels: string[];
   swatchType: 'rect' | 'circle' | 'line';
   checked?: boolean;
   onCheckedChange?: (v: boolean) => void;
+  variable?: SwmmVariable;
 }) {
   return (
     <div>
@@ -244,6 +249,7 @@ function LegendSection({ title, labels, swatchType, checked, onCheckedChange }: 
           }
         </svg>
         <span className="text-[10px] font-semibold text-[#4a4a5a]">{title}</span>
+        {variable && <ProvenanceBadge variable={variable} />}
       </div>
       {checked && labels.map((label, i) => (
         <div key={i} className="flex items-center gap-1.5 pl-5 py-px">

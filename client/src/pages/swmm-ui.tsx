@@ -31,6 +31,7 @@ import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@
 import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
 import { REGRESSION_METRICS, extractRunSnapshot, compareSnapshots, comparisonToCsv, getDefaultTolerances, type RunSnapshot, type ToleranceSet } from '@/lib/regression-compare';
 import SpeedBar from '@/components/swmm/SpeedBar';
+import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -2214,8 +2215,11 @@ export default function SwmmUI() {
                           onClick={() => setSystemTheme(v.key)}
                           data-testid={`sys-var-${v.key}`}
                         >
-                          <span className={isSelected ? 'text-[#2c6eb5] font-semibold' : 'text-[#2a2a3e]'}>{v.name}</span>
-                          <span className="font-mono text-[#6b6b7b]">
+                          <span className={`flex items-center gap-1 min-w-0 ${isSelected ? 'text-[#2c6eb5] font-semibold' : 'text-[#2a2a3e]'}`}>
+                            <span className="truncate">{v.name}</span>
+                            <ProvenanceBadge variable={v} />
+                          </span>
+                          <span className="font-mono text-[#6b6b7b] shrink-0">
                             {val !== undefined ? val.toFixed(3) : '—'} <span className="text-[8px]">{v.units}</span>
                           </span>
                         </div>

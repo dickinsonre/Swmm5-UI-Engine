@@ -3,6 +3,7 @@ import type { SwmmProject, SelectedObject } from '@/lib/swmm-types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChevronDown, ChevronRight, X, MapPin } from 'lucide-react';
 import { CrossSectionSvg } from './Panels';
+import ProvenanceBadge from './ProvenanceBadge';
 import type { XSection } from '@/lib/swmm-types';
 
 type FieldDef = {
@@ -507,33 +508,33 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
       const nr = ts.nodes[objId];
       if (!nr) return null;
       return [
-        { label: 'Depth', value: nr.depth.toFixed(3), unit: 'ft' },
-        { label: 'Head', value: nr.head.toFixed(3), unit: 'ft' },
-        { label: 'Volume', value: nr.volume.toFixed(3), unit: 'ft³' },
-        { label: 'Lateral Inflow', value: nr.lateralInflow.toFixed(3), unit: 'CFS' },
-        { label: 'Total Inflow', value: nr.totalInflow.toFixed(3), unit: 'CFS' },
-        { label: 'Flooding', value: nr.flooding.toFixed(3), unit: 'CFS' },
+        { label: 'Depth', value: nr.depth.toFixed(3), unit: 'ft', varKey: 'depth', scope: 'node' as const },
+        { label: 'Head', value: nr.head.toFixed(3), unit: 'ft', varKey: 'head', scope: 'node' as const },
+        { label: 'Volume', value: nr.volume.toFixed(3), unit: 'ft³', varKey: 'volume', scope: 'node' as const },
+        { label: 'Lateral Inflow', value: nr.lateralInflow.toFixed(3), unit: 'CFS', varKey: 'lateralInflow', scope: 'node' as const },
+        { label: 'Total Inflow', value: nr.totalInflow.toFixed(3), unit: 'CFS', varKey: 'totalInflow', scope: 'node' as const },
+        { label: 'Flooding', value: nr.flooding.toFixed(3), unit: 'CFS', varKey: 'flooding', scope: 'node' as const },
       ];
     }
     if (objType === 'conduit' || objType === 'pump' || objType === 'orifice' || objType === 'weir' || objType === 'outlet') {
       const lr = ts.links[objId];
       if (!lr) return null;
       return [
-        { label: 'Flow', value: lr.flow.toFixed(3), unit: 'CFS' },
-        { label: 'Velocity', value: lr.velocity.toFixed(3), unit: 'ft/s' },
-        { label: 'Depth', value: lr.depth.toFixed(3), unit: 'ft' },
-        { label: 'Volume', value: lr.volume.toFixed(3), unit: 'ft³' },
-        { label: 'Capacity', value: lr.capacity.toFixed(3), unit: '' },
+        { label: 'Flow', value: lr.flow.toFixed(3), unit: 'CFS', varKey: 'flow', scope: 'link' as const },
+        { label: 'Velocity', value: lr.velocity.toFixed(3), unit: 'ft/s', varKey: 'velocity', scope: 'link' as const },
+        { label: 'Depth', value: lr.depth.toFixed(3), unit: 'ft', varKey: 'depth', scope: 'link' as const },
+        { label: 'Volume', value: lr.volume.toFixed(3), unit: 'ft³', varKey: 'volume', scope: 'link' as const },
+        { label: 'Capacity', value: lr.capacity.toFixed(3), unit: '', varKey: 'capacity', scope: 'link' as const },
       ];
     }
     if (objType === 'subcatchment') {
       const sr = ts.subcatchments[objId];
       if (!sr) return null;
       return [
-        { label: 'Rainfall', value: sr.rainfall.toFixed(3), unit: 'in/hr' },
-        { label: 'Evaporation', value: sr.evap.toFixed(3), unit: 'in/hr' },
-        { label: 'Infiltration', value: sr.infiltration.toFixed(3), unit: 'in/hr' },
-        { label: 'Runoff', value: sr.runoff.toFixed(3), unit: 'CFS' },
+        { label: 'Rainfall', value: sr.rainfall.toFixed(3), unit: 'in/hr', varKey: 'rainfall', scope: 'subcatch' as const },
+        { label: 'Evaporation', value: sr.evap.toFixed(3), unit: 'in/hr', varKey: 'evap', scope: 'subcatch' as const },
+        { label: 'Infiltration', value: sr.infiltration.toFixed(3), unit: 'in/hr', varKey: 'infiltration', scope: 'subcatch' as const },
+        { label: 'Runoff', value: sr.runoff.toFixed(3), unit: 'CFS', varKey: 'runoff', scope: 'subcatch' as const },
       ];
     }
     return null;
@@ -583,6 +584,7 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
                   <span className="text-[9px] text-[#6b6b7b] w-[100px] truncate">{r.label}</span>
                   <span className="text-[9px] font-mono text-[#2a2a3e] flex-1">{r.value}</span>
                   {r.unit && <span className="text-[8px] text-[#9090a0] ml-1">{r.unit}</span>}
+                  <span className="ml-1"><ProvenanceBadge varKey={r.varKey} scope={r.scope} /></span>
                 </div>
               ))}
             </div>

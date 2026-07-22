@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table2, ArrowUpAZ, ArrowDownAZ, Copy, Columns3, AlignJustify, FileText, Filter, Printer, LineChart, BarChart3, ScatterChart, Activity, RefreshCw, X } from 'lucide-react';
 import { LineChart as RLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ScatterChart as RScatterChart, Scatter } from 'recharts';
+import ProvenanceBadge from './ProvenanceBadge';
+import type { VarScope } from '@/lib/swmm-variables';
 
 interface Props {
   open: boolean;
@@ -94,6 +96,10 @@ function getNumericValue(results: SimulationResults, category: ObjCategory, id: 
 }
 
 type OverlayView = null | 'dataPlot' | 'frequencyPlot' | 'histogramPlot' | 'scatterPlot' | 'statistics' | 'filter';
+
+function categoryToScope(cat: ObjCategory): VarScope {
+  return cat === 'subcatchment' ? 'subcatch' : cat;
+}
 
 export default function TableViewDialog({ open, onOpenChange, project, results, mode, onModeChange, timeStep }: Props) {
   const [category, setCategory] = useState<ObjCategory>('node');
@@ -367,7 +373,10 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
                         onClick={() => { setSortCol(v); setSortDir(prev => sortCol === v ? (prev === 'asc' ? 'desc' : 'asc') : 'asc'); }}
                         onContextMenu={e => handleContextMenu(e, v)}
                         data-testid={`th-${v}`}>
-                        {varLabels[v] || v}
+                        <span className="inline-flex items-center gap-1">
+                          {varLabels[v] || v}
+                          <ProvenanceBadge varKey={v} scope={categoryToScope(category)} />
+                        </span>
                         {sortCol === v && <span className="ml-1 text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
                       </th>
                     ))}
@@ -394,7 +403,10 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
                       onClick={() => { setSortCol(selectedVar); setSortDir(prev => sortCol === selectedVar ? (prev === 'asc' ? 'desc' : 'asc') : 'asc'); }}
                       onContextMenu={e => handleContextMenu(e, selectedVar)}
                       data-testid={`th-${selectedVar}`}>
-                      {varLabels[selectedVar] || selectedVar}
+                      <span className="inline-flex items-center gap-1">
+                        {varLabels[selectedVar] || selectedVar}
+                        <ProvenanceBadge varKey={selectedVar} scope={categoryToScope(category)} />
+                      </span>
                       {sortCol === selectedVar && <span className="ml-1 text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
                     </th>
                   </tr>
