@@ -34,6 +34,9 @@ import SpeedBar from '@/components/swmm/SpeedBar';
 import SectionGridView from '@/components/swmm/SectionGridView';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
 import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark } from '@/components/swmm/SyntheticWarning';
+import { computeIntegrityInfo, IntegrityChip, IntegrityReportDialog, RecoveryDialog } from '@/components/swmm/IntegrityStatus';
+import { buildModelHealthReport } from '@/lib/model-health';
+import { saveSnapshot, getRecoverableSnapshot, setRecoveryBaseline, clearSnapshots, type AutosaveSnapshot } from '@/lib/autosave';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -280,6 +283,13 @@ export default function SwmmUI() {
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [splitScreenProject, setSplitScreenProject] = useState<{ project: SwmmProject; results: SimulationResults; fileName: string } | null>(null);
   const [regressionBaseline, setRegressionBaseline] = useState<RunSnapshot | null>(null);
+  const [isModified, setIsModified] = useState(false);
+  const [showIntegrityReport, setShowIntegrityReport] = useState(false);
+  const [recoverySnapshot, setRecoverySnapshot] = useState<AutosaveSnapshot | null>(null);
+  const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
+  const [autosaveError, setAutosaveError] = useState<string | null>(null);
+  const [snapshotRefresh, setSnapshotRefresh] = useState(0);
+  const justLoadedRef = useRef(false);
   const animRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const networkMapRef = useRef<NetworkMapHandle>(null);
@@ -317,8 +327,78 @@ export default function SwmmUI() {
     if (project !== lastProjectRef.current) {
       pushUndo(lastProjectRef.current);
       lastProjectRef.current = project;
+      if (justLoadedRef.current) {
+        justLoadedRef.current = false;
+      } else {
+        setIsModified(true);
+      }
     }
   }, [project, pushUndo]);
+
+  useEffect(() => {
+    const snap = getRecoverableSnapshot();
+    if (snap) {
+      setRecoverySnapshot(snap);
+      setShowRecoveryDialog(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isModified) return;
+    const timer = setTimeout(() => {
+      try {
+        const inp = projectToInp(project);
+        const res = saveSnapshot(fileName, inp);
+        if (!res.ok) {
+          if (res.error && res.error !== autosaveError) {
+            setAutosaveError(res.error);
+            toast({ title: 'Autosave Failed', description: res.error, variant: 'destructive' });
+          }
+        } else {
+          setAutosaveError(null);
+          setSnapshotRefresh(n => n + 1);
+        }
+      } catch {}
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [project, fileName, isModified]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const healthReport = useMemo(() => {
+    try { return buildModelHealthReport(project, results); } catch { return null; }
+  }, [project, results]);
+  const integrityInfo = useMemo(
+    () => computeIntegrityInfo(project, results, healthReport, isModified),
+    [project, results, healthReport, isModified]
+  );
+
+  const handleRestoreSnapshot = useCallback((snap: AutosaveSnapshot) => {
+    try {
+      const parsed = parseInpFile(snap.inp);
+      justLoadedRef.current = true;
+      setProject(parsed);
+      setFileName(snap.fileName);
+      setResults(null);
+      setReportContent(null);
+      setSimStatus('none');
+      setTimeStep(0);
+      setSelectedObj(null);
+      setMultiSelectIds(null);
+      setIsModified(false);
+      setShowRecoveryDialog(false);
+      setShowIntegrityReport(false);
+      setRecoveryBaseline(snap.timestamp);
+      toast({ title: 'Snapshot Restored', description: `Recovered ${snap.fileName} autosaved at ${new Date(snap.timestamp).toLocaleTimeString()}` });
+    } catch (e: any) {
+      toast({ title: 'Recovery Failed', description: e.message, variant: 'destructive' });
+    }
+  }, [toast]);
+
+  const handleClearSnapshots = useCallback(() => {
+    clearSnapshots();
+    setAutosaveError(null);
+    setSnapshotRefresh(n => n + 1);
+    toast({ title: 'Autosave Storage Cleared', description: 'All saved snapshots were removed from browser storage' });
+  }, [toast]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -363,6 +443,7 @@ export default function SwmmUI() {
           .then(r => { if (!r.ok) throw new Error('Failed to fetch'); return r.text(); })
           .then(text => {
             const parsed = parseInpFile(text);
+            justLoadedRef.current = true;
             setProject(parsed);
             const name = url.split('/').pop() || 'model.inp';
             setFileName(name);
@@ -371,7 +452,7 @@ export default function SwmmUI() {
           .catch(() => {
             fetch('/samples/Greenville_SI.inp')
               .then(r => r.ok ? r.text() : '')
-              .then(text => { if (text) { setProject(parseInpFile(text)); setFileName('Greenville_SI.inp'); } });
+              .then(text => { if (text) { justLoadedRef.current = true; setProject(parseInpFile(text)); setFileName('Greenville_SI.inp'); } });
           });
         return;
       }
@@ -381,6 +462,7 @@ export default function SwmmUI() {
       .then(r => { if (!r.ok) throw new Error('Failed'); return r.text(); })
       .then(text => {
         const parsed = parseInpFile(text);
+        justLoadedRef.current = true;
         setProject(parsed);
         setFileName('Greenville_SI.inp');
       })
@@ -399,8 +481,10 @@ export default function SwmmUI() {
     try {
       const text = await file.text();
       const parsed = parseInpFile(text);
+      justLoadedRef.current = true;
       setProject(parsed);
       setFileName(file.name);
+      setIsModified(false);
       setResults(null);
       setReportContent(null);
       setSimStatus('none');
@@ -461,8 +545,10 @@ export default function SwmmUI() {
       const text = await resp.text();
       const parsed = parseInpFile(text);
       const name = fetchUrl.split('/').pop() || 'github_file.inp';
+      justLoadedRef.current = true;
       setProject(parsed);
       setFileName(name);
+      setIsModified(false);
       setResults(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -523,8 +609,10 @@ export default function SwmmUI() {
   }, [ghBrowseOwner, ghBrowseRepo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNewProject = useCallback(() => {
+    justLoadedRef.current = true;
     setProject(createEmptyProject());
     setFileName('Untitled.inp');
+    setIsModified(false);
     setResults(null);
     setReportContent(null);
     setSimStatus('none');
@@ -540,8 +628,10 @@ export default function SwmmUI() {
       if (!resp.ok) throw new Error(`Failed to load sample: ${resp.statusText}`);
       const text = await resp.text();
       const parsed = parseInpFile(text);
+      justLoadedRef.current = true;
       setProject(parsed);
       setFileName(sampleName);
+      setIsModified(false);
       setResults(null);
       setReportContent(null);
       setSimStatus('none');
@@ -566,6 +656,10 @@ export default function SwmmUI() {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
+    setIsModified(false);
+    saveSnapshot(fileName, text, true);
+    setRecoveryBaseline();
+    setSnapshotRefresh(n => n + 1);
     toast({ title: 'Saved', description: `${fileName} downloaded` });
   }, [project, fileName, toast]);
 
@@ -1556,6 +1650,7 @@ export default function SwmmUI() {
         <span className="font-bold" style={{ color: '#ffffff' }}>&#9670;</span>
         <span className="font-semibold text-white">SWMM5-UI</span>
         <span className="text-white/70 truncate max-w-[120px] md:max-w-none">{fileName}</span>
+        <IntegrityChip info={integrityInfo} onClick={() => setShowIntegrityReport(true)} />
         <div className="flex-1" />
         <span className="text-[10px] text-white/50 mobile-hidden">Stormwater Management Model</span>
         {isMobile && (
@@ -3588,6 +3683,25 @@ export default function SwmmUI() {
         open={expertMode && openDialog === 'engineDiagnostics'}
         onOpenChange={v => !v && setOpenDialog(null)}
         provenance={runProvenance}
+      />
+
+      <IntegrityReportDialog
+        open={showIntegrityReport}
+        onClose={() => setShowIntegrityReport(false)}
+        info={integrityInfo}
+        fileName={fileName}
+        autosaveError={autosaveError}
+        onRestoreSnapshot={handleRestoreSnapshot}
+        onClearSnapshots={handleClearSnapshots}
+        snapshotRefresh={snapshotRefresh}
+      />
+
+      <RecoveryDialog
+        open={showRecoveryDialog}
+        snapshot={recoverySnapshot}
+        onRecover={() => { if (recoverySnapshot) handleRestoreSnapshot(recoverySnapshot); }}
+        onDismiss={() => setShowRecoveryDialog(false)}
+        onDiscard={() => { handleClearSnapshots(); setRecoveryBaseline(); setShowRecoveryDialog(false); setRecoverySnapshot(null); }}
       />
 
       <ModelHealthDialog
