@@ -6,15 +6,17 @@ import { BookOpen, ChevronDown, ChevronRight, FileText, ExternalLink } from 'luc
 interface Manual {
   key: string;
   title: string;
-  dir: string;
-  hhc: string;
-  home: string;
+  dir?: string;
+  hhc?: string;
+  home?: string;
+  externalUrl?: string;
 }
 
 const MANUALS: Manual[] = [
   { key: 'userguide', title: 'User Guide', dir: 'userguide', hhc: 'epaswmm5.hhc', home: 'introduction.htm' },
   { key: 'basic', title: 'Basic Tutorial', dir: 'basic', hhc: 'tutorial.hhc', home: 'introduction.htm' },
   { key: 'inlets', title: 'Inlets Tutorial', dir: 'inlets', hhc: 'InletTutorial.hhc', home: 'inlet_analysis_with_swmm.htm' },
+  { key: 'search', title: 'Manual Search', externalUrl: 'https://sjswmm5manualsearch.com/' },
 ];
 
 export interface TocNode {
@@ -110,6 +112,7 @@ export default function HelpManualsDialog({ open, onOpenChange }: {
 
   useEffect(() => {
     if (!open) return;
+    if (manual.externalUrl) return;
     if (tocs[manual.key]) return;
     setTocError(null);
     fetch(`/help/${manual.dir}/${manual.hhc}`)
@@ -123,7 +126,7 @@ export default function HelpManualsDialog({ open, onOpenChange }: {
 
   useEffect(() => {
     if (open) {
-      setPage(manual.home);
+      setPage(manual.home ?? null);
       setExpanded(new Set(['/0']));
     }
   }, [open, manualKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -144,7 +147,7 @@ export default function HelpManualsDialog({ open, onOpenChange }: {
   };
 
   const toc = tocs[manual.key];
-  const pageUrl = page ? `/help/${manual.dir}/${page}` : null;
+  const pageUrl = manual.externalUrl ?? (page ? `/help/${manual.dir}/${page}` : null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -155,7 +158,7 @@ export default function HelpManualsDialog({ open, onOpenChange }: {
             SWMM 5 Manuals
           </DialogTitle>
           <DialogDescription className="text-[11px] text-[#6b6b7b]">
-            Official EPA SWMM 5 documentation: User Guide, Basic Tutorial, and Inlets Tutorial.
+            Official EPA SWMM 5 documentation plus the online SWMM 5 Manual Search tool.
           </DialogDescription>
           <div className="flex items-center gap-1 pt-1">
             {MANUALS.map(m => (
@@ -186,25 +189,27 @@ export default function HelpManualsDialog({ open, onOpenChange }: {
         </DialogHeader>
 
         <div className="flex-1 min-h-0 flex">
-          <div className="w-[260px] shrink-0 border-r border-[#e0e0e8] bg-[#f8f8fa] flex flex-col">
-            <ScrollArea className="flex-1 min-h-0">
-              <div className="p-2">
-                {tocError ? (
-                  <div className="text-[10px] text-red-600 p-2">{tocError}</div>
-                ) : !toc ? (
-                  <div className="text-[10px] text-[#8a8a96] italic p-2">Loading contents…</div>
-                ) : (
-                  <TocTree nodes={toc} depth={0} current={page} onOpen={openPage} expanded={expanded} toggle={toggle} path="" />
-                )}
-              </div>
-            </ScrollArea>
-          </div>
+          {!manual.externalUrl && (
+            <div className="w-[260px] shrink-0 border-r border-[#e0e0e8] bg-[#f8f8fa] flex flex-col">
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="p-2">
+                  {tocError ? (
+                    <div className="text-[10px] text-red-600 p-2">{tocError}</div>
+                  ) : !toc ? (
+                    <div className="text-[10px] text-[#8a8a96] italic p-2">Loading contents…</div>
+                  ) : (
+                    <TocTree nodes={toc} depth={0} current={page} onOpen={openPage} expanded={expanded} toggle={toggle} path="" />
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
           <div className="flex-1 min-w-0 bg-white">
             {pageUrl ? (
               <iframe
                 key={pageUrl}
                 src={pageUrl}
-                sandbox=""
+                sandbox={manual.externalUrl ? 'allow-scripts allow-forms allow-popups' : ''}
                 title={`${manual.title} page`}
                 className="w-full h-full border-0"
                 data-testid="iframe-help-page"
