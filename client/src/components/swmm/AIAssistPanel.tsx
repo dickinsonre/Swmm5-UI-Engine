@@ -72,7 +72,7 @@ const LANDUSE_TABLE = [
   { name: 'Parking Lot', imperv: 95, nImperv: 0.012, nPerv: 0.10, dstoreI: 0.05, dstoreP: 0.05 },
 ];
 
-function runDiagnostics(project: SwmmProject): DiagnosticItem[] {
+export function runDiagnostics(project: SwmmProject): DiagnosticItem[] {
   const items: DiagnosticItem[] = [];
   let idx = 0;
   const addItem = (severity: Severity, category: string, message: string, objectId?: string, objectType?: string) => {

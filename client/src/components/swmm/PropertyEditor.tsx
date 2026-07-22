@@ -3,7 +3,7 @@ import type { SwmmProject, SelectedObject } from '@/lib/swmm-types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChevronDown, ChevronRight, X, MapPin } from 'lucide-react';
 import { CrossSectionSvg } from './Panels';
-import { unitLabel } from '@/lib/units';
+import { unitLabel, isSIProject } from '@/lib/units';
 import ProvenanceBadge from './ProvenanceBadge';
 import type { XSection } from '@/lib/swmm-types';
 
@@ -562,9 +562,18 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
           <span className="text-[10px] font-bold text-white/70 uppercase tracking-wider">{TYPE_LABELS[objType] || objType}</span>
           <span className="text-[11px] font-bold text-white truncate">{objId}</span>
         </div>
-        <button onClick={onClose} className="p-0.5 rounded hover:bg-white/20 transition-colors" data-testid="btn-close-property-editor">
-          <X className="w-3.5 h-3.5 text-white/80" />
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span
+            className="text-[8px] font-bold px-1.5 py-[1px] rounded bg-white/25 text-white tracking-wide"
+            title={`Units: ${isSIProject(project) ? 'SI (Metric)' : 'US Customary'} — FLOW_UNITS = ${(project.options?.['FLOW_UNITS'] || 'CFS').toUpperCase()}`}
+            data-testid="chip-units"
+          >
+            {isSIProject(project) ? 'SI' : 'US'} · {(project.options?.['FLOW_UNITS'] || 'CFS').toUpperCase()}
+          </span>
+          <button onClick={onClose} className="p-0.5 rounded hover:bg-white/20 transition-colors" data-testid="btn-close-property-editor">
+            <X className="w-3.5 h-3.5 text-white/80" />
+          </button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1">

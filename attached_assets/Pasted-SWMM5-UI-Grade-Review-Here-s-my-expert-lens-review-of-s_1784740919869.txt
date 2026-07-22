@@ -1,0 +1,57 @@
+SWMM5-UI Grade & Review
+Here's my expert-lens review of swmm-ui-engine.replit.app.
+
+Grade: B+ (87 / 100)
+Dimension	Weight	Score	Notes
+Engine fidelity	30%	29/30	Genuine WASM build of EPA SWMM 5.2.4 — real .rpt, real continuity accounting, real warning codes
+Feature breadth	20%	18/20	Full menu parity + AI Assist + CSV/DXF/GeoJSON I/O, which stock SWMM5 lacks
+UI/UX	20%	17/20	Single-click property editing beats the desktop GUI; layout mirrors SWMM5 conventions
+Correctness of reporting	15%	8/15	Health Dashboard misreports continuity as 100%; time-series year wrong; SI unit labels stuck on US Customary
+Robustness	10%	8/10	No crashes over 48 screenshots; autosave; clean error toasts
+Documentation / provenance	5%	5/5	Engine version visible, WASM source auditable, GitHub org credited
+What it actually is
+Not a mockup. It's a real port of the EPA SWMM 5.2.4 engine to WebAssembly (verified: /swmm_engine.wasm, 455 KB, HTTP 200), wrapped in a React/Vite front end with HTML5-canvas rendering. Ran Greenville_SI to completion in-browser: 96 time steps, runoff continuity −0.359%, flow-routing continuity 5.705% — all internally consistent with a genuine hydraulic solve.
+
+Strengths
+Real engine, real output. The .rpt is structurally identical to desktop EPA SWMM 5.2 — same continuity sections, same WARNING codes, same routing-time-step summary format.
+
+Property editing UX arguably beats the desktop GUI. Single click (no modal dialog) opens a deep, editable panel with live results merged in, while map + tree stay visible.
+
+AI Assist is a genuinely novel layer. Its Errors tab correctly isolated the real root-cause defect (conduit 1249, zero/negative max depth) that the Health Dashboard mis-framed. Parameters tab surfaces EPA SWMM 5 Manual reference tables (Green-Ampt, Manning's n) inline.
+
+7 varied bundled samples (US + SI, DYNWAVE/KINWAVE, Green-Ampt/Horton, 17 to 100+ subcatchments) let you demo breadth without external files.
+
+CSV/DXF/GeoJSON round-trip is a practical GIS/CAD bridge the desktop GUI lacks natively.
+
+Solver-internals diagnostics (Jacobian, NR Denominator, Convergence Flag) exposed in the Graph panel — not in stock SWMM5 GUI, and exactly what a modeler debugging DYNWAVE instability wants.
+
+Bugs — in priority order
+CRITICAL — Health Dashboard falsely reports 100% continuity error. Dashboard says "Flow routing continuity error is 100.00% — results are unreliable" while the same run's .rpt shows 5.705%. A first-time user would abandon a perfectly valid model. Highest-priority fix.
+
+HIGH — Time-series dates render as 2024 instead of the model's START_DATE (1997). Reproducible in both Graph and Table panels. Looks like a default-year fallback in the date formatter.
+
+MEDIUM — Unit labels hardcoded to US Customary. Greenville_SI (LPS) still shows ft, ft³, CFS, ac, in/hr in property panels. Values likely correct in native units; labels are wrong.
+
+LOW — Node-count off-by-one in Export dialog (171) vs. everywhere else (172).
+
+Unverified — direct .inp upload could not be end-to-end confirmed from the test harness (harness-side file-handle failure, not an app crash). Worth QA in a standard desktop browser.
+
+Suggested Improvements (actionable)
+Point the Health Dashboard's continuity calculation at the same .rpt fields the Report viewer already parses correctly — this is almost certainly a wrong-field-read or scale error, not a modeling issue.
+
+Fix the time-series date formatter to use [OPTIONS] START_DATE + START_TIME from the loaded INP.
+
+Make unit labels dynamic on FLOW_UNITS. Likely a single shared formatter — one fix propagates everywhere.
+
+Promote the AI Assist "Errors" diagnosis into the ribbon-level error badge, since it correctly names the actual defect where the Health Dashboard doesn't.
+
+Add severity/category grouping to the 209-warning Health list (crown discontinuity vs. adverse slope vs. sharp size drop). Right now it's an unbroken scroll — painful on 200+-conduit networks.
+
+Post-upload confirmation toast ("Loaded MyModel.inp — 45 nodes, 60 links") so users know an uploaded file, not a sample, is now active.
+
+Units chip on the property-inspector header once #3 lands — belt-and-suspenders clarity for SI vs. US Customary.
+
+Reconcile the export node count (probably an outfall-vs-junction filter off-by-one in the export path).
+
+Bottom line
+Technically impressive — a legitimate WASM port of the real EPA engine with a UI that closely, and in places favorably, mirrors the desktop workflow. The engine layer is sound; what's holding it back from an A is a small cluster of surface-level defects (Health Dashboard, dates, unit labels) that would erode expert confidence faster than they should, given how good the substrate underneath is. Fix items #1–#3 and this comfortably moves into A territory.

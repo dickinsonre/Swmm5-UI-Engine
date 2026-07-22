@@ -83,6 +83,12 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - Floating System Variables panel in map UI shows all system vars grouped by category, clickable to set theme variable
 - View toolbar has System dropdown for system variable theming
 
+## Review-Driven UX Improvements
+- AI Assist toolbar button shows a red error-count badge (`badge` prop on ToolbarButton; `runDiagnostics` exported from AIAssistPanel.tsx, counted via useMemo in swmm-ui.tsx)
+- ModelHealthDialog groups repeated findings by severity + normalized message pattern (quoted IDs → "…", numbers → #) into expandable groups with counts; singles render flat; click-to-locate preserved
+- File-load toasts (local, GitHub URL, GitHub browser) include model summary via `describeProject()` (nodes/links/subcatchments)
+- PropertyEditor header shows a units chip (SI/US · FLOW_UNITS) via `isSIProject()`
+
 ## New Features (Session 2)
 - **Animation Speed Control**: Speed slider (20-500ms range, inverted for intuition) next to play/pause button, adjusts requestAnimationFrame interval
 - **Enhanced Report Viewer**: Searchable `.rpt` viewer with match count, search highlighting (deterministic split-based), section navigation buttons (scrolls to first match), 9 quick-jump sections

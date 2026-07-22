@@ -23,7 +23,7 @@ import ProjectDefaultsDialog from '@/components/swmm/ProjectDefaultsDialog';
 import TableViewDialog from '@/components/swmm/TableViewDialog';
 import PropertyEditor from '@/components/swmm/PropertyEditor';
 import { SubDialogRouter, type SubDialogState } from '@/components/swmm/SubDialogs';
-import AIAssistPanel from '@/components/swmm/AIAssistPanel';
+import AIAssistPanel, { runDiagnostics } from '@/components/swmm/AIAssistPanel';
 import { HelpTopicsDialog, HelpTutorialDialog, HelpErrorsDialog } from '@/components/swmm/HelpDialogs';
 import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
@@ -366,6 +366,9 @@ export default function SwmmUI() {
   const healthReport = useMemo(() => {
     try { return buildModelHealthReport(project, results); } catch { return null; }
   }, [project, results]);
+  const aiErrorCount = useMemo(() => {
+    try { return runDiagnostics(project).filter(d => d.severity === 'error').length; } catch { return 0; }
+  }, [project]);
   const integrityInfo = useMemo(
     () => computeIntegrityInfo(project, results, healthReport, isModified),
     [project, results, healthReport, isModified]
@@ -492,7 +495,7 @@ export default function SwmmUI() {
       setSelectedObj(null);
       setMultiSelectIds(null);
       addRecentFile(file.name, 'local');
-      toast({ title: 'File Loaded', description: `${file.name} loaded successfully` });
+      toast({ title: 'File Loaded', description: `${file.name} — ${describeProject(parsed)}` });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
@@ -555,7 +558,7 @@ export default function SwmmUI() {
       setSelectedObj(null);
       setMultiSelectIds(null);
       addRecentFile(name, 'github');
-      toast({ title: 'File Loaded', description: `${name} loaded from GitHub` });
+      toast({ title: 'File Loaded', description: `${name} from GitHub — ${describeProject(parsed)}` });
       setOpenDialog(null);
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -594,7 +597,7 @@ export default function SwmmUI() {
       setTimeStep(0);
       setSelectedObj(null);
       setMultiSelectIds(null);
-      toast({ title: 'File Loaded', description: `${item.name} loaded from GitHub` });
+      toast({ title: 'File Loaded', description: `${item.name} from GitHub — ${describeProject(parsed)}` });
       setOpenDialog(null);
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -1891,6 +1894,7 @@ export default function SwmmUI() {
               label="AI Assist"
               onClick={() => setShowAIAssist(!showAIAssist)}
               testId="btn-ai-assist"
+              badge={aiErrorCount}
             />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <button
@@ -3838,7 +3842,15 @@ function ContextMenuItem({ icon, label, onClick, disabled, danger, testId }: {
   );
 }
 
-function ToolbarButton({ icon, label, accent, primary, onClick, disabled, testId }: {
+function describeProject(p: SwmmProject): string {
+  const nodes = p.junctions.length + p.outfalls.length + p.storageUnits.length + p.dividers.length;
+  const links = p.conduits.length + p.pumps.length + p.weirs.length + p.orifices.length + p.outlets.length;
+  const parts = [`${nodes} node${nodes === 1 ? '' : 's'}`, `${links} link${links === 1 ? '' : 's'}`];
+  if (p.subcatchments.length > 0) parts.push(`${p.subcatchments.length} subcatchment${p.subcatchments.length === 1 ? '' : 's'}`);
+  return parts.join(', ');
+}
+
+function ToolbarButton({ icon, label, accent, primary, onClick, disabled, testId, badge }: {
   icon: React.ReactNode;
   label: string;
   accent?: boolean;
@@ -3846,18 +3858,27 @@ function ToolbarButton({ icon, label, accent, primary, onClick, disabled, testId
   onClick?: () => void;
   disabled?: boolean;
   testId?: string;
+  badge?: number;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      title={label}
+      title={badge ? `${label} — ${badge} error${badge === 1 ? '' : 's'} detected` : label}
       aria-label={label}
-      className={`flex flex-col items-center justify-center px-2 md:px-3 py-1 rounded min-w-[42px] md:min-w-[54px] transition-colors
+      className={`relative flex flex-col items-center justify-center px-2 md:px-3 py-1 rounded min-w-[42px] md:min-w-[54px] transition-colors
         ${primary ? 'bg-[#1a7a3a] border border-[#15692f] shadow-sm' : accent ? 'bg-[rgba(44,110,181,0.12)] border border-[#2c6eb5]' : 'border border-transparent hover:bg-black/[0.04]'}
         ${disabled ? 'opacity-50 cursor-not-allowed' : primary ? 'cursor-pointer hover:bg-[#1e8a42]' : 'cursor-pointer'}`}
       data-testid={testId}
     >
+      {badge != null && badge > 0 && (
+        <span
+          className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-red-600 text-white text-[8px] font-bold flex items-center justify-center leading-none"
+          data-testid={testId ? `${testId}-badge` : undefined}
+        >
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
       <span className={primary ? 'text-white' : accent ? 'text-[#2c6eb5]' : 'text-[#4a4a5a]'}>{icon}</span>
       <span className={`text-[8px] md:text-[9px] mt-0.5 hidden sm:inline ${primary ? 'text-white font-semibold' : accent ? 'text-[#2c6eb5]' : 'text-[#6b6b7b]'}`}>{label}</span>
     </button>
