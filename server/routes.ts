@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { spawn } from "child_process";
-import { writeFile, readFile, mkdir, unlink } from "fs/promises";
+import { writeFile, readFile, mkdir, rm } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { existsSync } from "fs";
@@ -15,6 +15,75 @@ const ALLOWED_HOSTS = [
 
 const BATCH_SWMM_URL = 'https://batch-swmm-runner-robertdickinson.replit.app';
 const SWMM_ENGINE_PATH = join(process.cwd(), 'swmm-engine', 'runswmm');
+const MAX_INP_BYTES = 25 * 1024 * 1024; // 25 MB cap on uploaded models
+const SIM_TIMEOUT_MS = 180000; // kill runaway simulations after 3 minutes
+
+// Probe whether the SWMM binary can actually execute (not just exist).
+// A binary built against a missing dynamic loader path exists on disk but
+// fails to spawn with ENOENT in production containers.
+let engineExecutable: boolean | null = null;
+let engineProbeAt = 0;
+const PROBE_TTL_MS = 30000; // re-probe a failed engine every 30s in case failure was transient
+
+function markEngineUnavailable(err?: NodeJS.ErrnoException) {
+  // Only hard-disable on deterministic exec errors; transient failures get retried via TTL.
+  const code = err?.code || '';
+  engineExecutable = false;
+  engineProbeAt = ['ENOENT', 'EACCES', 'ENOEXEC'].includes(code)
+    ? Date.now() + 3600000 // deterministic: back off re-probe for an hour
+    : Date.now();          // transient: eligible for re-probe after TTL
+}
+
+async function probeEngine(): Promise<boolean> {
+  if (engineExecutable === true) return true;
+  if (engineExecutable === false && Date.now() - engineProbeAt < PROBE_TTL_MS) return false;
+  engineProbeAt = Date.now();
+  if (!existsSync(SWMM_ENGINE_PATH)) {
+    engineExecutable = false;
+    return false;
+  }
+  engineExecutable = await new Promise<boolean>((resolve) => {
+    try {
+      const proc = spawn(SWMM_ENGINE_PATH, ['--help']);
+      let settled = false;
+      const done = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+      proc.on('error', () => done(false));
+      proc.on('close', () => done(true));
+      setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch {}
+        done(true); // it spawned; treat slow help output as executable
+      }, 5000);
+    } catch {
+      resolve(false);
+    }
+  });
+  console.log(`[swmm] engine probe: ${SWMM_ENGINE_PATH} executable=${engineExecutable}`);
+  return engineExecutable;
+}
+
+function readBodyWithLimit(req: Request): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    req.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > MAX_INP_BYTES) {
+        const err = new Error(`Request body exceeds ${MAX_INP_BYTES / (1024 * 1024)} MB limit`) as any;
+        err.statusCode = 413;
+        reject(err);
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -99,7 +168,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/swmm/status", async (_req: Request, res: Response) => {
-    const found = existsSync(SWMM_ENGINE_PATH);
+    const found = await probeEngine();
     res.json({ found, path: SWMM_ENGINE_PATH, mode: 'local' });
   });
 
@@ -107,20 +176,14 @@ export async function registerRoutes(
     const jobId = randomUUID();
     const tmpDir = join('/tmp', `swmm-${jobId}`);
     await mkdir(tmpDir, { recursive: true });
+    const cleanup = async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} };
 
     const inpPath = join(tmpDir, 'model.inp');
     const rptPath = join(tmpDir, 'model.rpt');
     const outPath = join(tmpDir, 'model.out');
 
     try {
-      const chunks: Buffer[] = [];
-      await new Promise<void>((resolve, reject) => {
-        req.on('data', (chunk: Buffer) => chunks.push(chunk));
-        req.on('end', () => resolve());
-        req.on('error', reject);
-      });
-
-      const body = Buffer.concat(chunks);
+      const body = await readBodyWithLimit(req);
       const contentType = req.headers['content-type'] || '';
       let inpText: string;
 
@@ -146,18 +209,31 @@ export async function registerRoutes(
 
       await writeFile(inpPath, inpText, 'utf-8');
 
-      if (!existsSync(SWMM_ENGINE_PATH)) {
-        return res.status(500).json({ error: 'SWMM engine binary not found' });
+      if (!(await probeEngine())) {
+        await cleanup();
+        return res.status(500).json({ error: 'SWMM engine binary not found or not executable' });
       }
 
       const proc = spawn(SWMM_ENGINE_PATH, [inpPath, rptPath, outPath]);
       let stdout = '';
       let stderr = '';
+      let responded = false;
+      const respond = (fn: () => void) => {
+        if (responded || res.headersSent) return;
+        responded = true;
+        fn();
+      };
+      const killTimer = setTimeout(async () => {
+        try { proc.kill('SIGKILL'); } catch {}
+        respond(() => res.status(500).json({ error: `Simulation timed out after ${SIM_TIMEOUT_MS / 1000} seconds` }));
+        await cleanup();
+      }, SIM_TIMEOUT_MS);
 
       proc.stdout.on('data', (data) => { stdout += data.toString(); });
       proc.stderr.on('data', (data) => { stderr += data.toString(); });
 
       proc.on('close', async (code) => {
+        clearTimeout(killTimer);
         let reportContent = '';
         try { reportContent = await readFile(rptPath, 'utf-8'); } catch {}
 
@@ -170,82 +246,98 @@ export async function registerRoutes(
         const hasErrors = reportContent.includes('ERROR') ||
           (stdout.includes('There are errors') || stdout.includes('has errors'));
 
-        try { await unlink(inpPath); } catch {}
-        try { await unlink(rptPath); } catch {}
-        try { await unlink(outPath); } catch {}
-        try { const { rmdir } = await import('fs/promises'); await rmdir(tmpDir); } catch {}
+        await cleanup();
 
-        if (hasErrors) {
-          return res.json({
-            status: 'failed',
-            error: 'SWMM simulation completed with errors',
-            reportContent,
-            stdout,
-            exitCode: code,
-          });
-        }
-
-        res.json({
-          status: 'success',
-          reportContent,
-          outBase64,
-          stdout,
-          exitCode: code,
+        respond(() => {
+          if (hasErrors) {
+            res.json({
+              status: 'failed',
+              error: 'SWMM simulation completed with errors',
+              reportContent,
+              stdout,
+              exitCode: code,
+            });
+          } else {
+            res.json({
+              status: 'success',
+              reportContent,
+              outBase64,
+              stdout,
+              exitCode: code,
+            });
+          }
         });
       });
 
-      proc.on('error', (err) => {
-        res.status(500).json({ error: `Failed to spawn SWMM engine: ${err.message}` });
+      proc.on('error', async (err) => {
+        clearTimeout(killTimer);
+        markEngineUnavailable(err as NodeJS.ErrnoException);
+        await cleanup();
+        respond(() => res.status(500).json({ error: `Failed to spawn SWMM engine: ${err.message}` }));
       });
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      await cleanup();
+      if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
     }
   });
 
   app.post("/api/swmm/run-or-proxy", async (req: Request, res: Response) => {
-    const localFound = existsSync(SWMM_ENGINE_PATH);
+    const localFound = await probeEngine();
     if (localFound) {
       const jobId = randomUUID();
       const tmpDir = join('/tmp', `swmm-${jobId}`);
       await mkdir(tmpDir, { recursive: true });
+      const cleanup = async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} };
       const inpPath = join(tmpDir, 'model.inp');
       const rptPath = join(tmpDir, 'model.rpt');
       const outPath = join(tmpDir, 'model.out');
       try {
-        const chunks: Buffer[] = [];
-        await new Promise<void>((resolve, reject) => {
-          req.on('data', (chunk: Buffer) => chunks.push(chunk));
-          req.on('end', () => resolve());
-          req.on('error', reject);
-        });
-        const inpText = Buffer.concat(chunks).toString('utf-8');
+        const body = await readBodyWithLimit(req);
+        const inpText = body.toString('utf-8');
         await writeFile(inpPath, inpText, 'utf-8');
         const proc = spawn(SWMM_ENGINE_PATH, [inpPath, rptPath, outPath]);
         let stdout = '';
         let stderr = '';
+        let responded = false;
+        const respond = (fn: () => void) => {
+          if (responded || res.headersSent) return;
+          responded = true;
+          fn();
+        };
+        const killTimer = setTimeout(async () => {
+          try { proc.kill('SIGKILL'); } catch {}
+          respond(() => res.status(500).json({ error: `Simulation timed out after ${SIM_TIMEOUT_MS / 1000} seconds` }));
+          await cleanup();
+        }, SIM_TIMEOUT_MS);
         proc.stdout.on('data', (data) => { stdout += data.toString(); });
         proc.stderr.on('data', (data) => { stderr += data.toString(); });
         proc.on('close', async (code) => {
+          clearTimeout(killTimer);
           let reportContent = '';
           try { reportContent = await readFile(rptPath, 'utf-8'); } catch (e: any) { console.log('[swmm] Failed to read rpt:', e.message); }
           let outBase64 = '';
           try { const outBuf = await readFile(outPath); outBase64 = outBuf.toString('base64'); } catch (e: any) { console.log('[swmm] Failed to read out:', e.message); }
           console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outBase64.length} base64 chars, exit=${code}, stdout=${stdout.substring(0, 200)}`);
           const hasErrors = reportContent.includes('ERROR') || stdout.includes('There are errors') || stdout.includes('has errors');
-          try { await unlink(inpPath); } catch {}
-          try { await unlink(rptPath); } catch {}
-          try { await unlink(outPath); } catch {}
-          try { const { rmdir } = await import('fs/promises'); await rmdir(tmpDir); } catch {}
-          if (hasErrors) {
-            return res.json({ status: 'failed', error: 'SWMM simulation completed with errors', reportContent, stdout, exitCode: code });
-          }
-          res.json({ status: 'success', reportContent, outBase64, stdout, exitCode: code, engineUsed: 'local' });
+          await cleanup();
+          respond(() => {
+            if (hasErrors) {
+              res.json({ status: 'failed', error: 'SWMM simulation completed with errors', reportContent, stdout, exitCode: code });
+            } else {
+              res.json({ status: 'success', reportContent, outBase64, stdout, exitCode: code, engineUsed: 'local' });
+            }
+          });
         });
-        proc.on('error', (err) => {
-          res.status(500).json({ error: `Failed to spawn SWMM engine: ${err.message}` });
+        proc.on('error', async (err) => {
+          clearTimeout(killTimer);
+          markEngineUnavailable(err as NodeJS.ErrnoException);
+          console.log(`[swmm] spawn failed (${err.message}); marking local engine unavailable`);
+          await cleanup();
+          respond(() => res.status(404).json({ error: `Local engine cannot execute: ${err.message}`, useRemote: true }));
         });
       } catch (error: any) {
-        res.status(500).json({ error: error.message });
+        await cleanup();
+        if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
       }
     } else {
       res.status(404).json({ error: 'Local engine not available', useRemote: true });
@@ -254,7 +346,7 @@ export async function registerRoutes(
 
   app.get("/api/swmm-proxy/status", async (_req: Request, res: Response) => {
     try {
-      const localFound = existsSync(SWMM_ENGINE_PATH);
+      const localFound = await probeEngine();
       if (localFound) {
         return res.json({ found: true, path: SWMM_ENGINE_PATH, mode: 'local', apiAvailable: true, apiVersion: 52004 });
       }

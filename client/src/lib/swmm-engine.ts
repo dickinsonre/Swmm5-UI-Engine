@@ -189,6 +189,12 @@ export function createLocalEngine(): SwmmEngine {
       if (resp.status === 404) {
         const data = await resp.json().catch(() => ({}));
         if (data.useRemote) {
+          const wasmOk = await checkWasmEngine();
+          if (wasmOk) {
+            if (onProgress) onProgress(8, 'Local engine unavailable, using in-browser SWMM 5.2.4 (WASM)...');
+            const wasmEngine = createWasmEngine();
+            return wasmEngine.run(project, onProgress);
+          }
           if (onProgress) onProgress(8, 'Local engine unavailable, using remote SWMM 5.2.4...');
           const remoteEngine = createRemoteEngine();
           return remoteEngine.run(project, onProgress);
