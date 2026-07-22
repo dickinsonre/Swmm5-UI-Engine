@@ -31,6 +31,7 @@ import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@
 import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
 import { REGRESSION_METRICS, extractRunSnapshot, compareSnapshots, comparisonToCsv, getDefaultTolerances, type RunSnapshot, type ToleranceSet } from '@/lib/regression-compare';
 import SpeedBar from '@/components/swmm/SpeedBar';
+import SectionGridView from '@/components/swmm/SectionGridView';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
@@ -146,6 +147,7 @@ export default function SwmmUI() {
   const [animSpeed, setAnimSpeed] = useState(150);
   const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
+  const [detailsView, setDetailsView] = useState<'grid' | 'inp'>('grid');
   const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
@@ -3470,11 +3472,30 @@ export default function SwmmUI() {
         <DialogContent className="max-w-4xl w-[95vw] sm:w-auto bg-white border-[#d0d0d8] max-h-[90vh] flex flex-col" data-testid="project-details-dialog">
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
-              <FileText className="w-4 h-4" /> Project Details (INP)
+              <FileText className="w-4 h-4" /> Project Details
             </DialogTitle>
-            <DialogDescription>Full SWMM5 input file text generated from the current model.</DialogDescription>
+            <DialogDescription>Browse all SWMM5 sections as tables, or view the full input file text.</DialogDescription>
           </DialogHeader>
-          {openDialog === 'projectDetails' && (
+          <div className="flex gap-1 shrink-0">
+            <button
+              onClick={() => setDetailsView('grid')}
+              className={`px-3 py-1 text-[11px] rounded-t border border-b-0 ${detailsView === 'grid' ? 'bg-[#2c6eb5] text-white border-[#2c6eb5]' : 'bg-[#f0f0f4] text-[#2a2a3e] border-[#d0d0d8] hover:bg-[#e6e6ec]'}`}
+              data-testid="tab-details-grid"
+            >
+              Grid View
+            </button>
+            <button
+              onClick={() => setDetailsView('inp')}
+              className={`px-3 py-1 text-[11px] rounded-t border border-b-0 ${detailsView === 'inp' ? 'bg-[#2c6eb5] text-white border-[#2c6eb5]' : 'bg-[#f0f0f4] text-[#2a2a3e] border-[#d0d0d8] hover:bg-[#e6e6ec]'}`}
+              data-testid="tab-details-inp"
+            >
+              INP Text
+            </button>
+          </div>
+          {openDialog === 'projectDetails' && detailsView === 'grid' && (
+            <SectionGridView project={project} />
+          )}
+          {openDialog === 'projectDetails' && detailsView === 'inp' && (
             <pre className="flex-1 overflow-auto border border-[#e0e0e8] rounded bg-[#f8f8fa] p-3 text-[10px] leading-[1.5] text-[#2a2a3e] whitespace-pre font-mono" data-testid="project-details-text">
               {projectToInp(project)}
             </pre>

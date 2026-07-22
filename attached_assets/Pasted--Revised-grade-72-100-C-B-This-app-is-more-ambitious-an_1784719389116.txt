@@ -1,0 +1,301 @@
+# Revised grade: **72/100 — C+/B−**
+
+This app is **more ambitious and potentially more useful** than the earlier Saint-Venant educational dashboard. It attempts to be a genuine browser-based SWMM5 interface: model loading, editing, simulation, mapping, results, diagnostics, and INP export.
+
+However, that raises the standard. An educational diagram can tolerate a minor display defect; a model editor cannot safely tolerate silent parameter loss. The current app is impressive, but I would not yet trust it for unrestricted production model editing and round-trip export.
+
+The public deployment could not be fetched independently by my web browser, so this assessment is based on a fresh inspection of the connected **Swmm UI Engine** Replit project, its deployed screenshots, representative interactions, and code paths.
+
+| Category                      |  Grade | Comments                                                     |
+| ----------------------------- | -----: | ------------------------------------------------------------ |
+| Visual design and desktop UX  | **83** | Professional EPA/EPANET-style interface                      |
+| Modeling functionality        | **76** | Very broad feature set, with important gaps                  |
+| Hydraulic diagnostics         | **86** | CFL, phase-space and extended-variable tools are exceptional |
+| INP fidelity and model safety | **50** | Several confirmed silent data-loss paths                     |
+| Error handling                | **56** | Too many failures are swallowed or poorly surfaced           |
+| Performance                   | **72** | Fine for moderate models; likely degrades on large networks  |
+| Accessibility                 | **65** | Improved keyboard support, but canvas remains difficult      |
+| Mobile/tablet                 | **42** | Desktop application compressed onto a small screen           |
+| Code maintainability          | **48** | Main component has become excessively large                  |
+
+## What the app does extremely well
+
+The standout feature is that it is **not merely another INP viewer**. It provides a credible start toward a browser-based SWMM modeling environment.
+
+Particularly strong elements include:
+
+* Local SWMM engine, WASM, remote and mock simulation modes.
+* Editable project explorer and map.
+* INP import and export.
+* Phase-space flow-versus-depth diagnostics.
+* CFL/Courant stability analysis.
+* Manning overlays and hydraulic-state metrics.
+* More than 200 extended hydraulic and numerical variables.
+* Clickable validation and diagnostic messages.
+* URL-based model loading and sharing.
+* Undo/redo and numerous SWMM element editors.
+* A familiar EPA-style modeling interface.
+
+The phase-space and numerical diagnostics are especially original. They elevate the app beyond a SWMM GUI imitation and give it real educational and research value.
+
+## The largest problem: round-trip model fidelity
+
+Several parameters can be read from an INP file but are not correctly written back. That means this workflow may change a model without making the change obvious:
+
+> Open INP → inspect or edit something unrelated → save INP
+
+### Confirmed high-risk issues
+
+**1. Weir crest width can be omitted during export**
+
+A side-flow or transverse weir may be written without its complete width/length definition. This can materially alter the computed discharge.
+
+**2. Culvert inlet-control code can be lost**
+
+The additional culvert-code field associated with conduit cross-sections is not reliably written back. The exported model may therefore no longer use the intended culvert inlet-control relationship.
+
+**3. Storage infiltration parameters can disappear**
+
+Green-Ampt parameters read for a storage unit are not completely reproduced in the exported file. A storage unit that previously allowed infiltration could return with missing or zero infiltration behavior.
+
+**4. External time-series references are skipped**
+
+FILE-based rainfall or time-series references are ignored during import rather than preserved as unresolved external resources. The user may load a model that appears valid but has no functional rainfall data.
+
+**5. RDII opens the wrong editor**
+
+The RDII inflow route points to the Dry Weather Flow editor. These are different data structures and hydraulic concepts. This is not just a labeling issue; it can cause incorrect model data to be saved.
+
+**6. LID drain routing is cleared**
+
+The LID usage editor assigns empty values to the drain destination and report file fields. Opening and saving an existing LID configuration may erase its drain-to-node routing.
+
+**7. Map units are not preserved**
+
+The exported `[MAP]` section is written using `Units None` rather than retaining the imported map-unit setting.
+
+These issues justify most of the deduction. Until they are corrected, the app should identify itself as a **beta editor** and warn users to compare exported models against the originals.
+
+## Potentially misleading simulation behavior
+
+The default engine is currently **Mock**.
+
+That is useful for testing the UI, but dangerous as a user-facing default. Synthetic results can look hydraulically plausible enough to be mistaken for actual SWMM output.
+
+### Recommended change
+
+The Run command should behave as follows:
+
+1. Detect available real engines.
+2. Select the local or WASM engine by default.
+3. Display Mock mode using a conspicuous striped or warning-colored banner.
+4. Require confirmation before a mock simulation.
+5. Watermark every mock graph and table with **SYNTHETIC RESULTS — NOT SWMM OUTPUT**.
+
+A small engine badge is not adequate protection.
+
+## User-interface assessment
+
+### Desktop
+
+The desktop interface is visually strong. It resembles an engineering application rather than a generic web dashboard. The project tree, map, toolbar, legend and dialogs create a coherent modeling environment.
+
+The principal desktop weakness is density. New users encounter many controls without a clear recommended workflow.
+
+A better onboarding sequence would be:
+
+> **Open model → Validate → Select engine → Run → Review continuity → Review warnings → Examine map/results → Export**
+
+This could be presented as a collapsible workflow ribbon.
+
+### Mobile and tablet
+
+The app is fundamentally a desktop modeling environment. On a phone:
+
+* Menus and toolbars are crowded.
+* The project explorer competes with the map.
+* Property dialogs consume too much screen area.
+* Selecting small network elements is difficult.
+* Important status indicators are easily overlooked.
+
+I would not try to reproduce the complete desktop interface on a phone. Instead, create a **mobile review mode** containing:
+
+* Model summary
+* Validation results
+* Simulation status
+* Continuity errors
+* Critical nodes and links
+* Result graphs
+* Map inspection
+
+Editing the network geometry can remain a desktop/tablet function.
+
+## Performance and architecture
+
+The main application component is approximately **6,500 lines**, with model state, menus, dialogs, engine selection, map interactions, persistence, exports and diagnostics concentrated together.
+
+This creates several problems:
+
+* Every state change can affect a large component tree.
+* Regression risk increases as features are added.
+* Correct typing becomes difficult.
+* Dialog-specific bugs are harder to isolate.
+* Testing requires mounting too much of the application.
+
+### Recommended structure
+
+Split the app into feature areas:
+
+* Project/model state
+* INP parser and writer
+* Simulation engines
+* Network canvas
+* Element selection
+* Property editors
+* Results
+* Diagnostics
+* File operations
+* Preferences
+* Undo/redo
+* Dialog routing
+
+The project also needs a spatial index for map hit-testing. Testing every node and link on every pointer movement is acceptable for a 172-node example, but it will become sluggish on networks containing thousands of elements.
+
+## Highest-priority improvements
+
+### 1. Build an INP round-trip test suite
+
+This is the most valuable improvement.
+
+For every supported section:
+
+1. Load a reference INP.
+2. Export it without modifications.
+3. Reload the exported file.
+4. Compare all parsed properties.
+5. Fail the test when a value disappears or changes unexpectedly.
+
+Include dedicated cases for:
+
+* Weirs
+* Orifices and outlets
+* Culvert codes
+* Irregular transects
+* Storage infiltration
+* RDII
+* LIDs and drain destinations
+* FILE time series
+* Treatment expressions
+* Controls
+* Map units
+* Snowmelt
+* Groundwater
+* Water quality
+
+The app should ideally provide its own **Round-Trip Audit Report** showing preserved, altered, omitted and unsupported fields.
+
+### 2. Fix data-loss defects before adding features
+
+Correct, in this order:
+
+1. Weir width
+2. Culvert code
+3. External time series
+4. Storage infiltration
+5. RDII routing
+6. LID drain destination
+7. Map units
+
+Do not prioritize new diagrams or cosmetic additions ahead of these defects.
+
+### 3. Add explicit unsupported-feature reporting
+
+When the app cannot preserve something, state it before import or export:
+
+> “This model contains three external time-series files. Their references will be retained, but the files cannot be simulated in the browser until supplied.”
+
+Never silently discard unsupported data.
+
+### 4. Add model-integrity status
+
+Place a persistent indicator near the project name:
+
+* **Complete**
+* **Warnings**
+* **Unsupported data**
+* **Modified**
+* **Mock results**
+* **Export fidelity not verified**
+
+The indicator should open a detailed integrity report.
+
+### 5. Add autosave and recovery
+
+Save the editable project periodically to browser storage, with:
+
+* Recovery after reload or browser crash
+* Timestamped snapshots
+* Clear-storage command
+* Original-versus-current comparison
+* Protection against storage quota failures
+
+### 6. Improve result provenance
+
+Every result screen and export should identify:
+
+* Engine
+* SWMM version
+* Model filename
+* Simulation timestamp
+* Routing method
+* Routing timestep
+* Variable-timestep setting
+* Mock versus real results
+* Model modification state
+
+### 7. Complete currently incomplete editors
+
+The inspection also found missing or incomplete support for:
+
+* Cylindrical and conical storage shapes
+* Modified Horton
+* Modified Green-Ampt
+* Some direct-inflow constituents
+* Query tool access
+* Full LID usage routing
+* Reliable irregular cross-section validation
+
+### 8. Add regression benchmark models
+
+Use a compact model library covering:
+
+* Kinematic versus dynamic wave
+* Surcharge
+* Culvert inlet control
+* Weirs and orifices
+* Force mains
+* Storage infiltration
+* RDII
+* LIDs
+* Groundwater
+* Pollutant routing
+* Controls
+* External rainfall files
+
+Display expected peak flow, volume, continuity error and selected time-series values for each engine.
+
+## Recommended positioning
+
+Until the export defects are corrected, describe the application as:
+
+> **A browser-based SWMM5 model explorer, diagnostic environment and experimental editor.**
+
+After round-trip fidelity testing passes, it can credibly become:
+
+> **A browser-based SWMM5 modeling and simulation environment.**
+
+## Final verdict
+
+The app’s **ideas and diagnostic capabilities merit about 85–90/100**. Its present reliability as a model editor is closer to **55–60/100**. Combining those gives my current production grade of **72/100**.
+
+The app has considerably more long-term value than a conventional SWMM educational site. The next step is not more functionality—it is **model preservation, simulation provenance and trustworthy error reporting**. Once the seven data-integrity issues are corrected and covered by automated round-trip tests, I would expect the grade to rise into the **mid-to-high 80s**.
