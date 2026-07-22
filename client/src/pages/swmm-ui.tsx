@@ -26,6 +26,7 @@ import { SubDialogRouter, type SubDialogState } from '@/components/swmm/SubDialo
 import AIAssistPanel from '@/components/swmm/AIAssistPanel';
 import { HelpTopicsDialog, HelpTutorialDialog, HelpErrorsDialog } from '@/components/swmm/HelpDialogs';
 import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
+import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
 import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
@@ -36,7 +37,7 @@ import {
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
-  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity,
+  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity, HeartPulse,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
@@ -139,7 +140,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | null>(null);
   const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
   const [dataEditorItem, setDataEditorItem] = useState<string>('');
@@ -1284,6 +1285,34 @@ export default function SwmmUI() {
     setMultiSelectIds(null);
   }, []);
 
+  const handleHealthSelect = useCallback((objType: string, id: string) => {
+    setSelectedObj({ id, objType: objType as any });
+    setMultiSelectIds(null);
+    const map = networkMapRef.current;
+    if (!map) return;
+    const coord = project.coordinates[id] || project.symbols?.[id];
+    if (coord) {
+      map.centerOnWorld(coord[0], coord[1]);
+      return;
+    }
+    if (['conduit', 'pump', 'orifice', 'weir', 'outlet'].includes(objType)) {
+      const link = [...project.conduits, ...project.pumps, ...project.orifices, ...project.weirs, ...project.outlets].find(l => l.id === id);
+      if (link) {
+        const c1 = project.coordinates[link.fromNode];
+        const c2 = project.coordinates[link.toNode];
+        if (c1 && c2) { map.centerOnWorld((c1[0] + c2[0]) / 2, (c1[1] + c2[1]) / 2); return; }
+        if (c1) { map.centerOnWorld(c1[0], c1[1]); return; }
+        if (c2) { map.centerOnWorld(c2[0], c2[1]); return; }
+      }
+    }
+    const poly = project.polygons?.[id];
+    if (poly && poly.length > 0) {
+      const cx = poly.reduce((s, v) => s + v[0], 0) / poly.length;
+      const cy = poly.reduce((s, v) => s + v[1], 0) / poly.length;
+      map.centerOnWorld(cx, cy);
+    }
+  }, [project]);
+
   const handleShiftClick = useCallback((id: string, _objType: string) => {
     setMultiSelectIds(prev => {
       const next = new Set(prev || []);
@@ -1624,6 +1653,7 @@ export default function SwmmUI() {
           <div className="flex items-center gap-0.5">
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Options" onClick={() => setOpenDialog('analysisOptions')} testId="btn-analysis-options" />
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Locate" onClick={() => setShowLocator(!showLocator)} testId="btn-locate" />
+            <ToolbarButton icon={<HeartPulse className="w-4 h-4" />} label="Health" onClick={() => setOpenDialog('modelHealth')} testId="btn-model-health" />
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" testId="btn-summary" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" testId="btn-details" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
@@ -3291,6 +3321,14 @@ export default function SwmmUI() {
         open={openDialog === 'engineDiagnostics'}
         onOpenChange={v => !v && setOpenDialog(null)}
         provenance={runProvenance}
+      />
+
+      <ModelHealthDialog
+        open={openDialog === 'modelHealth'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        results={results}
+        onSelectObject={handleHealthSelect}
       />
 
       <HelpTopicsDialog
