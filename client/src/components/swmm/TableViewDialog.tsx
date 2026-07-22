@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table2, ArrowUpAZ, ArrowDownAZ, Copy, Columns3, AlignJustify, FileText, Filter, Printer, LineChart, BarChart3, ScatterChart, Activity, RefreshCw, X } from 'lucide-react';
 import { LineChart as RLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ScatterChart as RScatterChart, Scatter } from 'recharts';
 import ProvenanceBadge from './ProvenanceBadge';
+import { SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER } from './SyntheticWarning';
 import type { VarScope } from '@/lib/swmm-variables';
 
 interface Props {
@@ -153,7 +154,8 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
     tableRef.current.querySelectorAll('tbody tr').forEach(tr => {
       rows.push(Array.from(tr.querySelectorAll('td')).map(td => td.textContent || ''));
     });
-    const text = rows.map(r => r.join('\t')).join('\n');
+    const body = rows.map(r => r.join('\t')).join('\n');
+    const text = results.engineUsed === 'mock' ? SYNTHETIC_TEXT_HEADER + body : body;
     navigator.clipboard.writeText(text).catch(() => {});
   }, [results, closeCtx]);
 
@@ -309,6 +311,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
         <DialogHeader>
           <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
             <Table2 className="w-4 h-4" /> Table — {mode === 'byObject' ? 'By Object' : 'By Variable'}
+            {results.engineUsed === 'mock' && <SyntheticResultsLabel />}
           </DialogTitle>
           <DialogDescription>
             {mode === 'byObject' ? 'View all timesteps for a single object.' : 'View all objects for a single variable at the current timestep.'}

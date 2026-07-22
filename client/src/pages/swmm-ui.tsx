@@ -33,6 +33,7 @@ import { REGRESSION_METRICS, extractRunSnapshot, compareSnapshots, comparisonToC
 import SpeedBar from '@/components/swmm/SpeedBar';
 import SectionGridView from '@/components/swmm/SectionGridView';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
+import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark } from '@/components/swmm/SyntheticWarning';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -632,8 +633,9 @@ export default function SwmmUI() {
 
   const simAbortRef = useRef<AbortController | null>(null);
   const [runProvenance, setRunProvenance] = useState<RunProvenance | null>(null);
+  const [showMockConfirm, setShowMockConfirm] = useState(false);
 
-  const handleRunSimulation = useCallback(async () => {
+  const startSimulation = useCallback(async () => {
     setSimStatus('running');
     setSimProgress(0);
     setSimProgressMsg('Initializing...');
@@ -692,6 +694,14 @@ export default function SwmmUI() {
     }
   }, [project, toast, engineMode]);
 
+  const handleRunSimulation = useCallback(() => {
+    if (engineMode === 'mock') {
+      setShowMockConfirm(true);
+      return;
+    }
+    startSimulation();
+  }, [engineMode, startSimulation]);
+
   const handleStopSimulation = useCallback(() => {
     if (simAbortRef.current) {
       simAbortRef.current.abort();
@@ -705,7 +715,19 @@ export default function SwmmUI() {
     const mapCanvas = networkMapRef.current?.getCanvas();
     if (!mapCanvas) return null;
 
-    if (!includeLegend) return mapCanvas;
+    const isMock = results?.engineUsed === 'mock';
+
+    if (!includeLegend) {
+      if (!isMock) return mapCanvas;
+      const wmCanvas = document.createElement('canvas');
+      wmCanvas.width = mapCanvas.width;
+      wmCanvas.height = mapCanvas.height;
+      const wmCtx = wmCanvas.getContext('2d');
+      if (!wmCtx) return mapCanvas;
+      wmCtx.drawImage(mapCanvas, 0, 0);
+      drawSyntheticWatermark(wmCtx, wmCanvas.width, wmCanvas.height);
+      return wmCanvas;
+    }
 
     const exportCanvas = document.createElement('canvas');
     const legendWidth = 170;
@@ -771,8 +793,10 @@ export default function SwmmUI() {
       y += 14;
     });
 
+    if (isMock) drawSyntheticWatermark(ctx, exportCanvas.width, exportCanvas.height);
+
     return exportCanvas;
-  }, [nodeTheme, linkTheme]);
+  }, [nodeTheme, linkTheme, results]);
 
   const handleExportToFile = useCallback(async () => {
     const canvas = await buildExportCanvas(exportIncludeLegend);
@@ -1926,6 +1950,8 @@ export default function SwmmUI() {
         </div>
       )}
 
+      {results?.engineUsed === 'mock' && <SyntheticResultsBanner />}
+
       <div className="flex-1 flex overflow-hidden relative">
         {isMobile && mobilePanel !== 'none' && (
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setMobilePanel('none')} data-testid="mobile-panel-backdrop" />
@@ -2469,6 +2495,30 @@ export default function SwmmUI() {
           SWMMEnablement
         </a>
       </div>
+
+      <Dialog open={showMockConfirm} onOpenChange={setShowMockConfirm}>
+        <DialogContent className="max-w-md bg-white border-[#d0d0d8]" data-testid="mock-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#b45309]">
+              <AlertTriangle className="w-5 h-5" /> Mock Engine Selected
+            </DialogTitle>
+            <DialogDescription className="text-[#6b6b7b]">
+              You are about to run the Mock engine, which produces synthetic results.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded border border-[#f0c060] bg-[#fdf6e3] px-3 py-2 text-[11px] text-[#7a5210] leading-relaxed" data-testid="text-mock-warning">
+            The Mock engine does <b>not</b> run EPA SWMM. It generates artificial, hydraulically plausible-looking numbers for interface testing only. Do not use these results for design, analysis, or any engineering decisions.
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => setShowMockConfirm(false)} className="bg-[#f0f0f4] border-[#d0d0d8] text-[#2a2a3e]" data-testid="btn-mock-cancel">
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => { setShowMockConfirm(false); startSimulation(); }} className="bg-[#b45309] text-white hover:bg-[#92400e]" data-testid="btn-mock-confirm">
+              Run Synthetic Simulation
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={openDialog === 'github'} onOpenChange={v => !v && setOpenDialog(null)}>
         <DialogContent className="bg-white border-[#d0d0d8] text-[#2a2a3e] max-w-lg w-[95vw] sm:w-auto max-h-[90vh] overflow-y-auto" data-testid="github-dialog">
@@ -3170,6 +3220,7 @@ export default function SwmmUI() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <BarChart3 className="w-4 h-4" /> SWMM Report
+              {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
             </DialogTitle>
             <DialogDescription className="text-xs text-[#6b6b7b]">
               Full simulation report output (.rpt file contents). Use the search bar to find sections.
@@ -3234,7 +3285,8 @@ export default function SwmmUI() {
               size="sm"
               onClick={() => {
                 if (reportContent) {
-                  navigator.clipboard.writeText(reportContent);
+                  const text = results?.engineUsed === 'mock' ? SYNTHETIC_TEXT_HEADER + reportContent : reportContent;
+                  navigator.clipboard.writeText(text);
                   toast({ title: 'Copied', description: 'Report copied to clipboard' });
                 }
               }}
@@ -3248,11 +3300,13 @@ export default function SwmmUI() {
               size="sm"
               onClick={() => {
                 if (reportContent) {
-                  const blob = new Blob([reportContent], { type: 'text/plain' });
+                  const isMock = results?.engineUsed === 'mock';
+                  const text = isMock ? SYNTHETIC_TEXT_HEADER + reportContent : reportContent;
+                  const blob = new Blob([text], { type: 'text/plain' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = (fileName || 'model').replace(/\.inp$/i, '') + '.rpt';
+                  a.download = (fileName || 'model').replace(/\.inp$/i, '') + (isMock ? '_SYNTHETIC.rpt' : '.rpt');
                   a.click();
                   URL.revokeObjectURL(url);
                 }
@@ -3271,6 +3325,7 @@ export default function SwmmUI() {
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <ArrowLeftRight className="w-4 h-4" /> Profile Plot
+              {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
             </DialogTitle>
             <DialogDescription>Select conduits to define a longitudinal path and view the profile.</DialogDescription>
           </DialogHeader>
@@ -3283,6 +3338,7 @@ export default function SwmmUI() {
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <TrendingUp className="w-4 h-4" /> Time Series Graph
+              {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
             </DialogTitle>
             <DialogDescription>View simulation results over time for any node, link, or subcatchment.</DialogDescription>
           </DialogHeader>
@@ -3306,6 +3362,7 @@ export default function SwmmUI() {
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <Target className="w-4 h-4" /> Calibration Analysis
+              {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
             </DialogTitle>
             <DialogDescription>Compare observed measurements against simulation results at calibration locations.</DialogDescription>
           </DialogHeader>
@@ -3323,6 +3380,7 @@ export default function SwmmUI() {
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <Calculator className="w-4 h-4" /> Statistics Report
+              {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
             </DialogTitle>
             <DialogDescription>Define statistical analysis parameters for simulation results.</DialogDescription>
           </DialogHeader>
@@ -3335,6 +3393,7 @@ export default function SwmmUI() {
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <Activity className="w-4 h-4" /> Scatter Plot
+              {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
             </DialogTitle>
             <DialogDescription>Plot any two variables against each other. Select X and Y axes, overlay multiple objects.</DialogDescription>
           </DialogHeader>
