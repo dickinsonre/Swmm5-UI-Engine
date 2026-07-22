@@ -1,0 +1,353 @@
+# Grade: **64/100 — C**
+
+**Underlying product and codebase potential: 92/100 — A-**
+
+The low current grade is not because the app lacks capability. It is because the **main deployed workflow—running a SWMM simulation—is currently broken**. Based on the connected Replit codebase and deployment inspection, the interface starts, but attempting a production simulation can crash the Express server.
+
+I could not directly retrieve the public deployment through my web-testing connection, so the runtime findings below come from the connected Replit codebase and deployment audit rather than a full manual click-through of the public URL. 
+
+## Category scores
+
+| Category                       | Score |
+| ------------------------------ | ----: |
+| Product concept                |    98 |
+| SWMM model editing scope       |    94 |
+| Result visualization           |    94 |
+| INP file support               |    92 |
+| Engine architecture concept    |    88 |
+| Current deployed reliability   |    30 |
+| Scientific transparency        |    78 |
+| Security and resource controls |    62 |
+| Accessibility                  |    48 |
+| Mobile usability               |    42 |
+| Automated testing              |    15 |
+| Maintainability                |    62 |
+
+## What the app does exceptionally well
+
+### 1. It is a remarkably complete browser-based SWMM environment
+
+The app goes far beyond a simple `.inp` viewer. Its intended workflow includes:
+
+* Loading models through drag-and-drop, raw URLs, and GitHub
+* Editing nodes, links, subcatchments, curves, controls, and time series
+* Configuring analysis and Dynamic Wave options
+* Running SWMM
+* Animating depth, flooding, flow direction, and subcatchment results
+* Viewing graphs, hydraulic profiles, tables, scatter plots, statistics, and reports
+* Exporting `.inp`, CSV, DXF, GeoJSON, and calibration data
+
+That is an ambitious and valuable product direction.
+
+### 2. The four-engine strategy is excellent in principle
+
+The app supports:
+
+1. Local native SWMM execution
+2. In-browser WebAssembly SWMM
+3. Remote BatchSWMM execution
+4. Mock results for demonstrations
+
+This is the correct architectural idea. A browser app should not depend upon only one execution route.
+
+### 3. The in-browser WASM engine is a major achievement
+
+The audit found a functional SWMM 5.2.4 WebAssembly build that can run hydraulic simulations entirely in the browser. This is probably the most strategically valuable part of the application because it enables:
+
+* Offline simulation
+* No server execution expense
+* Better privacy for client models
+* Faster startup after the WASM module is loaded
+* Reduced dependence on Replit deployment architecture
+
+### 4. The result-viewing system is strong
+
+The app includes an impressive range of views:
+
+* Animated network map
+* Flow and depth time series
+* Hydraulic profile plots
+* Tabular results
+* Variable-to-variable scatter plots
+* Pearson correlation and (R^2)
+* Event statistics and exceedance curves
+* Searchable `.rpt` viewer
+* Calibration comparisons
+* Split-screen model comparison
+
+The result interface may already be richer than the editing interface of many commercial model viewers.
+
+### 5. The extended-variable concept is distinctive
+
+The application computes or presents more than 200 additional hydraulic variables, including Froude number, Saint-Venant terms, infiltration state, and solver-related metrics.
+
+This could become the app’s defining feature—but calculated, reconstructed, and estimated variables must be clearly separated from values directly produced by SWMM.
+
+---
+
+# Critical production defect
+
+The deployed app reportedly identifies the native SWMM binary as available because the file exists. However, the binary was built against a NixOS dynamic-loader path that is unavailable in the production container.
+
+The sequence is:
+
+1. The server finds `runswmm`.
+2. It reports the local engine as available.
+3. The application selects the local engine.
+4. The operating system cannot start the binary and returns `ENOENT`.
+5. The process error handler sends an error response.
+6. The close handler attempts to send another response.
+7. Node throws `ERR_HTTP_HEADERS_SENT`.
+8. The Express process crashes.
+9. The application never reaches the working WASM fallback.
+
+This is a **release-blocking defect** because simulation is the central purpose of the app.
+
+## Fix order
+
+### 1. Make WASM the production default immediately
+
+Until the native binary is rebuilt, use:
+
+```text
+WASM → Remote → Mock
+```
+
+Do not advertise the local engine as available merely because its file exists.
+
+### 2. Probe execution, not file existence
+
+The engine status test should launch a safe version command or minimal test process. A binary that exists but cannot execute is unavailable.
+
+### 3. Guard against duplicate responses
+
+The error and close callbacks need one shared completion flag so only one callback can finish the HTTP response.
+
+### 4. Recompile the native SWMM binary statically
+
+Build it using musl or another portable static configuration so it does not require a missing `/nix/store/.../ld-linux` path.
+
+### 5. Add server-level crash containment
+
+Even after correcting this bug, one failed simulation request should never terminate the application server.
+
+---
+
+# Most valuable product improvements
+
+## 1. Add an Engine Control Center
+
+Do not hide the engine-selection logic from the user. Show:
+
+| Engine           | Status        | Version    | Location      |
+| ---------------- | ------------- | ---------- | ------------- |
+| Browser WASM     | Ready         | SWMM 5.2.4 | This browser  |
+| Native server    | Unavailable   | —          | Replit server |
+| Remote BatchSWMM | Ready/Offline | Version    | Cloud         |
+| Mock             | Ready         | Synthetic  | Browser       |
+
+Let the user explicitly choose an engine or select **Automatic**.
+
+After each simulation, display:
+
+* Engine used
+* SWMM version
+* Run duration
+* Input model hash
+* Number of reporting periods
+* Continuity errors
+* Warning count
+* Whether any results were calculated or estimated
+
+This provides crucial engineering provenance.
+
+## 2. Add a pre-run model validation gate
+
+Before running SWMM, generate a concise QA/QC panel containing:
+
+* Duplicate object IDs
+* Missing cross-sections
+* Orphaned nodes
+* Nodes without a path to an outfall
+* Adverse or zero conduit slopes
+* Zero-length links
+* Invalid dates and time steps
+* Missing rainfall or time-series references
+* Curves referenced but not defined
+* Control rules referencing missing objects
+* Suspiciously small node surface areas
+* Abrupt diameter changes
+* Very long computational reaches
+
+Allow the user to run despite warnings, but distinguish **errors that block execution** from **engineering review warnings**.
+
+## 3. Integrate the Phase Space Explorer
+
+Your Phase Space Explorer would be a natural advanced-results module inside this app.
+
+For any selected conduit or node, add:
+
+> **Open Phase-Space Diagnostics**
+
+That view could provide:
+
+* H–Q loop rating curve
+* Rising versus falling limb
+* Manning reference
+* State-derivative plane
+* STITCH, WALL, SLOSH, CCW and BWATER screening
+* Model-wide attention sweep
+* DYNWAVE versus KINWAVE comparison
+
+This would connect the model-building app to your strongest diagnostic concept.
+
+## 4. Add baseline-versus-scenario regression testing
+
+The split-screen comparison should use real simulation engines rather than mock results.
+
+A professional comparison workflow should show:
+
+* Added and removed model objects
+* Changed input properties
+* Peak-flow differences
+* Peak-depth differences
+* Flooding-volume differences
+* Continuity-error differences
+* Timing shifts
+* Newly surcharged or flooded nodes
+* Links whose maximum (d/D) increased
+* Result tolerance pass/fail
+
+This could become a SWMM model regression-testing environment.
+
+## 5. Separate direct SWMM output from reconstructed variables
+
+Use three visible provenance classes:
+
+* **SWMM output** — read directly from `.out` or `.rpt`
+* **Derived** — mathematically calculated from SWMM output
+* **Estimated** — approximated because the necessary engine state was unavailable
+
+Some pollutant, snow, LID, and internal solver variables are currently stubs or estimates. They should never appear visually identical to native SWMM variables.
+
+A tooltip should show the formula, assumptions, source variables, units, and limitations.
+
+## 6. Add run history and reproducibility
+
+Keep a local run ledger containing:
+
+* Model name
+* Date and time
+* Engine and version
+* Simulation options
+* Input checksum
+* Run success/failure
+* Continuity errors
+* Warnings
+* Output checksum
+* User notes
+
+This would allow users to return to previous runs and understand exactly what changed.
+
+## 7. Improve mobile and accessibility support
+
+The present app is strongly desktop-oriented. Key improvements include:
+
+* Responsive layout below 1024 pixels
+* Touch pan and pinch zoom
+* Larger toolbar targets
+* Keyboard-accessible drawing tools
+* Proper dialog focus trapping
+* ARIA labels for toolbar controls
+* A non-canvas object-navigation tree
+* Accessible data tables corresponding to every chart
+* High-contrast and color-blind-safe result legends
+
+A full network editor may never be ideal on a phone, but model review and result inspection should work well on tablets.
+
+## 8. Modularize the frontend
+
+The main `swmm-ui.tsx` file is reportedly over 6,000 lines. Split it by responsibility:
+
+```text
+Project workspace
+Network map
+Object editors
+Analysis options
+Engine manager
+Simulation state
+Result animation
+Graphs and profiles
+Report viewer
+Import/export
+Comparison
+Extended variables
+```
+
+The production app may still bundle into one deployment, but development should occur through smaller testable modules.
+
+## 9. Add automated tests before adding more features
+
+Highest-value tests:
+
+1. Parse `.inp` → write `.inp` → parse again.
+2. Verify object counts and critical properties survive round-trip.
+3. Run a minimal WASM model and confirm results.
+4. Validate a known EPA example against expected continuity and peak results.
+5. Confirm failed native execution falls back to WASM.
+6. Confirm one engine failure cannot crash Express.
+7. Verify `.out` parsing against known values.
+8. Test model comparison tolerances.
+9. Test imports and exports.
+10. Test large and malformed input files.
+
+The app currently has effectively no automated test suite, which is the largest long-term engineering risk after the production crash.
+
+## 10. Add server safeguards
+
+The execution endpoints should have:
+
+* Request-size limits
+* Rate limiting
+* Simulation timeout
+* Maximum concurrent run count
+* Guaranteed temporary-directory cleanup
+* Maximum output-file size
+* Input validation
+* Structured error responses
+* Health checks
+* Crash recovery
+
+Remove unused authentication, database, and ORM dependencies unless those features are genuinely planned.
+
+# Recommended development sequence
+
+### Release 1: Make it dependable
+
+* Switch deployed execution to WASM-first
+* Fix duplicate-response crash
+* Add real engine health checks
+* Add request limits and cleanup
+* Add engine smoke tests
+
+### Release 2: Make it trustworthy
+
+* Add validation panel
+* Add result provenance
+* Add run manifest and history
+* Validate against standard EPA models
+* Replace estimated variables or label them clearly
+
+### Release 3: Make it distinctive
+
+* Integrate phase-space diagnostics
+* Add real baseline/scenario comparison
+* Add model regression testing
+* Add batch and sensitivity runs
+* Export a professional QA/QC report
+
+# Final assessment
+
+This is potentially a **flagship SWMM browser application**. Its model editing, multiple execution engines, visualization system, GitHub integration, WASM capability, and extended-result concepts are exceptional in scope.
+
+The current deployed grade must remain **64/100** because the primary simulation workflow reportedly crashes the production server. Once simulation reliably falls back to WASM, the app would immediately move to roughly **84/100**. With automated validation, testing, result provenance, and real scenario comparison, it could realistically reach **93–95/100**.
