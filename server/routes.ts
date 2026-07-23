@@ -2,10 +2,12 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { spawn } from "child_process";
-import { writeFile, readFile, mkdir, rm } from "fs/promises";
+import { writeFile, readFile, mkdir, rm, stat } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
-import { existsSync } from "fs";
+import { existsSync, createReadStream } from "fs";
+import { createGzip } from "zlib";
+import { pipeline } from "stream";
 
 const ALLOWED_HOSTS = [
   'raw.githubusercontent.com',
@@ -23,6 +25,25 @@ const SIM_TIMEOUT_MS = 180000; // kill runaway simulations after 3 minutes
 // normal sequential engineering workflows.
 const SIM_COOLDOWN_MS = 8000;
 const lastSimByIp = new Map<string, number>();
+
+// Large binary .out results are NOT embedded in the JSON response (base64
+// inflates them ~33% and deployment proxies cap responses around 32 MiB,
+// which silently kills big-model results in production). Instead they are
+// parked on disk briefly and fetched by the client as a gzip-compressed
+// binary download via GET /api/swmm/out/:id.
+const INLINE_OUT_LIMIT = 5 * 1024 * 1024; // inline base64 only below 5 MB
+const OUT_RESULT_TTL_MS = 5 * 60 * 1000;  // parked results expire after 5 min
+const pendingOutFiles = new Map<string, { path: string; dir: string; expiresAt: number }>();
+
+function pruneExpiredOutFiles() {
+  const now = Date.now();
+  for (const [id, entry] of pendingOutFiles) {
+    if (entry.expiresAt < now) {
+      pendingOutFiles.delete(id);
+      rm(entry.dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
 
 function checkSimRateLimit(req: Request): { allowed: boolean; retryAfterMs: number } {
   const ip = req.ip || req.socket?.remoteAddress || 'unknown';
@@ -166,18 +187,39 @@ async function runLocalSimulation(inpText: string, res: Response): Promise<void>
       clearTimeout(killTimer);
       let reportContent = '';
       try { reportContent = await readFile(rptPath, 'utf-8'); } catch (e: any) { console.log('[swmm] Failed to read rpt:', e.message); }
-      let outBase64 = '';
-      try { const outBuf = await readFile(outPath); outBase64 = outBuf.toString('base64'); } catch (e: any) { console.log('[swmm] Failed to read out:', e.message); }
-      console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outBase64.length} base64 chars, exit=${code}`);
+      let outSize = 0;
+      try { outSize = (await stat(outPath)).size; } catch (e: any) { console.log('[swmm] Failed to stat out:', e.message); }
       const hasErrors = reportContent.includes('ERROR') || stdout.includes('There are errors') || stdout.includes('has errors');
-      await cleanup();
-      respond(() => {
-        if (hasErrors) {
-          res.json({ status: 'failed', error: 'SWMM simulation completed with errors', reportContent, stdout, exitCode: code, engineUsed: 'local' });
-        } else {
-          res.json({ status: 'success', reportContent, outBase64, stdout, exitCode: code, engineUsed: 'local' });
-        }
-      });
+
+      if (hasErrors || outSize === 0) {
+        console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outSize} bytes, exit=${code}, errors=${hasErrors}`);
+        await cleanup();
+        respond(() => {
+          if (hasErrors) {
+            res.json({ status: 'failed', error: 'SWMM simulation completed with errors', reportContent, stdout, exitCode: code, engineUsed: 'local' });
+          } else {
+            res.json({ status: 'success', reportContent, stdout, exitCode: code, engineUsed: 'local' });
+          }
+        });
+        return;
+      }
+
+      if (outSize <= INLINE_OUT_LIMIT) {
+        // Small result: inline as base64 (single round-trip)
+        let outBase64 = '';
+        try { const outBuf = await readFile(outPath); outBase64 = outBuf.toString('base64'); } catch (e: any) { console.log('[swmm] Failed to read out:', e.message); }
+        console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outSize} bytes (inline), exit=${code}`);
+        await cleanup();
+        respond(() => res.json({ status: 'success', reportContent, outBase64, stdout, exitCode: code, engineUsed: 'local' }));
+      } else {
+        // Large result: park on disk, client fetches it separately as
+        // compressed binary (base64-in-JSON would exceed proxy limits).
+        pruneExpiredOutFiles();
+        const outId = jobId;
+        pendingOutFiles.set(outId, { path: outPath, dir: tmpDir, expiresAt: Date.now() + OUT_RESULT_TTL_MS });
+        console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outSize} bytes (parked as ${outId}), exit=${code}`);
+        respond(() => res.json({ status: 'success', reportContent, outId, outSize, stdout, exitCode: code, engineUsed: 'local' }));
+      }
     });
 
     proc.on('error', async (err) => {
@@ -278,6 +320,29 @@ export async function registerRoutes(
   app.get("/api/swmm/status", async (_req: Request, res: Response) => {
     const found = await probeEngine();
     res.json({ found, path: SWMM_ENGINE_PATH, mode: 'local' });
+  });
+
+  // Fetch a parked large .out result as gzip-compressed binary.
+  // One-shot: the file is deleted after a successful download (or via TTL).
+  app.get("/api/swmm/out/:id", (req: Request, res: Response) => {
+    pruneExpiredOutFiles();
+    const id = req.params.id;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      return res.status(400).json({ error: 'Invalid result id' });
+    }
+    const entry = pendingOutFiles.get(id);
+    if (!entry) {
+      return res.status(404).json({ error: 'Result expired or not found. Re-run the simulation.' });
+    }
+    pendingOutFiles.delete(id);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Cache-Control', 'no-store');
+    const stream = createReadStream(entry.path);
+    pipeline(stream, createGzip({ level: 6 }), res, (err) => {
+      if (err) console.log('[swmm] out download stream error:', err.message);
+      rm(entry.dir, { recursive: true, force: true }).catch(() => {});
+    });
   });
 
   app.post("/api/swmm/run", async (req: Request, res: Response) => {

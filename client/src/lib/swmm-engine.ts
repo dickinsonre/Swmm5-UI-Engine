@@ -242,7 +242,7 @@ export function createLocalEngine(): SwmmEngine {
 
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({ error: resp.statusText }));
-        const err = new Error(`SWMM engine error: ${errData.error || resp.statusText}`) as any;
+        const err = new Error(`SWMM engine error: ${errData.error || resp.statusText || `HTTP ${resp.status}`}`) as any;
         err.reportContent = errData.reportContent || null;
         throw err;
       }
@@ -265,7 +265,22 @@ export function createLocalEngine(): SwmmEngine {
 
       let parsed: SimulationResults;
 
-      if (result.outBase64) {
+      if (result.outId) {
+        // Large result parked on the server — fetch as compressed binary
+        // (embedding it as base64 JSON exceeds proxy response limits).
+        try {
+          if (onProgress) onProgress(75, 'Downloading binary results...');
+          const outResp = await fetch(`/api/swmm/out/${result.outId}`);
+          if (!outResp.ok) throw new Error(`Result download failed (${outResp.status})`);
+          const outBuffer = await outResp.arrayBuffer();
+          parsed = parseSwmmOut(outBuffer, project);
+          parsed.reportContent = result.reportContent;
+          applyRptContinuity(parsed, result.reportContent);
+        } catch (outErr) {
+          console.warn('Failed to fetch/parse .out binary, falling back to .rpt:', outErr);
+          parsed = parseRptToResults(result.reportContent, project);
+        }
+      } else if (result.outBase64) {
         try {
           const binaryStr = atob(result.outBase64);
           const bytes = new Uint8Array(binaryStr.length);

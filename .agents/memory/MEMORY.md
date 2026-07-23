@@ -1,1 +1,2 @@
 - [SWMM .out binary header layout](swmm-out-format.md) — .out input-property sections are interleaved per object class and a reporting-vars section precedes results; misreading silently falls back to .rpt on small models.
+- [Deployment proxy response limits](deployment-response-limits.md) — responses over ~32MiB die silently in production; serve large binaries via separate gzip endpoint, never base64-in-JSON.
