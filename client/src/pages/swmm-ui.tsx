@@ -30,6 +30,7 @@ import AppsLauncherDialog from '@/components/swmm/AppsLauncherDialog';
 import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
 import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@/components/swmm/PhaseSpaceDialog';
+import Viewer3DDialog from '@/components/swmm/Viewer3DDialog';
 import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
 import { REGRESSION_METRICS, extractRunSnapshot, compareSnapshots, comparisonToCsv, getDefaultTolerances, type RunSnapshot, type ToleranceSet } from '@/lib/regression-compare';
 import SpeedBar from '@/components/swmm/SpeedBar';
@@ -47,7 +48,7 @@ import {
   ArrowLeftRight, Trash2, Search, BarChart3, List, Github,
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen, LayoutGrid,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
-  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity, HeartPulse,
+  Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity, HeartPulse, Box,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
@@ -151,7 +152,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
   const [detailsView, setDetailsView] = useState<'grid' | 'inp'>('grid');
   const [findSearchTerm, setFindSearchTerm] = useState('');
@@ -1867,6 +1868,7 @@ export default function SwmmUI() {
               setPhaseSpaceTarget(selectedObj && et ? { id: selectedObj.id, elementType: et } : null);
               setOpenDialog('phaseSpace');
             }} testId="btn-phase-space" />}
+            <ToolbarButton icon={<Box className="w-4 h-4" />} label="3D" onClick={() => setOpenDialog('viewer3d')} testId="btn-3d-viewer" />
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" onClick={() => setOpenDialog('projectSummary')} testId="btn-summary" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" onClick={() => setOpenDialog('projectDetails')} testId="btn-details" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
@@ -3739,6 +3741,13 @@ export default function SwmmUI() {
         results={results}
         target={phaseSpaceTarget}
         onTargetChange={setPhaseSpaceTarget}
+      />
+
+      <Viewer3DDialog
+        open={openDialog === 'viewer3d'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        projectName={fileName?.replace(/\.inp$/i, '')}
       />
 
       <HelpTopicsDialog

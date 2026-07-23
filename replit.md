@@ -95,6 +95,10 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 - `client/public/help/{userguide,basic,inlets}/` — Static HTML extracted from 3 EPA SWMM CHM files (User Guide, Basic Tutorial, Inlets Tutorial). TOC files: epaswmm5.hhc, tutorial.hhc, InletTutorial.hhc (CHM sitemap format).
 - `client/src/components/swmm/HelpManualsDialog.tsx` — Help > Manuals dialog: manual tab selector, parseHhc() token-based .hhc TOC parser (nested UL/OBJECT sitemap), collapsible tree, sandboxed iframe viewer (`sandbox=""` — scripts blocked, opaque origin), page path allowlist validation, "Open in new tab" link. Inlets home page is inlet_analysis_with_swmm.htm (no introduction.htm). Fourth tab "Manual Search" embeds external https://sjswmm5manualsearch.com (externalUrl manual: no TOC sidebar, iframe sandbox allow-scripts/forms/popups).
 
+## 3D Network Viewer
+- `client/public/3d-viewer.html` — Standalone three.js 3D SWMM viewer (from attached asset). postMessage API: accepts `{type:'load-inp', inp, name}`, posts `{type:'swmm3d-ready'}` on boot, replies `{type:'swmm3d-loaded', ok, error?}`. Graceful no-WebGL fallback (overlay message + ok:false ack). Also supports `?inp=`/`?model=` URL params.
+- `client/src/components/swmm/Viewer3DDialog.tsx` — Fullscreen dialog with sandboxed iframe (`allow-scripts allow-same-origin allow-downloads`); sends current model on ready handshake (resends until acked, 2.5s fallback), header status (Loading/Sending/Model loaded/error), Reload model + New tab buttons. Opened via Project toolbar "3D" button (openDialog==='viewer3d').
+
 ## Companion Apps Launcher
 - `client/src/components/swmm/AppsLauncherDialog.tsx` — Help > Apps dialog: user-editable list of external web app links (name + URL, add/edit/delete, persisted in localStorage key `swmm-ui-app-links`), sandboxed iframe viewer (`allow-scripts allow-forms allow-popups allow-downloads`, no allow-same-origin), "Open in new tab" fallback, hint shown when host blocks embedding. Defaults preloaded: swmm5-swmm6-phase-space.netlify.app, swmm5-3d-viewer.netlify.app.
 
