@@ -49,7 +49,13 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        const keys = Object.keys(capturedJsonResponse);
+        const sizeHint = keys.map(k => {
+          const v = capturedJsonResponse![k];
+          if (typeof v === 'string' && v.length > 60) return `${k}:[${v.length}ch]`;
+          return `${k}:${JSON.stringify(v)}`;
+        }).join(', ');
+        logLine += ` :: {${sizeHint}}`;
       }
 
       log(logLine);

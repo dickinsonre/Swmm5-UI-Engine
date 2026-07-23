@@ -254,11 +254,51 @@ export function discretizeProject(
 
     let prevNodeId = conduit.fromNode;
 
+    // Build the full geographic polyline for this conduit so junction nodes
+    // and per-segment vertices follow the actual pipe alignment rather than
+    // the straight line between the two endpoints.
+    const origVerts = project.vertices[conduit.id] || [];
+    const polyline: [number, number][] = [];
+    if (fromCoord) polyline.push(fromCoord);
+    polyline.push(...origVerts);
+    if (toCoord) polyline.push(toCoord);
+
+    // Cumulative path distances along the polyline
+    const cumDist: number[] = [0];
+    for (let k = 1; k < polyline.length; k++) {
+      const dx = polyline[k][0] - polyline[k - 1][0];
+      const dy = polyline[k][1] - polyline[k - 1][1];
+      cumDist.push(cumDist[k - 1] + Math.sqrt(dx * dx + dy * dy));
+    }
+    const totalPolyDist = cumDist[cumDist.length - 1] || 0;
+
+    // Helper: interpolate a point at distance d along the polyline
+    const interpOnPolyline = (d: number): [number, number] => {
+      if (polyline.length === 0) return [0, 0];
+      if (polyline.length === 1) return polyline[0];
+      const clamped = Math.max(0, Math.min(d, totalPolyDist));
+      for (let k = 1; k < polyline.length; k++) {
+        if (cumDist[k] >= clamped || k === polyline.length - 1) {
+          const segLen = cumDist[k] - cumDist[k - 1];
+          const t = segLen > 0 ? (clamped - cumDist[k - 1]) / segLen : 0;
+          return [
+            +(polyline[k - 1][0] + (polyline[k][0] - polyline[k - 1][0]) * t).toFixed(2),
+            +(polyline[k - 1][1] + (polyline[k][1] - polyline[k - 1][1]) * t).toFixed(2),
+          ];
+        }
+      }
+      return polyline[polyline.length - 1];
+    };
+
+    // Remove the original vertices entry — segments get their own below
     delete newVertices[conduit.id];
 
     for (let seg = 0; seg < nSegments; seg++) {
       const isLast = seg === nSegments - 1;
       let toNodeId: string;
+
+      const segStartDist = (seg / nSegments) * totalPolyDist;
+      const segEndDist = ((seg + 1) / nSegments) * totalPolyDist;
 
       if (isLast) {
         toNodeId = conduit.toNode;
@@ -281,13 +321,25 @@ export function discretizeProject(
         newJunctionIds.add(toNodeId);
         nodeElevations.set(toNodeId, { elevation: interpElev, maxDepth: interpMaxDepth });
 
-        if (fromCoord && toCoord) {
-          const ix = +(fromCoord[0] + (toCoord[0] - fromCoord[0]) * frac).toFixed(2);
-          const iy = +(fromCoord[1] + (toCoord[1] - fromCoord[1]) * frac).toFixed(2);
+        if (polyline.length >= 2) {
+          const [ix, iy] = interpOnPolyline(segEndDist);
           newCoordinates[toNodeId] = [ix, iy];
         }
 
         newJunctionCount++;
+      }
+
+      // Assign original polyline vertices that lie strictly inside this segment
+      // to preserve the bend geometry of each sub-conduit.
+      if (polyline.length > 2) {
+        const segVerts: [number, number][] = [];
+        for (let k = 1; k < polyline.length - 1; k++) {
+          if (cumDist[k] > segStartDist && cumDist[k] < segEndDist) {
+            segVerts.push(polyline[k]);
+          }
+        }
+        const segId = `${conduit.id}_${seg + 1}`;
+        if (segVerts.length > 0) newVertices[segId] = segVerts;
       }
 
       const segId = `${conduit.id}_${seg + 1}`;

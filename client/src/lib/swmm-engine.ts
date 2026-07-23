@@ -135,6 +135,12 @@ export function createWasmEngine(): SwmmEngine {
 
       if (onProgress) onProgress(30, 'Writing model to WASM filesystem...');
 
+      // Purge any stale files from a previous run before writing new ones
+      // so that a crash mid-run never lets old results bleed into the next run.
+      for (const f of ['model.inp', 'model.rpt', 'model.out']) {
+        try { mod.FS.unlink(f); } catch {}
+      }
+
       mod.FS.writeFile('model.inp', inpText);
       try { mod.FS.writeFile('model.rpt', ''); } catch {}
       try { mod.FS.writeFile('model.out', ''); } catch {}
@@ -142,7 +148,16 @@ export function createWasmEngine(): SwmmEngine {
       if (onProgress) onProgress(35, 'Running SWMM 5.2.4 (WASM)...');
 
       const swmm_run = mod.cwrap('swmm_run', 'number', ['string', 'string', 'string']);
-      const errCode = swmm_run('model.inp', 'model.rpt', 'model.out');
+      let errCode: number;
+      try {
+        errCode = swmm_run('model.inp', 'model.rpt', 'model.out');
+      } catch (runErr) {
+        // Always clean up even if the engine throws
+        for (const f of ['model.inp', 'model.rpt', 'model.out']) {
+          try { mod.FS.unlink(f); } catch {}
+        }
+        throw runErr;
+      }
 
       let rptText = '';
       try {
@@ -154,6 +169,9 @@ export function createWasmEngine(): SwmmEngine {
         const errLines = rptText.split('\n').filter((l: string) => /ERROR|WARNING/i.test(l)).slice(0, 5).join('; ');
         const err = new Error(`SWMM error code ${errCode}. ${errLines || 'Check report for details.'}`) as any;
         err.reportContent = rptText;
+        for (const f of ['model.inp', 'model.rpt', 'model.out']) {
+          try { mod.FS.unlink(f); } catch {}
+        }
         throw err;
       }
 
@@ -174,9 +192,9 @@ export function createWasmEngine(): SwmmEngine {
         parsed = parseRptToResults(rptText, project);
       }
 
-      try { mod.FS.unlink('model.inp'); } catch {}
-      try { mod.FS.unlink('model.rpt'); } catch {}
-      try { mod.FS.unlink('model.out'); } catch {}
+      for (const f of ['model.inp', 'model.rpt', 'model.out']) {
+        try { mod.FS.unlink(f); } catch {}
+      }
 
       computeExtendedVariables(project, parsed);
       parsed.engineUsed = 'wasm';

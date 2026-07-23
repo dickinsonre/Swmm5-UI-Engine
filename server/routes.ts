@@ -18,6 +18,29 @@ const SWMM_ENGINE_PATH = join(process.cwd(), 'swmm-engine', 'runswmm');
 const MAX_INP_BYTES = 25 * 1024 * 1024; // 25 MB cap on uploaded models
 const SIM_TIMEOUT_MS = 180000; // kill runaway simulations after 3 minutes
 
+// Simple per-IP rate limiter: at most 1 simulation per IP every 8 seconds.
+// This prevents accidental or intentional request floods without disrupting
+// normal sequential engineering workflows.
+const SIM_COOLDOWN_MS = 8000;
+const lastSimByIp = new Map<string, number>();
+
+function checkSimRateLimit(req: Request): { allowed: boolean; retryAfterMs: number } {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+  const last = lastSimByIp.get(ip) ?? 0;
+  const elapsed = now - last;
+  if (elapsed < SIM_COOLDOWN_MS) {
+    return { allowed: false, retryAfterMs: SIM_COOLDOWN_MS - elapsed };
+  }
+  lastSimByIp.set(ip, now);
+  // Prune old entries periodically to avoid memory growth
+  if (lastSimByIp.size > 2000) {
+    const cutoff = now - SIM_COOLDOWN_MS * 10;
+    for (const [k, v] of lastSimByIp) if (v < cutoff) lastSimByIp.delete(k);
+  }
+  return { allowed: true, retryAfterMs: 0 };
+}
+
 // Probe whether the SWMM binary can actually execute (not just exist).
 // A binary built against a missing dynamic loader path exists on disk but
 // fails to spawn with ENOENT in production containers.
@@ -258,6 +281,13 @@ export async function registerRoutes(
   });
 
   app.post("/api/swmm/run", async (req: Request, res: Response) => {
+    const rateCheck = checkSimRateLimit(req);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        error: `Too many simulation requests. Please wait ${Math.ceil(rateCheck.retryAfterMs / 1000)} seconds before running again.`,
+        retryAfterMs: rateCheck.retryAfterMs,
+      });
+    }
     try {
       const body = await readBodyWithLimit(req);
       const contentType = req.headers['content-type'] || '';
