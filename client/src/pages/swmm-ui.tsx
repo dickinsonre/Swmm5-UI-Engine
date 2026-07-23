@@ -1638,8 +1638,15 @@ export default function SwmmUI() {
     const handleClick = () => {
       if (contextMenu) setContextMenu(null);
     };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && contextMenu) setContextMenu(null);
+    };
     window.addEventListener('click', handleClick);
-    return () => window.removeEventListener('click', handleClick);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener('keydown', handleKey);
+    };
   }, [contextMenu]);
 
   const flowUnits = project.options['FLOW_UNITS'] || 'CFS';
@@ -3815,6 +3822,8 @@ export default function SwmmUI() {
             backgroundColor: '#ffffff',
             border: '1px solid #d0d0d8',
           }}
+          role="menu"
+          aria-label="Map context menu"
           data-testid="context-menu"
         >
           {contextMenu.obj && (

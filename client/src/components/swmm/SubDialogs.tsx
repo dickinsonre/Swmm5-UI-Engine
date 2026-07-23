@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SwmmProject, DWFEntry, LidUsage, Groundwater, TimeSeriesPoint, CurvePoint, PatternData } from '@/lib/swmm-types';
 import { X, Plus, Trash2, Upload, ClipboardPaste } from 'lucide-react';
+import { useFocusTrap } from '@/hooks/use-focus-trap';
 
 type SubDialogProps = {
   project: SwmmProject;
@@ -27,6 +28,24 @@ const inputClass = "w-full px-2 py-1 bg-white border border-[#d0d8e8] rounded te
 const selectClass = "w-full px-1 py-1 bg-white border border-[#d0d8e8] rounded text-[11px] text-[#2a2a3e] focus:border-[#2c6eb5] focus:outline-none";
 const addRowClass = "w-full py-1.5 bg-[#f8f9ff] border border-dashed border-[#d0d8e8] text-[#2c6eb5] rounded cursor-pointer text-[11px] font-semibold mt-2 hover:bg-[#e8f0ff] hover:border-solid flex items-center justify-center gap-1";
 const deleteBtn = "bg-transparent border-0 text-[#9090a0] cursor-pointer text-[12px] p-1 rounded hover:bg-red-100 hover:text-red-600";
+
+function ModalOverlay({ onClose, testId, label, children }: { onClose: () => void; testId: string; label: string; children: React.ReactNode }) {
+  const trapRef = useFocusTrap<HTMLDivElement>(onClose);
+  return (
+    <div
+      ref={trapRef}
+      className={overlayClass}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+      data-testid={testId}
+    >
+      {children}
+    </div>
+  );
+}
 
 function CloseBtn({ onClick }: { onClick: () => void }) {
   return <button className="bg-transparent border-0 text-[#9090a0] cursor-pointer text-[16px] p-1 rounded hover:bg-[#e8e8f0] hover:text-[#e74c3c]" onClick={onClick} data-testid="subdialog-close"><X className="w-4 h-4" /></button>;
@@ -84,7 +103,7 @@ export function DirectInflowEditor({ project, objId, onClose, onProjectChange }:
   };
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-directInflow">
+    <ModalOverlay onClose={onClose} testId="subdialog-directInflow" label="Direct Inflows">
       <div className={`${modalClass} ${modalWide}`}>
         <div className={headerClass}>
           <span className={titleClass}>Direct Inflows — {objId}</span>
@@ -150,7 +169,7 @@ export function DirectInflowEditor({ project, objId, onClose, onProjectChange }:
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -191,7 +210,7 @@ export function DWFEditor({ project, objId, onClose, onProjectChange }: SubDialo
   };
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-dwfInflow">
+    <ModalOverlay onClose={onClose} testId="subdialog-dwfInflow" label="Dry Weather Flow">
       <div className={`${modalClass} ${modalWide}`}>
         <div className={headerClass}>
           <span className={titleClass}>Dry Weather Flow — {objId}</span>
@@ -243,7 +262,7 @@ export function DWFEditor({ project, objId, onClose, onProjectChange }: SubDialo
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -358,7 +377,7 @@ export function TimeSeriesEditor({ project, objId, onClose, onProjectChange }: S
   };
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-timeSeries">
+    <ModalOverlay onClose={onClose} testId="subdialog-timeSeries" label="Time Series Editor">
       <div className={`${modalClass} ${modalLarge}`}>
         <div className={headerClass}>
           <span className={titleClass}>Time Series Editor — {name || 'New'}</span>
@@ -409,7 +428,7 @@ export function TimeSeriesEditor({ project, objId, onClose, onProjectChange }: S
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -510,7 +529,7 @@ export function CurveEditor({ project, objId, onClose, onProjectChange }: SubDia
   const ti = CURVE_TYPES[curveType] || { xLabel: 'X', yLabel: 'Y', desc: '' };
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-curve">
+    <ModalOverlay onClose={onClose} testId="subdialog-curve" label="Curve Editor">
       <div className={`${modalClass} ${modalLarge}`}>
         <div className={headerClass}>
           <span className={titleClass}>Curve Editor — {name || 'New'}</span>
@@ -559,7 +578,7 @@ export function CurveEditor({ project, objId, onClose, onProjectChange }: SubDia
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -659,7 +678,7 @@ export function PatternEditor({ project, objId, onClose, onProjectChange }: SubD
   const config = PATTERN_CONFIGS[patType];
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-pattern">
+    <ModalOverlay onClose={onClose} testId="subdialog-pattern" label="Pattern Editor">
       <div className={`${modalClass} ${modalLarge}`}>
         <div className={headerClass}>
           <span className={titleClass}>Pattern Editor — {name || 'New'}</span>
@@ -696,7 +715,7 @@ export function PatternEditor({ project, objId, onClose, onProjectChange }: SubD
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -752,7 +771,7 @@ export function LIDUsageEditor({ project, objId, onClose, onProjectChange }: Sub
   };
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-lidUsage">
+    <ModalOverlay onClose={onClose} testId="subdialog-lidUsage" label="LID Usage Editor">
       <div className={`${modalClass} ${modalWide}`}>
         <div className={headerClass}>
           <span className={titleClass}>LID Controls — {objId}</span>
@@ -808,7 +827,7 @@ export function LIDUsageEditor({ project, objId, onClose, onProjectChange }: Sub
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -848,7 +867,7 @@ export function RDIIEditor({ project, objId, onClose, onProjectChange }: SubDial
   };
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-rdiiInflow">
+    <ModalOverlay onClose={onClose} testId="subdialog-rdiiInflow" label="RDII Inflow">
       <div className={`${modalClass} w-[460px] max-w-[90vw]`}>
         <div className={headerClass}>
           <span className={titleClass}>RDII Inflow — {objId}</span>
@@ -887,7 +906,7 @@ export function RDIIEditor({ project, objId, onClose, onProjectChange }: SubDial
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -933,7 +952,7 @@ export function GroundwaterEditor({ project, objId, onClose, onProjectChange }: 
   );
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-groundwater">
+    <ModalOverlay onClose={onClose} testId="subdialog-groundwater" label="Groundwater Editor">
       <div className={`${modalClass} w-[500px] max-w-[90vw]`}>
         <div className={headerClass}>
           <span className={titleClass}>Groundwater — {objId}</span>
@@ -969,7 +988,7 @@ export function GroundwaterEditor({ project, objId, onClose, onProjectChange }: 
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -1006,7 +1025,7 @@ export function TreatmentEditor({ project, objId, onClose, onProjectChange }: Su
   };
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-treatment">
+    <ModalOverlay onClose={onClose} testId="subdialog-treatment" label="Treatment Editor">
       <div className={`${modalClass} w-[600px] max-w-[90vw]`}>
         <div className={headerClass}>
           <span className={titleClass}>Treatment — {objId}</span>
@@ -1051,7 +1070,7 @@ export function TreatmentEditor({ project, objId, onClose, onProjectChange }: Su
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -1105,7 +1124,7 @@ export function ControlRulesEditor({ project, objId, onClose, onProjectChange }:
   const KEYWORDS = ['RULE','IF','AND','OR','THEN','ELSE','PRIORITY','NODE','LINK','CONDUIT','PUMP','ORIFICE','WEIR','DEPTH','HEAD','VOLUME','INFLOW','FLOW','STATUS','SETTING','ON','OFF','OPEN','CLOSED'];
 
   return (
-    <div className={overlayClass} onClick={e => { if (e.target === e.currentTarget) onClose(); }} data-testid="subdialog-controlRules">
+    <ModalOverlay onClose={onClose} testId="subdialog-controlRules" label="Control Rules Editor">
       <div className={`${modalClass} ${modalLarge}`}>
         <div className={headerClass}>
           <span className={titleClass}>Control Rules Editor</span>
@@ -1175,7 +1194,7 @@ export function ControlRulesEditor({ project, objId, onClose, onProjectChange }:
           <button className={btnSave} onClick={handleSave} data-testid="subdialog-save">OK</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
