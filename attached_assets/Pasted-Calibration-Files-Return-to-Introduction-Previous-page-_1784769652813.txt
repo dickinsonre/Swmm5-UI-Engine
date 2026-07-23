@@ -1,0 +1,80 @@
+Calibration Files
+ Return to Introduction  Previous page  Next page  
+Calibration Files contain measurements of variables at one or more locations that can be compared with simulated values in Time Series Plots. Separate files can be used for each of the following:
+
+· Subcatchment Runoff 
+
+· Subcatchment Groundwater Flow 
+
+· Subcatchment Groundwater Elevation 
+
+· Subcatchment Snow Pack Depth 
+
+· Subcatchment Pollutant Washoff 
+
+· Node Depth 
+
+· Node Lateral Inflow 
+
+· Node Flooding 
+
+· Node Water Quality 
+
+· Link Flow 
+
+· Link Velocity 
+
+· Link Depth 
+
+Calibration files are registered to a project by selecting Project >> Calibration Data from the  Main Menu (see Registering Calibration Data).
+
+ 
+
+The format of the file is as follows:
+
+1. The name of the first object with calibration data is entered on a single line. 
+
+2. Subsequent lines contain the following recorded measurements for the object: 
+
+· measurement date (month/day/year, e.g., 6/21/2004) or number of whole days since the start of the simulation 
+
+· measurement time (hours:minutes) on the measurement date or relative to the number of elapsed days 
+
+· measurement value (for pollutants, a value is required for each pollutant). 
+
+3. Follow the same sequence for any additional objects. 
+
+ 
+
+An excerpt from an example calibration file is shown below. It contains flow values for two conduits: 1030 and 1602.Note that a semicolon can be used to begin a comment. In this example, elapsed time rather than the actual measurement date was used.
+
+ 
+
+;Flows for Selected Conduits        
+
+;Conduit  Days        Time  Flow
+
+;-----------------------------
+
+1030                        
+
+           0     0:15  0
+
+           0     0:30  0
+
+           0     0:45  23.88
+
+           0     1:00  94.58
+
+           0     1:15  115.37
+
+1602                        
+
+           0     0:15  5.76
+
+           0     0:30  38.51
+
+           0     1:00  67.93
+
+           0     1:15  68.01
+ 

@@ -3456,7 +3456,7 @@ export default function SwmmUI() {
               <Table2 className="w-3.5 h-3.5 mr-1" /> View as Data Table
             </Button>
           )}
-          {results && <TimeSeriesPlotContent project={project} results={results} selectedObj={selectedObj} timeStep={timeStep} />}
+          {results && <TimeSeriesPlotContent project={project} results={results} selectedObj={selectedObj} timeStep={timeStep} calibrationData={calibrationData} />}
         </DialogContent>
       </Dialog>
 
@@ -3474,6 +3474,8 @@ export default function SwmmUI() {
             results={results}
             calibrationData={calibrationData}
             onLoadData={(ds) => setCalibrationData(prev => [...prev, ds])}
+            onRemoveData={(idx) => setCalibrationData(prev => prev.filter((_, i) => i !== idx))}
+            onUpdateData={(idx, patch) => setCalibrationData(prev => prev.map((d, i) => i === idx ? { ...d, ...patch } : d))}
           />
         </DialogContent>
       </Dialog>
@@ -3980,12 +3982,31 @@ interface CalibrationDataSet {
   variable: string;
   category: 'node' | 'link' | 'subcatch';
   points: CalibrationPoint[];
+  name?: string;
 }
 
-function parseCalibrationFile(text: string): CalibrationDataSet {
+const CALIB_FILENAME_VARS: { match: RegExp; variable: string; category: 'node' | 'link' | 'subcatch' }[] = [
+  { match: /depth/i, variable: 'Depth', category: 'node' },
+  { match: /head/i, variable: 'Head', category: 'node' },
+  { match: /inflow|lateral/i, variable: 'TotalInflow', category: 'node' },
+  { match: /flood/i, variable: 'Flooding', category: 'node' },
+  { match: /velocity|veloc/i, variable: 'Velocity', category: 'link' },
+  { match: /flow/i, variable: 'Flow', category: 'link' },
+  { match: /capacity/i, variable: 'Capacity', category: 'link' },
+  { match: /runoff/i, variable: 'Runoff', category: 'subcatch' },
+  { match: /rain/i, variable: 'Rainfall', category: 'subcatch' },
+  { match: /gw|groundwater/i, variable: 'GwOutflow', category: 'subcatch' },
+  { match: /snow/i, variable: 'SnowDepth', category: 'subcatch' },
+  { match: /evap/i, variable: 'Evap', category: 'subcatch' },
+  { match: /infil/i, variable: 'Infiltration', category: 'subcatch' },
+];
+
+function parseCalibrationFile(text: string, fileName?: string): CalibrationDataSet {
   const lines = text.split(/\r?\n/);
   let variable = 'Head';
   let category: 'node' | 'link' | 'subcatch' = 'node';
+  let variableFromHeader = false;
+  let currentId = '';
   const points: CalibrationPoint[] = [];
 
   for (const raw of lines) {
@@ -3994,6 +4015,7 @@ function parseCalibrationFile(text: string): CalibrationDataSet {
       const varMatch = line.match(/(?:variable|parameter)\s*[:\-=]\s*(\w+)/i);
       if (varMatch) {
         variable = varMatch[1];
+        variableFromHeader = true;
         const vl = variable.toLowerCase();
         if (['flow', 'velocity', 'capacity'].includes(vl)) category = 'link';
         else if (['runoff', 'rainfall', 'gwoutflow', 'snowdepth', 'evap', 'infiltration', 'moisture'].includes(vl)) category = 'subcatch';
@@ -4006,25 +4028,45 @@ function parseCalibrationFile(text: string): CalibrationDataSet {
       continue;
     }
     const parts = line.split(/\s+/);
-    if (parts.length >= 4) {
-      const nodeId = parts[0];
-      const dateStr = parts[1];
-      const timeStr = parts[2];
-      const value = parseFloat(parts[3]);
-      if (!isNaN(value)) {
-        points.push({ nodeId, dateTime: `${dateStr} ${timeStr}`, value });
+    const firstIsNumeric = /^[\d.\/:]+$/.test(parts[0]);
+
+    if (parts.length === 1) {
+      currentId = parts[0];
+      continue;
+    }
+
+    if (!firstIsNumeric) {
+      currentId = parts[0];
+      if (parts.length >= 4) {
+        const value = parseFloat(parts[parts.length - 1]);
+        if (!isNaN(value)) {
+          points.push({ nodeId: parts[0], dateTime: parts.slice(1, parts.length - 1).join(' '), value });
+        }
+      } else if (parts.length === 3) {
+        const value = parseFloat(parts[2]);
+        if (!isNaN(value)) {
+          points.push({ nodeId: parts[0], dateTime: parts[1], value });
+        }
       }
-    } else if (parts.length === 3) {
-      const nodeId = parts[0];
-      const dateTimeOrIdx = parts[1];
-      const value = parseFloat(parts[2]);
+    } else if (currentId && parts.length >= 2) {
+      const value = parseFloat(parts[parts.length - 1]);
       if (!isNaN(value)) {
-        points.push({ nodeId, dateTime: dateTimeOrIdx, value });
+        points.push({ nodeId: currentId, dateTime: parts.slice(0, parts.length - 1).join(' '), value });
       }
     }
   }
 
-  return { variable, category, points };
+  if (!variableFromHeader && fileName) {
+    for (const fv of CALIB_FILENAME_VARS) {
+      if (fv.match.test(fileName)) {
+        variable = fv.variable;
+        category = fv.category;
+        break;
+      }
+    }
+  }
+
+  return { variable, category, points, name: fileName };
 }
 
 function normalizeDateTime(s: string): number {
@@ -4606,11 +4648,12 @@ function StatisticsReportContent({ project, results, selectedObj }: {
   );
 }
 
-function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
+function TimeSeriesPlotContent({ project, results, selectedObj, timeStep, calibrationData = [] }: {
   project: SwmmProject;
   results: SimulationResults;
   selectedObj: SelectedObject;
   timeStep: number;
+  calibrationData?: CalibrationDataSet[];
 }) {
   const nodeIds = useMemo(() => [
     ...project.junctions.map(j => j.id),
@@ -4686,6 +4729,46 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
 
   const isSystem = category === 'system';
 
+  const obsOverlay = useMemo(() => {
+    const empty = { byIdx: new Map<number, Record<string, number>>(), keys: [] as { key: string; label: string }[] };
+    if (isSystem || calibrationData.length === 0 || elementIds.length === 0 || activeVars.length === 0) return empty;
+    const epochs = results.timeSteps.map(ts => normalizeDateTime(ts.dateTime));
+    const byString = new Map<string, number>();
+    results.timeSteps.forEach((ts, i) => byString.set(ts.dateTime, i));
+    const byIdx = new Map<number, Record<string, number>>();
+    const keys: { key: string; label: string }[] = [];
+    for (const cds of calibrationData) {
+      if (cds.category !== category) continue;
+      const matchVar = activeVars.find(av => av.toLowerCase() === cds.variable.toLowerCase());
+      if (!matchVar) continue;
+      for (const pt of cds.points) {
+        if (!elementIds.includes(pt.nodeId)) continue;
+        let idx = byString.get(pt.dateTime);
+        if (idx === undefined) {
+          const t = normalizeDateTime(pt.dateTime);
+          if (isNaN(t)) continue;
+          let best = -1;
+          let bestDiff = Infinity;
+          for (let i = 0; i < epochs.length; i++) {
+            if (isNaN(epochs[i])) continue;
+            const d = Math.abs(epochs[i] - t);
+            if (d < bestDiff) { bestDiff = d; best = i; }
+          }
+          if (best < 0) continue;
+          idx = best;
+        }
+        const key = `obs_${pt.nodeId}_${matchVar}`;
+        if (!keys.some(k => k.key === key)) {
+          keys.push({ key, label: `${pt.nodeId} — Observed ${cds.variable}` });
+        }
+        const row = byIdx.get(idx) || {};
+        row[key] = pt.value;
+        byIdx.set(idx, row);
+      }
+    }
+    return { byIdx, keys };
+  }, [calibrationData, category, activeVars, elementIds, results, isSystem]);
+
   const chartData = useMemo(() => {
     if (activeVars.length === 0) return [];
     if (!isSystem && elementIds.length === 0) return [];
@@ -4712,9 +4795,11 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
           }
         }
       }
+      const obs = obsOverlay.byIdx.get(i);
+      if (obs) Object.assign(row, obs);
       return row;
     });
-  }, [results, elementIds, activeVars, category, isSystem]);
+  }, [results, elementIds, activeVars, category, isSystem, obsOverlay]);
 
   const lineKeys = useMemo(() => {
     const keys: { key: string; label: string; color: string }[] = [];
@@ -4905,7 +4990,7 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
                     contentStyle={{ fontSize: 11, backgroundColor: '#fff', border: '1px solid #d0d0d8', borderRadius: 6 }}
                     labelStyle={{ fontWeight: 600, color: '#2c3e6b' }}
                   />
-                  {lineKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 10 }} />}
+                  {(lineKeys.length > 1 || obsOverlay.keys.length > 0) && <Legend wrapperStyle={{ fontSize: 10 }} />}
                   {lineKeys.map(lk => (
                     <Line
                       key={lk.key}
@@ -4916,6 +5001,20 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
                       strokeWidth={1.5}
                       dot={false}
                       activeDot={{ r: 3, strokeWidth: 0 }}
+                    />
+                  ))}
+                  {obsOverlay.keys.map((ok, i) => (
+                    <Line
+                      key={ok.key}
+                      dataKey={ok.key}
+                      name={ok.label}
+                      stroke="transparent"
+                      strokeWidth={0}
+                      dot={{ r: 3.5, fill: CALIB_COLORS[i % CALIB_COLORS.length], strokeWidth: 1, stroke: '#fff' }}
+                      activeDot={{ r: 4.5, strokeWidth: 0 }}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                      legendType="circle"
                     />
                   ))}
                   {results.timeSteps.length > 0 && timeStep > 0 && timeStep < results.timeSteps.length && (
@@ -4947,15 +5046,19 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep }: {
   );
 }
 
-function CalibrationContent({ project, results, calibrationData, onLoadData }: {
+function CalibrationContent({ project, results, calibrationData, onLoadData, onRemoveData, onUpdateData }: {
   project: SwmmProject;
   results: SimulationResults | null;
   calibrationData: CalibrationDataSet[];
   onLoadData: (ds: CalibrationDataSet) => void;
+  onRemoveData?: (index: number) => void;
+  onUpdateData?: (index: number, patch: Partial<CalibrationDataSet>) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'data' | 'timeseries' | 'correlation' | 'statistics' | 'create'>('correlation');
+  const [activeTab, setActiveTab] = useState<'folder' | 'data' | 'timeseries' | 'correlation' | 'statistics' | 'create'>('correlation');
   const [activeDataset, setActiveDataset] = useState(0);
+  const [folderLoadSummary, setFolderLoadSummary] = useState<{ loaded: string[]; skipped: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -4964,12 +5067,52 @@ function CalibrationContent({ project, results, calibrationData, onLoadData }: {
     reader.onload = (ev) => {
       const text = ev.target?.result as string;
       if (text) {
-        const ds = parseCalibrationFile(text);
+        const ds = parseCalibrationFile(text, file.name);
         onLoadData(ds);
       }
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const handleFolderLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    const candidates = files.filter(f => /\.(dat|txt|cal)$/i.test(f.name));
+    const skippedNonDat = files.filter(f => !/\.(dat|txt|cal)$/i.test(f.name)).map(f => f.name);
+    const loaded: string[] = [];
+    const skipped: string[] = [...skippedNonDat];
+    let remaining = candidates.length;
+    if (remaining === 0) {
+      setFolderLoadSummary({ loaded, skipped });
+      return;
+    }
+    for (const file of candidates) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result as string;
+        if (text) {
+          const ds = parseCalibrationFile(text, file.name);
+          if (ds.points.length > 0) {
+            onLoadData(ds);
+            loaded.push(`${file.name} (${ds.variable}, ${ds.points.length} pts)`);
+          } else {
+            skipped.push(`${file.name} — no data rows`);
+          }
+        } else {
+          skipped.push(`${file.name} — empty`);
+        }
+        remaining--;
+        if (remaining === 0) setFolderLoadSummary({ loaded: [...loaded], skipped: [...skipped] });
+      };
+      reader.onerror = () => {
+        skipped.push(`${file.name} — read error`);
+        remaining--;
+        if (remaining === 0) setFolderLoadSummary({ loaded: [...loaded], skipped: [...skipped] });
+      };
+      reader.readAsText(file);
+    }
   };
 
   const ds = calibrationData[activeDataset] || null;
@@ -5132,6 +5275,7 @@ function CalibrationContent({ project, results, calibrationData, onLoadData }: {
   }, [ds, results, nodeIds]);
 
   const tabs = [
+    { key: 'folder' as const, label: 'Load Folder' },
     { key: 'create' as const, label: 'Create File' },
     { key: 'data' as const, label: 'Calibration Data' },
     { key: 'timeseries' as const, label: 'Time Series Plot' },
@@ -5142,6 +5286,14 @@ function CalibrationContent({ project, results, calibrationData, onLoadData }: {
   return (
     <div className="flex flex-col" style={{ minHeight: 480 }} data-testid="calibration-content">
       <input ref={fileInputRef} type="file" accept=".dat,.txt,.csv" className="hidden" onChange={handleFileLoad} />
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFolderLoad}
+        {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+      />
 
       <div className="flex items-center gap-2 mb-3">
         <div className="flex border border-[#d0d0d8] rounded overflow-hidden">
@@ -5175,13 +5327,124 @@ function CalibrationContent({ project, results, calibrationData, onLoadData }: {
             data-testid="calib-dataset-select"
           >
             {calibrationData.map((d, i) => (
-              <option key={i} value={i}>{d.variable} ({d.points.length} pts)</option>
+              <option key={i} value={i}>{d.name ? `${d.name} — ` : ''}{d.variable} ({d.points.length} pts)</option>
             ))}
           </select>
         )}
       </div>
 
-      {activeTab === 'create' ? (
+      {activeTab === 'folder' ? (
+        <div className="flex flex-col gap-3" data-testid="calib-folder-content">
+          <div className="border border-[#d0d0d8] rounded p-4 bg-[#f8f8fa] flex flex-col items-center gap-2">
+            <FolderOpen className="w-8 h-8 text-[#2c6eb5]" />
+            <div className="text-[12px] font-semibold text-[#2c3e6b]">Load a Folder of Calibration Files</div>
+            <div className="text-[10px] text-[#6b6b7b] max-w-md text-center">
+              Select a folder containing SWMM5 calibration files (.dat, .txt, .cal). Each file becomes a separate
+              dataset. The variable is read from file header comments, or inferred from the filename
+              (e.g. <span className="font-mono">flow_gauge.dat</span> → Flow, <span className="font-mono">depth_obs.dat</span> → Depth).
+            </div>
+            <div className="flex gap-2 mt-1">
+              <Button
+                size="sm"
+                className="bg-[#2c6eb5] hover:bg-[#245a9a] text-white h-7 text-[11px]"
+                onClick={() => folderInputRef.current?.click()}
+                data-testid="calib-load-folder"
+              >
+                <FolderOpen className="w-3.5 h-3.5 mr-1.5" /> Select Folder…
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] border-[#d0d0d8]"
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="calib-load-single"
+              >
+                <Upload className="w-3.5 h-3.5 mr-1.5" /> Single File…
+              </Button>
+            </div>
+          </div>
+
+          {folderLoadSummary && (
+            <div className="border border-[#d0d0d8] rounded p-3 text-[10px]" data-testid="calib-folder-summary">
+              <div className="font-semibold text-[#2c3e6b] mb-1">
+                Loaded {folderLoadSummary.loaded.length} file{folderLoadSummary.loaded.length === 1 ? '' : 's'}
+                {folderLoadSummary.skipped.length > 0 && ` · Skipped ${folderLoadSummary.skipped.length}`}
+              </div>
+              {folderLoadSummary.loaded.map((f, i) => (
+                <div key={`l${i}`} className="text-[#16a34a] font-mono truncate">✓ {f}</div>
+              ))}
+              {folderLoadSummary.skipped.map((f, i) => (
+                <div key={`s${i}`} className="text-[#9090a0] font-mono truncate">— {f}</div>
+              ))}
+            </div>
+          )}
+
+          {calibrationData.length > 0 && (
+            <div className="border border-[#d0d0d8] rounded overflow-hidden">
+              <div className="bg-[#f0f0f4] px-3 py-1.5 text-[10px] font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">
+                Loaded Datasets ({calibrationData.length})
+              </div>
+              <table className="w-full text-[10px]" data-testid="calib-dataset-table">
+                <tbody>
+                  {calibrationData.map((d, i) => (
+                    <tr key={i} className="border-b border-[#e8e8ee] last:border-b-0 hover:bg-[#f8f8fa]">
+                      <td className="px-3 py-1 font-mono truncate max-w-[180px]">{d.name || `Dataset ${i + 1}`}</td>
+                      <td className="px-3 py-1">
+                        {onUpdateData ? (
+                          <input
+                            type="text"
+                            className="w-24 h-5 text-[10px] border border-[#e0e0e8] rounded px-1"
+                            value={d.variable}
+                            onChange={e => onUpdateData(i, { variable: e.target.value })}
+                            title="Variable name (must match a simulated variable, e.g. Depth, Flow, Runoff)"
+                            data-testid={`calib-ds-var-${i}`}
+                          />
+                        ) : d.variable}
+                      </td>
+                      <td className="px-3 py-1 text-[#6b6b7b]">
+                        {onUpdateData ? (
+                          <select
+                            className="h-5 text-[10px] border border-[#e0e0e8] rounded bg-white"
+                            value={d.category}
+                            onChange={e => onUpdateData(i, { category: e.target.value as CalibrationDataSet['category'] })}
+                            data-testid={`calib-ds-cat-${i}`}
+                          >
+                            <option value="node">node</option>
+                            <option value="link">link</option>
+                            <option value="subcatch">subcatch</option>
+                          </select>
+                        ) : d.category}
+                      </td>
+                      <td className="px-3 py-1 text-right font-mono">{d.points.length} pts</td>
+                      <td className="px-3 py-1 text-right">
+                        <button
+                          className="text-[#2c6eb5] hover:underline mr-2"
+                          onClick={() => { setActiveDataset(i); setActiveTab('timeseries'); }}
+                          data-testid={`calib-ds-view-${i}`}
+                        >
+                          View
+                        </button>
+                        {onRemoveData && (
+                          <button
+                            className="text-[#dc2626] hover:underline"
+                            onClick={() => {
+                              onRemoveData(i);
+                              if (activeDataset >= i && activeDataset > 0) setActiveDataset(activeDataset - 1);
+                            }}
+                            data-testid={`calib-ds-remove-${i}`}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : activeTab === 'create' ? (
         <CalibrationFileCreator project={project} results={results} onLoadData={onLoadData} />
       ) : !ds ? (
         <div className="flex-1 flex flex-col items-center justify-center text-[#9090a0] gap-3 py-10">
@@ -5586,6 +5849,33 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
     setEntries(newEntries.length > 0 ? newEntries : [{ locationId: '', date: '', time: '', value: '' }]);
   };
 
+  const fillFromResults = () => {
+    if (!results || results.timeSteps.length === 0) return;
+    const epochs = results.timeSteps.map(ts => normalizeDateTime(ts.dateTime));
+    const varKey = variable.toLowerCase();
+    setEntries(prev => prev.map(entry => {
+      if (!entry.locationId || !entry.date || !entry.time) return entry;
+      if (entry.value !== '') return entry;
+      const t = normalizeDateTime(`${entry.date} ${entry.time}`);
+      if (isNaN(t)) return entry;
+      let bestIdx = -1;
+      let bestDiff = Infinity;
+      for (let i = 0; i < epochs.length; i++) {
+        if (isNaN(epochs[i])) continue;
+        const diff = Math.abs(epochs[i] - t);
+        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+      }
+      if (bestIdx < 0) return entry;
+      const ts = results.timeSteps[bestIdx];
+      let val: number | undefined;
+      if (category === 'node') val = (ts.nodes[entry.locationId] as unknown as Record<string, number> | undefined)?.[varKey];
+      else if (category === 'link') val = (ts.links[entry.locationId] as unknown as Record<string, number> | undefined)?.[varKey];
+      else val = (ts.subcatchments[entry.locationId] as unknown as Record<string, number> | undefined)?.[varKey];
+      if (val === undefined || val === null || isNaN(val)) return entry;
+      return { ...entry, value: val.toFixed(3) };
+    }));
+  };
+
   const generateCalibrationFile = (): string => {
     const lines: string[] = [];
     lines.push(`;; SWMM Calibration Data File`);
@@ -5863,6 +6153,17 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
         <div className="text-[10px] text-[#6b6b7b] flex-1">
           File format: SWMM .dat calibration file with {category} {variable} measurements
         </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px] border-[#d0d0d8]"
+          onClick={fillFromResults}
+          disabled={!results || results.timeSteps.length === 0 || entries.every(e => !e.locationId)}
+          title={results ? 'Fill only blank values with simulated results at matching times (existing values are kept)' : 'Run a simulation first'}
+          data-testid="calib-create-fill"
+        >
+          <Play className="w-3 h-3 mr-1" /> Fill Blanks from Results
+        </Button>
         <Button
           size="sm"
           variant="outline"
