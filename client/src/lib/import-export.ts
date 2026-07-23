@@ -188,7 +188,7 @@ export function importCsvLinks(
       if (lengthIdx >= 0 && !isNaN(length)) project.conduits[idx].length = length;
       if (roughIdx >= 0 && !isNaN(roughness)) project.conduits[idx].roughness = roughness;
       if (diamIdx >= 0 && !isNaN(diameter)) {
-        if (!project.xsections[id]) project.xsections[id] = { shape: 'CIRCULAR', geom1: diameter, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+        if (!project.xsections[id]) project.xsections[id] = { linkId: id, shape: 'CIRCULAR', geom1: diameter, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
         else project.xsections[id].geom1 = diameter;
       }
       result.linksModified++;
@@ -204,7 +204,7 @@ export function importCsvLinks(
         roughness: isNaN(roughness) ? 0.01 : roughness,
         inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0,
       });
-      project.xsections[linkId] = { shape: 'CIRCULAR', geom1: isNaN(diameter) ? 1 : diameter, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+      project.xsections[linkId] = { linkId, shape: 'CIRCULAR', geom1: isNaN(diameter) ? 1 : diameter, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
       result.linksAdded++;
     }
   }
@@ -353,7 +353,7 @@ export function importDxfEntities(
       const dy = entity.points[1][1] - entity.points[0][1];
       const length = Math.sqrt(dx * dx + dy * dy);
       project.conduits.push({ id: linkId, fromNode: fromId, toNode: toId, length: Math.max(1, length), roughness: 0.01, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 });
-      project.xsections[linkId] = { shape: 'CIRCULAR', geom1: 1, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+      project.xsections[linkId] = { linkId, shape: 'CIRCULAR', geom1: 1, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
       result.linksAdded++;
     } else if ((entity.type === 'LWPOLYLINE' || entity.type === 'POLYLINE') && entity.points.length >= 2) {
       for (let i = 0; i < entity.points.length - 1; i++) {
@@ -365,7 +365,7 @@ export function importDxfEntities(
         const dy = entity.points[i + 1][1] - entity.points[i][1];
         const length = Math.sqrt(dx * dx + dy * dy);
         project.conduits.push({ id: linkId, fromNode: fromId, toNode: toId, length: Math.max(1, length), roughness: 0.01, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 });
-        project.xsections[linkId] = { shape: 'CIRCULAR', geom1: 1, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+        project.xsections[linkId] = { linkId, shape: 'CIRCULAR', geom1: 1, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
         result.linksAdded++;
       }
     }
@@ -503,7 +503,7 @@ export function importGeoJsonLinks(
       length += Math.sqrt(dx * dx + dy * dy);
     }
     project.conduits.push({ id: linkId, fromNode: fromId, toNode: toId, length: Math.max(1, length), roughness: 0.01, inOffset: 0, outOffset: 0, initFlow: 0, maxFlow: 0 });
-    project.xsections[linkId] = { shape: 'CIRCULAR', geom1: 1, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+    project.xsections[linkId] = { linkId, shape: 'CIRCULAR', geom1: 1, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
     if (coords.length > 2) {
       project.vertices[linkId] = coords.slice(1, -1).map(c => [c[0], c[1]] as [number, number]);
     }

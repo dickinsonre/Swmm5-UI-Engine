@@ -275,7 +275,7 @@ export default function ProjectExplorer({
   }, [onViewTable]);
 
   const handleObjectClick = useCallback((category: string, id: string) => {
-    onSelectObj({ id, objType: category as SelectedObject['objType'] });
+    onSelectObj({ id, objType: category as NonNullable<SelectedObject>['objType'] });
   }, [onSelectObj]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, nodeId: string, nodeType: 'group' | 'leaf', category: string | null, countKey?: string) => {
@@ -923,7 +923,7 @@ function DataGridRow({ obj, idx, category, columns, project, results, timeStep, 
                 setEditCell(col.key);
                 setEditValue(displayVal);
               } else {
-                onSelectObj({ id: obj.id, objType: category as SelectedObject['objType'] });
+                onSelectObj({ id: obj.id, objType: category as NonNullable<SelectedObject>['objType'] });
               }
             }}
             data-testid={`grid-cell-${obj.id}-${col.key}`}

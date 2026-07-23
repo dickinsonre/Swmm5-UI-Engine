@@ -76,7 +76,7 @@ function getResultValue(results: SimulationResults, category: ObjCategory, id: s
     if (sysVal === undefined || sysVal === null) return '\u2014';
     return Number(sysVal).toFixed(3);
   }
-  let obj: Record<string, number> | undefined;
+  let obj: object | undefined;
   if (category === 'node') {
     obj = ts.nodes?.[id];
   } else if (category === 'link') {
@@ -172,7 +172,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
   const byObjectSorted = useMemo(() => {
     if (mode !== 'byObject' || !results || !selectedObj) return null;
     let indices = timestamps.map((_, i) => i);
-    if (sortCol && vars.includes(sortCol as any)) {
+    if (sortCol && (vars as readonly string[]).includes(sortCol)) {
       indices.sort((a, b) => {
         const va = getNumericValue(results, category, selectedObj, sortCol, a);
         const vb = getNumericValue(results, category, selectedObj, sortCol, b);
@@ -209,7 +209,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
 
   const plotData = useMemo(() => {
     if (!results || mode !== 'byObject' || !selectedObj) return [];
-    const varKey = contextColKey && vars.includes(contextColKey as any) ? contextColKey : vars[0];
+    const varKey = contextColKey && (vars as readonly string[]).includes(contextColKey) ? contextColKey : vars[0];
     return timestamps.map((ts, i) => ({
       time: ts.replace(/^Day \d+,?\s*/, ''),
       idx: i,
@@ -219,7 +219,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
 
   const statsData = useMemo(() => {
     if (!results || !selectedObj || mode !== 'byObject') return null;
-    const varKey = contextColKey && vars.includes(contextColKey as any) ? contextColKey : vars[0];
+    const varKey = contextColKey && (vars as readonly string[]).includes(contextColKey) ? contextColKey : vars[0];
     const values = timestamps.map((_, i) => getNumericValue(results, category, selectedObj, varKey, i));
     if (values.length === 0) return null;
     const sorted = [...values].sort((a, b) => a - b);
@@ -240,7 +240,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
 
   const freqData = useMemo(() => {
     if (!results || !selectedObj || mode !== 'byObject') return [];
-    const varKey = contextColKey && vars.includes(contextColKey as any) ? contextColKey : vars[0];
+    const varKey = contextColKey && (vars as readonly string[]).includes(contextColKey) ? contextColKey : vars[0];
     const values = timestamps.map((_, i) => getNumericValue(results, category, selectedObj, varKey, i));
     const sorted = [...values].sort((a, b) => a - b);
     return sorted.map((v, i) => ({ value: v, exceedance: ((sorted.length - i) / sorted.length) * 100 }));
@@ -248,7 +248,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
 
   const histData = useMemo(() => {
     if (!results || !selectedObj || mode !== 'byObject') return [];
-    const varKey = contextColKey && vars.includes(contextColKey as any) ? contextColKey : vars[0];
+    const varKey = contextColKey && (vars as readonly string[]).includes(contextColKey) ? contextColKey : vars[0];
     const values = timestamps.map((_, i) => getNumericValue(results, category, selectedObj, varKey, i));
     if (values.length === 0) return [];
     const min = Math.min(...values);
@@ -267,7 +267,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
   const scatterData = useMemo(() => {
     if (!results || !selectedObj || mode !== 'byObject' || vars.length < 2) return [];
     const xVar = vars[0];
-    const yVar = contextColKey && vars.includes(contextColKey as any) && contextColKey !== vars[0] ? contextColKey : vars[1] || vars[0];
+    const yVar = contextColKey && (vars as readonly string[]).includes(contextColKey) && contextColKey !== vars[0] ? contextColKey : vars[1] || vars[0];
     return timestamps.map((_, i) => ({
       x: getNumericValue(results, category, selectedObj, xVar, i),
       y: getNumericValue(results, category, selectedObj, yVar, i),

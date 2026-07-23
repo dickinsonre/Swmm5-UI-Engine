@@ -326,7 +326,7 @@ export async function registerRoutes(
   // One-shot: the file is deleted after a successful download (or via TTL).
   app.get("/api/swmm/out/:id", (req: Request, res: Response) => {
     pruneExpiredOutFiles();
-    const id = req.params.id;
+    const id = String(req.params.id);
     if (!/^[0-9a-f-]{36}$/i.test(id)) {
       return res.status(400).json({ error: 'Invalid result id' });
     }

@@ -356,7 +356,7 @@ function PatternsEditor({ project, onUpdateProject, initialItem }: { project: Sw
     const len = newType === 'MONTHLY' ? 12 : newType === 'DAILY' ? 7 : 24;
     onUpdateProject(prev => ({
       ...prev,
-      patterns: { ...prev.patterns, [name]: { type: newType, factors: Array(len).fill(1.0) } }
+      patterns: { ...prev.patterns, [name]: { type: newType, multipliers: Array(len).fill(1.0) } }
     }));
     setSelected(name);
     setNewName('');
@@ -376,14 +376,14 @@ function PatternsEditor({ project, onUpdateProject, initialItem }: { project: Sw
     onUpdateProject(prev => {
       const p = prev.patterns[selected];
       if (!p) return prev;
-      const factors = [...p.factors];
-      factors[idx] = parseFloat(val) || 0;
-      return { ...prev, patterns: { ...prev.patterns, [selected]: { ...p, factors } } };
+      const multipliers = [...p.multipliers];
+      multipliers[idx] = parseFloat(val) || 0;
+      return { ...prev, patterns: { ...prev.patterns, [selected]: { ...p, multipliers } } };
     });
   }, [selected, onUpdateProject]);
 
   const labels = pattern ? PERIOD_LABELS[pattern.type] || [] : [];
-  const chartData = pattern ? pattern.factors.map((f, i) => ({ name: labels[i] || `${i}`, factor: f })) : [];
+  const chartData = pattern ? pattern.multipliers.map((f, i) => ({ name: labels[i] || `${i}`, factor: f })) : [];
 
   return (
     <div className="flex gap-3 h-[420px]" data-testid="patterns-editor">
@@ -441,7 +441,7 @@ function PatternsEditor({ project, onUpdateProject, initialItem }: { project: Sw
                   </tr>
                 </thead>
                 <tbody>
-                  {pattern.factors.map((f, i) => (
+                  {pattern.multipliers.map((f, i) => (
                     <tr key={i} className={i % 2 === 0 ? '' : 'bg-[#fafafa]'}>
                       <td className="px-2 py-0.5 border-b border-[#f0f0f4] text-[#3a5070] font-medium">{labels[i] || i}</td>
                       <td className="px-1 py-0.5 border-b border-[#f0f0f4]">
@@ -471,9 +471,11 @@ function ControlsEditor({ project, onUpdateProject }: { project: SwmmProject; on
 
   const keywords = ['RULE', 'IF', 'THEN', 'ELSE', 'AND', 'OR', 'PRIORITY', 'END'];
 
+  const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
   const highlighted = useMemo(() => {
     return text.split('\n').map((line, i) => {
-      let html = line;
+      let html = escapeHtml(line);
       for (const kw of keywords) {
         const re = new RegExp(`\\b(${kw})\\b`, 'gi');
         html = html.replace(re, `<span style="color:#2c6eb5;font-weight:600">$1</span>`);
@@ -596,7 +598,7 @@ function LandUsesEditor({ project, onUpdateProject }: { project: SwmmProject; on
     const id = `LandUse${project.landuses.length + 1}`;
     onUpdateProject(prev => ({
       ...prev,
-      landuses: [...prev.landuses, { id, sweepInterval: 0, sweepFraction: 0, lastSweep: 0 } as LandUse]
+      landuses: [...prev.landuses, { id, sweepInterval: 0, sweepAvail: 0, sweepLast: 0 }]
     }));
     setSelected(id);
   }, [project.landuses.length, onUpdateProject]);
@@ -651,30 +653,30 @@ function LandUsesEditor({ project, onUpdateProject }: { project: SwmmProject; on
 }
 
 function LidControlsEditor({ project, onUpdateProject }: { project: SwmmProject; onUpdateProject: (u: (p: SwmmProject) => SwmmProject) => void }) {
-  const [selected, setSelected] = useState(project.lidControls[0]?.name || '');
-  const lid = project.lidControls.find(l => l.name === selected);
+  const [selected, setSelected] = useState(project.lidControls[0]?.id || '');
+  const lid = project.lidControls.find(l => l.id === selected);
   const LID_TYPES = ['BC', 'RG', 'GR', 'IT', 'PP', 'RB', 'RD', 'VS'];
   const LID_TYPE_NAMES: Record<string, string> = { BC: 'Bio-Retention', RG: 'Rain Garden', GR: 'Green Roof', IT: 'Inf. Trench', PP: 'Perm. Pavement', RB: 'Rain Barrel', RD: 'Rooftop Disconnect', VS: 'Veg. Swale' };
 
   const addLid = useCallback(() => {
-    const name = `LID${project.lidControls.length + 1}`;
+    const id = `LID${project.lidControls.length + 1}`;
     onUpdateProject(prev => ({
       ...prev,
-      lidControls: [...prev.lidControls, { name, type: 'BC', layers: [] }]
+      lidControls: [...prev.lidControls, { id, type: 'BC', layers: [] }]
     }));
-    setSelected(name);
+    setSelected(id);
   }, [project.lidControls.length, onUpdateProject]);
 
   const deleteLid = useCallback(() => {
     if (!selected) return;
-    onUpdateProject(prev => ({ ...prev, lidControls: prev.lidControls.filter(l => l.name !== selected) }));
+    onUpdateProject(prev => ({ ...prev, lidControls: prev.lidControls.filter(l => l.id !== selected) }));
     setSelected('');
   }, [selected, onUpdateProject]);
 
   const updateType = useCallback((type: string) => {
     onUpdateProject(prev => ({
       ...prev,
-      lidControls: prev.lidControls.map(l => l.name === selected ? { ...l, type } : l)
+      lidControls: prev.lidControls.map(l => l.id === selected ? { ...l, type } : l)
     }));
   }, [selected, onUpdateProject]);
 
@@ -684,11 +686,11 @@ function LidControlsEditor({ project, onUpdateProject }: { project: SwmmProject;
         <Button size="sm" onClick={addLid} className="h-6 w-full text-[10px] bg-[#2c6eb5] text-white mb-2"><Plus className="w-3 h-3 mr-1" />Add LID</Button>
         <ScrollArea className="h-[360px]">
           {project.lidControls.map(l => (
-            <button key={l.name} onClick={() => setSelected(l.name)}
-              className={`w-full text-left px-2 py-1 text-[11px] rounded transition-colors ${selected === l.name ? 'bg-[#2c6eb5] text-white' : 'hover:bg-[#f0f0f4] text-[#2a2a3e]'}`}
+            <button key={l.id} onClick={() => setSelected(l.id)}
+              className={`w-full text-left px-2 py-1 text-[11px] rounded transition-colors ${selected === l.id ? 'bg-[#2c6eb5] text-white' : 'hover:bg-[#f0f0f4] text-[#2a2a3e]'}`}
             >
-              <div>{l.name}</div>
-              <div className={`text-[9px] ${selected === l.name ? 'text-blue-200' : 'text-[#9090a0]'}`}>{LID_TYPE_NAMES[l.type] || l.type}</div>
+              <div>{l.id}</div>
+              <div className={`text-[9px] ${selected === l.id ? 'text-blue-200' : 'text-[#9090a0]'}`}>{LID_TYPE_NAMES[l.type] || l.type}</div>
             </button>
           ))}
         </ScrollArea>
@@ -697,7 +699,7 @@ function LidControlsEditor({ project, onUpdateProject }: { project: SwmmProject;
         {lid ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-semibold text-[#3a5070]">{lid.name}</span>
+              <span className="text-xs font-semibold text-[#3a5070]">{lid.id}</span>
               <Button size="sm" variant="ghost" onClick={deleteLid} className="ml-auto h-6 text-[10px] text-red-500"><Trash2 className="w-3 h-3 mr-1" />Delete</Button>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -721,16 +723,15 @@ function LidControlsEditor({ project, onUpdateProject }: { project: SwmmProject;
                 <tbody>
                   {lid.layers.map((layer, i) => (
                     <tr key={i} className={i % 2 === 0 ? '' : 'bg-[#fafafa]'}>
-                      <td className="px-2 py-0.5 border-b border-[#f0f0f4] font-medium">{layer.split(/\s+/)[0]}</td>
+                      <td className="px-2 py-0.5 border-b border-[#f0f0f4] font-medium">{layer[0] || ''}</td>
                       <td className="px-2 py-0.5 border-b border-[#f0f0f4]">
-                        <Input className="h-5 text-[10px] font-mono border-0 bg-transparent p-0" value={layer.split(/\s+/).slice(1).join(' ')} onChange={e => {
-                          const layerName = layer.split(/\s+/)[0];
-                          const newLayer = `${layerName} ${e.target.value}`;
-                          onUpdateProject(prev => ({ ...prev, lidControls: prev.lidControls.map(l => l.name === selected ? { ...l, layers: l.layers.map((ll, li) => li === i ? newLayer : ll) } : l) }));
+                        <Input className="h-5 text-[10px] font-mono border-0 bg-transparent p-0" value={layer.slice(1).join(' ')} onChange={e => {
+                          const newLayer = [layer[0] || '', ...e.target.value.split(/\s+/).filter(Boolean)];
+                          onUpdateProject(prev => ({ ...prev, lidControls: prev.lidControls.map(l => l.id === selected ? { ...l, layers: l.layers.map((ll, li) => li === i ? newLayer : ll) } : l) }));
                         }} data-testid={`lid-layer-${i}`} />
                       </td>
                       <td className="px-1 py-0.5 border-b border-[#f0f0f4]">
-                        <button className="text-red-400 hover:text-red-600" onClick={() => onUpdateProject(prev => ({ ...prev, lidControls: prev.lidControls.map(l => l.name === selected ? { ...l, layers: l.layers.filter((_, li) => li !== i) } : l) }))} data-testid={`lid-layer-del-${i}`}><Trash2 className="w-3 h-3" /></button>
+                        <button className="text-red-400 hover:text-red-600" onClick={() => onUpdateProject(prev => ({ ...prev, lidControls: prev.lidControls.map(l => l.id === selected ? { ...l, layers: l.layers.filter((_, li) => li !== i) } : l) }))} data-testid={`lid-layer-del-${i}`}><Trash2 className="w-3 h-3" /></button>
                       </td>
                     </tr>
                   ))}
@@ -741,7 +742,8 @@ function LidControlsEditor({ project, onUpdateProject }: { project: SwmmProject;
               {['SURFACE', 'SOIL', 'PAVEMENT', 'STORAGE', 'DRAIN', 'DRAINMAT'].map(layerType => (
                 <Button key={layerType} size="sm" variant="outline" className="h-5 text-[9px] px-1.5" onClick={() => {
                   const defaults: Record<string, string> = { SURFACE: 'SURFACE 0 0.0 0.1 1 5', SOIL: 'SOIL 6 0.5 0.2 0.1 10 3.5 2', PAVEMENT: 'PAVEMENT 6 0.15 0 100 0 0', STORAGE: 'STORAGE 12 0.75 0.5 0', DRAIN: 'DRAIN 0 0.5 6 6', DRAINMAT: 'DRAINMAT 3 0.4 0.1' };
-                  onUpdateProject(prev => ({ ...prev, lidControls: prev.lidControls.map(l => l.name === selected ? { ...l, layers: [...l.layers, defaults[layerType] || `${layerType} 0`] } : l) }));
+                  const newLayer = (defaults[layerType] || `${layerType} 0`).split(/\s+/);
+                  onUpdateProject(prev => ({ ...prev, lidControls: prev.lidControls.map(l => l.id === selected ? { ...l, layers: [...l.layers, newLayer] } : l) }));
                 }} data-testid={`lid-add-${layerType.toLowerCase()}`}>{layerType}</Button>
               ))}
             </div>
@@ -996,7 +998,7 @@ function SnowPacksEditor({ project, onUpdateProject }: EditorProps) {
     const id = `SnowPack${items.length + 1}`;
     onUpdateProject(prev => ({
       ...prev,
-      snowpacks: [...prev.snowpacks, { id, parameters: { PLOWABLE: [0.001, 0.001, 32, 0.1, 0, 0, 0], IMPERVIOUS: [0.001, 0.001, 32, 0.1, 0, 0, 0], PERVIOUS: [0.001, 0.001, 32, 0.1, 0, 0, 0], REMOVAL: [1, 0, 0, 0, '', ''] } }],
+      snowpacks: [...prev.snowpacks, { id, parameters: { PLOWABLE: [0.001, 0.001, 32, 0.1, 0, 0, 0], IMPERVIOUS: [0.001, 0.001, 32, 0.1, 0, 0, 0], PERVIOUS: [0.001, 0.001, 32, 0.1, 0, 0, 0], REMOVAL: [1, 0, 0, 0, 0, 0] } }],
     }));
     setSelected(id);
   }, [items, onUpdateProject]);

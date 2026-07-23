@@ -2556,7 +2556,7 @@ export default function SwmmUI() {
             <AIAssistPanel
               project={project}
               results={results}
-              onSelectObject={(objType, id) => handleSelectObj({ objType, id })}
+              onSelectObject={(objType, id) => handleSelectObj({ objType: objType as NonNullable<SelectedObject>['objType'], id })}
               onUpdateProject={handleUpdateProject}
             />
           </div>
@@ -4845,13 +4845,13 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep, calibr
             const key = elementIds.length > 1 ? `${elId}_${v}` : v;
             if (category === 'node') {
               const nr = ts.nodes[elId];
-              row[key] = nr ? ((nr as Record<string, number>)[v] ?? nr.extended?.[v] ?? 0) : 0;
+              row[key] = nr ? ((nr as unknown as Record<string, number>)[v] ?? nr.extended?.[v] ?? 0) : 0;
             } else if (category === 'link') {
               const lr = ts.links[elId];
-              row[key] = lr ? ((lr as Record<string, number>)[v] ?? lr.extended?.[v] ?? 0) : 0;
+              row[key] = lr ? ((lr as unknown as Record<string, number>)[v] ?? lr.extended?.[v] ?? 0) : 0;
             } else {
               const sr = ts.subcatchments[elId];
-              row[key] = sr ? ((sr as Record<string, number>)[v] ?? sr.extended?.[v] ?? 0) : 0;
+              row[key] = sr ? ((sr as unknown as Record<string, number>)[v] ?? sr.extended?.[v] ?? 0) : 0;
             }
           }
         }
@@ -5206,9 +5206,9 @@ function CalibrationContent({ project, results, calibrationData, onLoadData, onR
     const varKey = ds.variable.toLowerCase();
 
     const getComputed = (ts: typeof results.timeSteps[0], id: string): number | null => {
-      if (ds.category === 'node' && ts.nodes[id]) return (ts.nodes[id] as Record<string, number>)[varKey] ?? null;
-      if (ds.category === 'link' && ts.links[id]) return (ts.links[id] as Record<string, number>)[varKey] ?? null;
-      if (ds.category === 'subcatch' && ts.subcatchments[id]) return (ts.subcatchments[id] as Record<string, number>)[varKey] ?? null;
+      if (ds.category === 'node' && ts.nodes[id]) return (ts.nodes[id] as unknown as Record<string, number>)[varKey] ?? null;
+      if (ds.category === 'link' && ts.links[id]) return (ts.links[id] as unknown as Record<string, number>)[varKey] ?? null;
+      if (ds.category === 'subcatch' && ts.subcatchments[id]) return (ts.subcatchments[id] as unknown as Record<string, number>)[varKey] ?? null;
       return null;
     };
 
@@ -5324,11 +5324,11 @@ function CalibrationContent({ project, results, calibrationData, onLoadData, onR
       for (const nId of nodeIds) {
         const varKey = ds.variable.toLowerCase();
         if (ds.category === 'node' && ts.nodes[nId]) {
-          row[`${nId}_computed`] = (ts.nodes[nId] as Record<string, number>)[varKey] ?? 0;
+          row[`${nId}_computed`] = (ts.nodes[nId] as unknown as Record<string, number>)[varKey] ?? 0;
         } else if (ds.category === 'link' && ts.links[nId]) {
-          row[`${nId}_computed`] = (ts.links[nId] as Record<string, number>)[varKey] ?? 0;
+          row[`${nId}_computed`] = (ts.links[nId] as unknown as Record<string, number>)[varKey] ?? 0;
         } else if (ds.category === 'subcatch' && ts.subcatchments[nId]) {
-          row[`${nId}_computed`] = (ts.subcatchments[nId] as Record<string, number>)[varKey] ?? 0;
+          row[`${nId}_computed`] = (ts.subcatchments[nId] as unknown as Record<string, number>)[varKey] ?? 0;
         }
       }
       return row;
@@ -7090,7 +7090,7 @@ function SplitScreenContent({ projectA, resultsA, fileNameA, timeStep, projectB,
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={diffMetrics.slice(0, 20).map((m, i) => ({ name: m.name.substring(0, 15), diff: m.diff }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
-                <XAxis dataKey="name" tick={{ fontSize: 7, angle: -45, textAnchor: 'end' }} height={60} />
+                <XAxis dataKey="name" tick={{ fontSize: 7 }} angle={-45} textAnchor="end" height={60} />
                 <YAxis tick={{ fontSize: 9 }} />
                 <Tooltip contentStyle={{ fontSize: 10 }} />
                 <ReferenceLine y={0} stroke="#2a2a3e" />
