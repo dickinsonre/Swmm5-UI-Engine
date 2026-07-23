@@ -4069,6 +4069,19 @@ function parseCalibrationFile(text: string, fileName?: string): CalibrationDataS
   return { variable, category, points, name: fileName };
 }
 
+function normalizeCalibDateTime(s: string, simStartEpoch?: number): number {
+  const m = s.match(/^(\d+(?:\.\d+)?)(?:\s+(\d+):(\d+)(?::(\d+))?)?$/);
+  if (m) {
+    if (simStartEpoch === undefined || isNaN(simStartEpoch)) return NaN;
+    return simStartEpoch
+      + (+m[1]) * 86400000
+      + (m[2] ? +m[2] : 0) * 3600000
+      + (m[3] ? +m[3] : 0) * 60000
+      + (m[4] ? +m[4] : 0) * 1000;
+  }
+  return normalizeDateTime(s);
+}
+
 function normalizeDateTime(s: string): number {
   const m = s.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)(?::(\d+))?/);
   if (m) return new Date(+m[3], +m[1] - 1, +m[2], +m[4], +m[5], +(m[6] || 0)).getTime();
@@ -4745,7 +4758,7 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep, calibr
         if (!elementIds.includes(pt.nodeId)) continue;
         let idx = byString.get(pt.dateTime);
         if (idx === undefined) {
-          const t = normalizeDateTime(pt.dateTime);
+          const t = normalizeCalibDateTime(pt.dateTime, epochs[0]);
           if (isNaN(t)) continue;
           let best = -1;
           let bestDiff = Infinity;
@@ -5160,7 +5173,7 @@ function CalibrationContent({ project, results, calibrationData, onLoadData, onR
       }
 
       if (computed === null) {
-        const ptTime = normalizeDateTime(pt.dateTime);
+        const ptTime = normalizeCalibDateTime(pt.dateTime, tsIndex.epochs[0]);
         if (!isNaN(ptTime) && tsIndex.epochs.length > 0) {
           let closestIdx = 0;
           let closestDiff = Infinity;
