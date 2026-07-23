@@ -1,1 +1,1 @@
-- [Static SWMM binary](static-swmm-binary.md) — runswmm must be musl-static; Nix-glibc-linked binaries can't spawn in the production container.
+- [SWMM .out binary header layout](swmm-out-format.md) — .out input-property sections are interleaved per object class and a reporting-vars section precedes results; misreading silently falls back to .rpt on small models.

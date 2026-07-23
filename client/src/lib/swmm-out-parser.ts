@@ -82,26 +82,42 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
     readInt32();
   }
 
+  // Input property sections are INTERLEAVED per object class:
+  // count (INT4), property codes (INT4 each), then values (REAL4 each per object).
   const nSubcatchProps = readInt32();
   for (let i = 0; i < nSubcatchProps; i++) readInt32();
+  for (let i = 0; i < nSubcatch * nSubcatchProps; i++) readFloat32();
+
   const nNodeProps = readInt32();
   for (let i = 0; i < nNodeProps; i++) readInt32();
+  for (let i = 0; i < nNodes * nNodeProps; i++) readFloat32();
+
   const nLinkProps = readInt32();
   for (let i = 0; i < nLinkProps; i++) readInt32();
-
-  for (let i = 0; i < nSubcatch * nSubcatchProps; i++) readFloat32();
-  for (let i = 0; i < nNodes * nNodeProps; i++) readFloat32();
   for (let i = 0; i < nLinks * nLinkProps; i++) readFloat32();
+
+  // Reporting variable counts + codes (subcatch, node, link, system).
+  // These counts from the file are authoritative (they include pollutants).
+  const nSubcatchVars = readInt32();
+  for (let i = 0; i < nSubcatchVars; i++) readInt32();
+  const nNodeVars = readInt32();
+  for (let i = 0; i < nNodeVars; i++) readInt32();
+  const nLinkVars = readInt32();
+  for (let i = 0; i < nLinkVars; i++) readInt32();
+  const nSysVars = readInt32();
+  for (let i = 0; i < nSysVars; i++) readInt32();
 
   const reportStart = readFloat64();
   const reportStep = readInt32();
 
-  const startOfResults = offset;
+  let startOfResults = offset;
 
-  const nSubcatchVars = 8 + nPollutants;
-  const nNodeVars = 6 + nPollutants;
-  const nLinkVars = 5 + nPollutants;
-  const nSysVars = version >= 52000 ? 15 : 14;
+  // Cross-check with the closing records: the 4th-from-last INT4 is the
+  // byte position where computed results begin. Prefer it when valid.
+  const outputStartPos = view.getInt32(buffer.byteLength - 4 * 4, true);
+  if (outputStartPos > 0 && outputStartPos < buffer.byteLength) {
+    startOfResults = outputStartPos;
+  }
 
   const bytesPerStep = 8 +
     (nSubcatch * nSubcatchVars * 4) +
