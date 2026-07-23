@@ -116,6 +116,8 @@ const COMPREHENSIVE_ASSERTIONS: Assertion[] = [
   { desc: 'xsection C5 IRREGULAR shape', get: p => p.xsections['C5']?.shape, expect: 'IRREGULAR' },
   { desc: 'xsection C5 transect reference', get: p => p.xsections['C5']?.geom1, expect: 'TR1' },
   { desc: 'xsection C4 barrels', get: p => p.xsections['C4']?.barrels, expect: 1 },
+  { desc: 'xsection C5 irregular transect ref', get: p => p.xsections['C5']?.geom1, expect: 'TR1' },
+  { desc: 'xsection C5 shape IRREGULAR', get: p => p.xsections['C5']?.shape, expect: 'IRREGULAR' },
   { desc: 'storage ST1 suction head (psi)', get: p => p.storageUnits.find(s => s.id === 'ST1')?.psi, expect: 4.0 },
   { desc: 'storage ST1 ksat', get: p => p.storageUnits.find(s => s.id === 'ST1')?.ksat, expect: 0.4 },
   { desc: 'storage ST1 imd', get: p => p.storageUnits.find(s => s.id === 'ST1')?.imd, expect: 0.35 },
