@@ -113,6 +113,8 @@ const COMPREHENSIVE_ASSERTIONS: Assertion[] = [
   { desc: 'weir W2 width preserved', get: p => p.weirs.find(w => w.id === 'W2')?.width, expect: 10 },
   { desc: 'weir W2 surcharge flag', get: p => p.weirs.find(w => w.id === 'W2')?.surcharge, expect: 'YES' },
   { desc: 'xsection C4 culvert code', get: p => Number(p.xsections['C4']?.culvert), expect: 3 },
+  { desc: 'xsection C5 IRREGULAR shape', get: p => p.xsections['C5']?.shape, expect: 'IRREGULAR' },
+  { desc: 'xsection C5 transect reference', get: p => p.xsections['C5']?.geom1, expect: 'TR1' },
   { desc: 'xsection C4 barrels', get: p => p.xsections['C4']?.barrels, expect: 1 },
   { desc: 'storage ST1 suction head (psi)', get: p => p.storageUnits.find(s => s.id === 'ST1')?.psi, expect: 4.0 },
   { desc: 'storage ST1 ksat', get: p => p.storageUnits.find(s => s.id === 'ST1')?.ksat, expect: 0.4 },
