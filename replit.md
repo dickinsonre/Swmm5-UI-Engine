@@ -103,6 +103,12 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 ## Companion Apps Launcher
 - `client/src/components/swmm/AppsLauncherDialog.tsx` — Help > Apps dialog: user-editable list of external web app links (name + URL, add/edit/delete, persisted in localStorage key `swmm-ui-app-links`), sandboxed iframe viewer (`allow-scripts allow-forms allow-popups allow-downloads`, no allow-same-origin), "Open in new tab" fallback, hint shown when host blocks embedding. Defaults preloaded: swmm5-swmm6-phase-space.netlify.app, swmm5-3d-viewer.netlify.app.
 
+## Review-Suggested Visualizations (Session 3)
+- **EGL overlay in Profile plot**: ProfilePlotContent computes EGL = HGL + v²/2g (unit-aware gravity from FLOW_UNITS) per point, dashed red line alongside HGL/ground/crown/invert
+- **CFL heatmap link theme**: "CFL (Courant #)" option in Links theme combo; `cflValues` Map (conduitId→courantNumber) passed to NetworkMap; 5-step legend ramp scaled to Courant/2
+- **Schematic vs GIS toggle**: btn-schematic-toggle in View toolbar; `schematicProject` memo builds layered auto-layout (layer = longest path to outfall, bounded relaxation), clears vertices/polygons/symbols/labels; editing callbacks disabled in schematic mode; auto fitExtent on toggle
+- **Cross-section thumbnails**: conduit data grid in ProjectExplorer has "Section" column rendering CrossSectionSvg (22px) per row (ColumnDef.render)
+
 ## New Features (Session 2)
 - **Animation Speed Control**: Speed slider (20-500ms range, inverted for intuition) next to play/pause button, adjusts requestAnimationFrame interval
 - **Enhanced Report Viewer**: Searchable `.rpt` viewer with match count, search highlighting (deterministic split-based), section navigation buttons (scrolls to first match), 9 quick-jump sections

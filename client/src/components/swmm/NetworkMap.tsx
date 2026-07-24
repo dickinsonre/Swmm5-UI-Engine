@@ -38,6 +38,7 @@ interface Props {
   queryMatchIds?: Set<string> | null;
   queryObjectType?: 'node' | 'link' | 'subcatchment' | null;
   cflFlaggedIds?: Set<string> | null;
+  cflValues?: Map<string, number> | null;
   discretizedJunctionIds?: Set<string> | null;
   onCreateNode?: (wx: number, wy: number, mode: string) => void;
   onStartLink?: (nodeId: string) => void;
@@ -77,6 +78,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
   queryMatchIds,
   queryObjectType,
   cflFlaggedIds,
+  cflValues,
   discretizedJunctionIds,
   onCreateNode,
   onStartLink,
@@ -356,6 +358,14 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       if (queryMatchIds.has(linkId)) return '#ff4444';
       return '#555566';
     }
+    if (linkTheme === 'cfl') {
+      const cn = cflValues?.get(linkId);
+      if (cn !== undefined) {
+        const t = Math.min(1, Math.max(0, cn / 2));
+        return COLORS.legend[Math.min(4, Math.floor(t * 5))];
+      }
+      return COLORS.linkDefault;
+    }
     if (cflFlaggedIds && cflFlaggedIds.has(linkId)) return '#ff5555';
     if (linkTheme === 'maxDepth' || linkTheme === 'roughness' || linkTheme === 'length' || linkTheme === 'slope') {
       const c = project.conduits.find(cc => cc.id === linkId);
@@ -382,7 +392,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
       return COLORS.linkDefault;
     }
-    if (results && results.timeSteps[timeStep] && linkTheme !== 'none' && linkTheme !== 'maxDepth' && linkTheme !== 'roughness' && linkTheme !== 'length' && linkTheme !== 'slope') {
+    if (results && results.timeSteps[timeStep] && linkTheme !== 'none' && linkTheme !== 'cfl' && linkTheme !== 'maxDepth' && linkTheme !== 'roughness' && linkTheme !== 'length' && linkTheme !== 'slope') {
       const lr = results.timeSteps[timeStep].links[linkId];
       if (lr) {
         const stdKeys: Record<string, number> = { flow: Math.abs(lr.flow), velocity: Math.abs(lr.velocity), depth: lr.depth, volume: lr.volume, capacity: lr.capacity };
@@ -397,7 +407,7 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       }
     }
     return COLORS.linkDefault;
-  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds, multiSelectIds, cflFlaggedIds, project.conduits, project.xsections, project.junctions, project.storageUnits, project.outfalls, project.dividers]);
+  }, [results, timeStep, linkTheme, queryMatchIds, queryObjectType, groupSelectedIds, multiSelectIds, cflFlaggedIds, cflValues, project.conduits, project.xsections, project.junctions, project.storageUnits, project.outfalls, project.dividers]);
 
   const getLinkWidth = useCallback((linkId: string) => {
     if (results && results.timeSteps[timeStep]) {

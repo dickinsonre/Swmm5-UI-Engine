@@ -3,6 +3,7 @@ import type { SwmmProject, SelectedObject, SimulationResults } from '@/lib/swmm-
 import { ChevronDown, ChevronRight, Search, X, FileText, BarChart3, Download } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { exportNodesCsv, exportLinksCsv } from '@/lib/import-export';
+import { CrossSectionSvg } from './Panels';
 
 export interface ProjectExplorerProps {
   project: SwmmProject;
@@ -928,7 +929,7 @@ function DataGridRow({ obj, idx, category, columns, project, results, timeStep, 
             }}
             data-testid={`grid-cell-${obj.id}-${col.key}`}
           >
-            {displayVal}
+            {col.render ? col.render(obj, project) : displayVal}
           </td>
         );
       })}
@@ -940,6 +941,7 @@ interface ColumnDef {
   key: string;
   label: string;
   getValue: (obj: any, project: SwmmProject, results: SimulationResults | null, timeStep: number) => string;
+  render?: (obj: any, project: SwmmProject) => React.ReactNode;
 }
 
 function getColumnsForCategory(project: SwmmProject, category: string, results: SimulationResults | null, timeStep: number): ColumnDef[] {
@@ -991,6 +993,15 @@ function getColumnsForCategory(project: SwmmProject, category: string, results: 
         { key: 'maxFlow', label: 'Max Flow', getValue: o => o.maxFlow?.toFixed(0) ?? '0' },
         { key: 'shape', label: 'Shape', getValue: (o, p) => p.xsections[o.id]?.shape ?? '' },
         { key: 'geom1', label: 'Geom1', getValue: (o, p) => { const g = p.xsections[o.id]?.geom1; return g == null ? '' : typeof g === 'string' ? g : g.toFixed(2); } },
+        {
+          key: 'section', label: 'Section',
+          getValue: (o, p) => p.xsections[o.id]?.shape ?? '',
+          render: (o, p) => {
+            const xs = p.xsections[o.id];
+            if (!xs) return null;
+            return <span className="inline-block align-middle" data-testid={`xsection-thumb-${o.id}`}><CrossSectionSvg xs={xs} size={22} /></span>;
+          },
+        },
       );
       if (results) {
         base.push(

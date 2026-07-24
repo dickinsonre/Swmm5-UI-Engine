@@ -871,7 +871,7 @@ export default function SwmmUI() {
     const linkVarInfo = getLinkVarByKey(linkTheme);
     const nodeLabels: Record<string, string> = { none: 'Nodes' };
     if (nodeVarInfo) nodeLabels[nodeTheme] = nodeVarInfo.name + (nodeVarInfo.units ? ` (${nodeVarInfo.units})` : '');
-    const linkLabels: Record<string, string> = { none: 'Links' };
+    const linkLabels: Record<string, string> = { none: 'Links', cfl: 'CFL Courant #' };
     if (linkVarInfo) linkLabels[linkTheme] = linkVarInfo.name + (linkVarInfo.units ? ` (${linkVarInfo.units})` : '');
     const nodeLabel = nodeLabels[nodeTheme] || 'Nodes';
     const linkLabel = linkLabels[linkTheme] || 'Links';
@@ -1078,6 +1078,56 @@ export default function SwmmUI() {
     }
     return ids;
   }, [cflAnalysis, cflShowFlagged]);
+
+  const cflValues = useMemo(() => {
+    if (!cflAnalysis) return null;
+    const m = new Map<string, number>();
+    for (const c of cflAnalysis.conduits) m.set(c.conduitId, c.courantNumber);
+    return m;
+  }, [cflAnalysis]);
+
+  const [schematicView, setSchematicView] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => networkMapRef.current?.fitExtent(), 50);
+    return () => clearTimeout(t);
+  }, [schematicView]);
+
+  const schematicProject = useMemo(() => {
+    if (!schematicView) return null;
+    const allLinks = [...project.conduits, ...project.pumps, ...project.weirs, ...project.orifices, ...project.outlets];
+    const allNodeIds = new Set([...project.junctions, ...project.outfalls, ...project.storageUnits, ...project.dividers].map(n => n.id));
+    const layer = new Map<string, number>();
+    project.outfalls.forEach(o => layer.set(o.id, 0));
+    for (let iter = 0; iter < 300; iter++) {
+      let changed = false;
+      for (const l of allLinks) {
+        const lt = layer.get(l.toNode);
+        if (lt !== undefined && lt + 1 < 500) {
+          const cur = layer.get(l.fromNode) ?? -1;
+          if (lt + 1 > cur) { layer.set(l.fromNode, lt + 1); changed = true; }
+        }
+      }
+      if (!changed) break;
+    }
+    let maxLayer = 0;
+    layer.forEach(v => { if (v > maxLayer) maxLayer = v; });
+    const layers: string[][] = [];
+    allNodeIds.forEach(id => {
+      const li = layer.get(id) ?? (maxLayer + 1);
+      (layers[li] ||= []).push(id);
+    });
+    const coords: Record<string, [number, number]> = {};
+    const spacingX = 80, spacingY = 100;
+    layers.forEach((ids, li) => {
+      if (!ids) return;
+      ids.sort();
+      ids.forEach((id, i) => {
+        coords[id] = [(i - (ids.length - 1) / 2) * spacingX, li * spacingY];
+      });
+    });
+    return { ...project, coordinates: coords, vertices: {}, polygons: {}, symbols: {}, labels: [] };
+  }, [schematicView, project]);
 
   const handleDiscretize = useCallback(() => {
     const flagged = new Set<string>();
@@ -1793,9 +1843,17 @@ export default function SwmmUI() {
               groups={getNodeCategories().filter(g => expertMode || g.label === 'Standard (EPA)').map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-nodes" />
             <ThemeCombo label="Links" value={linkTheme} onChange={setLinkTheme}
-              options={LINK_INPUT_VARS.map(v => [v.key, v.name] as [string, string])}
+              options={[['cfl', 'CFL (Courant #)'] as [string, string], ...LINK_INPUT_VARS.map(v => [v.key, v.name] as [string, string])]}
               groups={getLinkCategories().filter(g => expertMode || g.label === 'Standard (EPA)').map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-links" />
+            <button
+              onClick={() => setSchematicView(v => !v)}
+              className={`shrink-0 text-[10px] px-2 py-1 rounded border transition-colors ${schematicView ? 'bg-[#2c6eb5] text-white border-[#2c6eb5]' : 'bg-white text-[#2a2a3e] border-[#d0d0d8] hover:bg-[#e8f0fb]'}`}
+              title="Toggle between GIS coordinates and auto-layout schematic view"
+              data-testid="btn-schematic-toggle"
+            >
+              {schematicView ? 'Schematic' : 'GIS'}
+            </button>
             {expertMode && <ThemeCombo label="System" value={systemTheme} onChange={(v) => { setSystemTheme(v); setShowSystemPanel(true); }}
               options={[]}
               groups={getSystemCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
@@ -2123,7 +2181,7 @@ export default function SwmmUI() {
         <div className="flex-1 relative overflow-hidden">
           <NetworkMap
             ref={networkMapRef}
-            project={project}
+            project={schematicProject || project}
             selectedObj={selectedObj}
             onSelectObj={handleSelectObj}
             showSubcatchments={showSubcatch}
@@ -2138,12 +2196,13 @@ export default function SwmmUI() {
             queryMatchIds={queryMatchIds}
             queryObjectType={queryObjectType}
             cflFlaggedIds={cflFlaggedIds}
+            cflValues={cflValues}
             discretizedJunctionIds={discretizationResult?.newJunctionIds || null}
-            onCreateNode={handleCreateNode}
-            onStartLink={handleStartLink}
-            onCompleteLink={handleCompleteLink}
-            onAddLinkVertex={handleAddLinkVertex}
-            onMoveNode={handleMoveNode}
+            onCreateNode={schematicView ? undefined : handleCreateNode}
+            onStartLink={schematicView ? undefined : handleStartLink}
+            onCompleteLink={schematicView ? undefined : handleCompleteLink}
+            onAddLinkVertex={schematicView ? undefined : handleAddLinkVertex}
+            onMoveNode={schematicView ? undefined : handleMoveNode}
             onContextMenu={handleContextMenu}
             onGroupSelectPoint={handleGroupSelectPoint}
             onGroupSelectComplete={handleGroupSelectComplete}
@@ -6302,8 +6361,10 @@ function ProfilePlotContent({ project, results, timeStep }: {
 
   const profileData = useMemo(() => {
     if (selectedConduits.length === 0) return [];
-    const data: { station: number; invert: number; crown: number; ground: number; hgl?: number; label: string }[] = [];
+    const data: { station: number; invert: number; crown: number; ground: number; hgl?: number; egl?: number; label: string }[] = [];
     let station = 0;
+    const flowUnits = String(project.options?.FLOW_UNITS || 'CFS').toUpperCase();
+    const gravity = ['CMS', 'LPS', 'MLD'].includes(flowUnits) ? 9.81 : 32.174;
 
     for (let i = 0; i < selectedConduits.length; i++) {
       const conduit = project.conduits.find(c => c.id === selectedConduits[i]);
@@ -6329,26 +6390,33 @@ function ProfilePlotContent({ project, results, timeStep }: {
       const fromMaxDepth = (fromJunction as any).maxDepth ?? 0;
       const toMaxDepth = (toJunction as any).maxDepth ?? 0;
 
+      const linkRes = results?.timeSteps[timeStep]?.links[conduit.id];
+      const velHead = linkRes ? (linkRes.velocity * linkRes.velocity) / (2 * gravity) : 0;
+
       if (i === 0) {
         const fromHgl = results?.timeSteps[timeStep]?.nodes[conduit.fromNode];
+        const hglVal = fromHgl ? fromElev + fromHgl.depth : undefined;
         data.push({
           station,
           invert: fromElev,
           crown: fromElev + inOff + geom1,
           ground: fromElev + fromMaxDepth,
-          hgl: fromHgl ? fromElev + fromHgl.depth : undefined,
+          hgl: hglVal,
+          egl: hglVal !== undefined ? hglVal + velHead : undefined,
           label: conduit.fromNode,
         });
       }
 
       station += conduitLength;
       const toHgl = results?.timeSteps[timeStep]?.nodes[conduit.toNode];
+      const toHglVal = toHgl ? toElev + toHgl.depth : undefined;
       data.push({
         station,
         invert: toElev,
         crown: toElev + outOff + geom1,
         ground: toElev + toMaxDepth,
-        hgl: toHgl ? toElev + toHgl.depth : undefined,
+        hgl: toHglVal,
+        egl: toHglVal !== undefined ? toHglVal + velHead : undefined,
         label: conduit.toNode,
       });
     }
@@ -6438,6 +6506,9 @@ function ProfilePlotContent({ project, results, timeStep }: {
               <Area type="monotone" dataKey="invert" stroke="#2a2a3e" fill="#e0e0e8" fillOpacity={0.4} name="Invert" strokeWidth={2} />
               {results && (
                 <Area type="monotone" dataKey="hgl" stroke="#2c6eb5" fill="#2c6eb5" fillOpacity={0.15} name="HGL" strokeWidth={2} />
+              )}
+              {results && (
+                <Area type="monotone" dataKey="egl" stroke="#c0392b" fill="none" strokeWidth={1.5} strokeDasharray="6 3" name="EGL" />
               )}
             </AreaChart>
           </ResponsiveContainer>
