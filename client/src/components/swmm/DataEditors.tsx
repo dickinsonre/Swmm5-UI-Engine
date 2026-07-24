@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Plus, Trash2, Download, Upload } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { LidSchematic, GroundwaterSchematic, SnowPackSchematic } from './SchematicImages';
 
 interface DataEditorProps {
   open: boolean;
@@ -711,7 +712,10 @@ function LidControlsEditor({ project, onUpdateProject }: { project: SwmmProject;
                 </SelectContent>
               </Select>
             </div>
-            <div className="border border-[#d0d0d8] rounded overflow-auto max-h-[280px]">
+            <div className="h-[130px] border border-[#d0d0d8] rounded bg-white" data-testid="lid-schematic">
+              <LidSchematic type={lid.type} />
+            </div>
+            <div className="border border-[#d0d0d8] rounded overflow-auto max-h-[150px]">
               <table className="w-full text-[11px] border-collapse">
                 <thead className="sticky top-0 bg-[#f0f0f4]">
                   <tr>
@@ -852,8 +856,8 @@ function AquifersEditor({ project, onUpdateProject }: { project: SwmmProject; on
       <div className="w-36 border-r border-[#e0e0e8] pr-2">
         <Button size="sm" onClick={addAquifer} className="h-6 w-full text-[10px] bg-[#2c6eb5] text-white mb-2" data-testid="btn-add-aquifer"><Plus className="w-3 h-3 mr-1" />Add Aquifer</Button>
         <ScrollArea className="h-[300px]">
-          {aquifers.map((a: any) => (
-            <button key={a.name} onClick={() => setSelected(a.name)} className="block w-full text-left text-[11px] px-2 py-1 rounded transition-colors" style={{ backgroundColor: selected === a.name ? '#2c6eb5' : 'transparent', color: selected === a.name ? '#fff' : '#3a3a4a' }} data-testid={`aquifer-${a.name}`}>{a.name}</button>
+          {aquifers.map((a: any, ai: number) => (
+            <button key={a.name || ai} onClick={() => setSelected(a.name)} className="block w-full text-left text-[11px] px-2 py-1 rounded transition-colors" style={{ backgroundColor: selected === a.name ? '#2c6eb5' : 'transparent', color: selected === a.name ? '#fff' : '#3a3a4a' }} data-testid={`aquifer-${a.name}`}>{a.name}</button>
           ))}
         </ScrollArea>
       </div>
@@ -876,6 +880,10 @@ function AquifersEditor({ project, onUpdateProject }: { project: SwmmProject; on
             </div>
           </div>
         ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create an aquifer</div>}
+      </div>
+      <div className="w-[240px] shrink-0 hidden sm:block" data-testid="aquifer-schematic">
+        <div className="border border-[#d0d0d8] rounded bg-white h-[160px]"><GroundwaterSchematic /></div>
+        <p className="text-[9px] text-[#6b6b7b] mt-1 leading-snug">Aquifer cross-section: infiltration percolates through the unsaturated zone to the water table; the saturated zone drains laterally to a receiving node above the impervious bottom.</p>
       </div>
     </div>
   );
@@ -1058,6 +1066,10 @@ function SnowPacksEditor({ project, onUpdateProject }: EditorProps) {
           </ScrollArea>
         ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create a snow pack</div>}
       </div>
+      <div className="w-[240px] shrink-0 hidden sm:block" data-testid="snowpack-schematic">
+        <div className="border border-[#d0d0d8] rounded bg-white h-[140px]"><SnowPackSchematic /></div>
+        <p className="text-[9px] text-[#6b6b7b] mt-1 leading-snug">Snow accumulates on plowable, impervious, and pervious surfaces; melt (degree-day coefficients) becomes runoff or infiltration, with optional plowing/removal transfers.</p>
+      </div>
     </div>
   );
 }
@@ -1131,6 +1143,10 @@ function GroundwaterEditor({ project, onUpdateProject }: EditorProps) {
             ))}
           </div>
         ) : <div className="flex items-center justify-center h-full text-xs text-[#9090a0]">Select or create a groundwater link</div>}
+      </div>
+      <div className="w-[240px] shrink-0 hidden sm:block" data-testid="gw-schematic">
+        <div className="border border-[#d0d0d8] rounded bg-white h-[160px]"><GroundwaterSchematic /></div>
+        <p className="text-[9px] text-[#6b6b7b] mt-1 leading-snug">Groundwater link: the subcatchment's aquifer exchanges flow with a receiving node — lateral flow governed by the A1/B1, A2/B2, and A3 coefficients.</p>
       </div>
     </div>
   );
