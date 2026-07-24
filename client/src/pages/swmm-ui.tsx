@@ -31,6 +31,7 @@ import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
 import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@/components/swmm/PhaseSpaceDialog';
 import Viewer3DDialog from '@/components/swmm/Viewer3DDialog';
+import DiagramGalleryDialog from '@/components/swmm/DiagramGallery';
 import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
 import { REGRESSION_METRICS, extractRunSnapshot, compareSnapshots, comparisonToCsv, getDefaultTolerances, type RunSnapshot, type ToleranceSet } from '@/lib/regression-compare';
 import SpeedBar from '@/components/swmm/SpeedBar';
@@ -152,7 +153,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | 'diagramGallery' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
   const [detailsView, setDetailsView] = useState<'grid' | 'inp'>('grid');
   const [findSearchTerm, setFindSearchTerm] = useState('');
@@ -1934,6 +1935,7 @@ export default function SwmmUI() {
               setOpenDialog('phaseSpace');
             }} testId="btn-phase-space" />}
             <ToolbarButton icon={<Box className="w-4 h-4" />} label="3D" onClick={() => setOpenDialog('viewer3d')} testId="btn-3d-viewer" />
+            <ToolbarButton icon={<LayoutGrid className="w-4 h-4" />} label="Diagrams" onClick={() => setOpenDialog('diagramGallery')} testId="btn-diagram-gallery" />
             <ToolbarButton icon={<List className="w-4 h-4" />} label="Summary" onClick={() => setOpenDialog('projectSummary')} testId="btn-summary" />
             <ToolbarButton icon={<FileText className="w-4 h-4" />} label="Details" onClick={() => setOpenDialog('projectDetails')} testId="btn-details" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
@@ -3814,6 +3816,13 @@ export default function SwmmUI() {
         onOpenChange={v => !v && setOpenDialog(null)}
         project={project}
         projectName={fileName?.replace(/\.inp$/i, '')}
+      />
+
+      <DiagramGalleryDialog
+        open={openDialog === 'diagramGallery'}
+        onClose={() => setOpenDialog(null)}
+        project={project}
+        results={results}
       />
 
       <HelpTopicsDialog
