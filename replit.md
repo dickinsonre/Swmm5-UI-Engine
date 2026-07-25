@@ -117,7 +117,7 @@ Parses 30+ SWMM5 INP sections. Key data structures:
 
 ## New Features (Session 2)
 - **Animation Speed Control**: Speed slider (20-500ms range, inverted for intuition) next to play/pause button, adjusts requestAnimationFrame interval
-- **Enhanced Report Viewer**: Searchable `.rpt` viewer with match count, search highlighting (deterministic split-based), section navigation buttons (scrolls to first match), 9 quick-jump sections
+- **Enhanced Report Viewer**: Searchable `.rpt` viewer with match count, search highlighting (deterministic split-based), section navigation buttons (scrolls to first match), 9 quick-jump sections. Text/HTML toggle (btn-report-view-text/html): HTML mode uses `client/src/components/swmm/RptHtmlView.tsx` — parseRptSections() splits report on star-banner titles, parses fixed-width tables (headers built by assigning header tokens to data-derived column ranges), renders collapsible sections with sortable HTML tables and per-numeric-column Recharts bar charts (top 40 by value)
 - **Scatter Plot Dialog**: X-Y scatter with independent category/object/variable selectors for each axis, Pearson correlation coefficient (r) and R², Recharts ScatterChart
 - **Frequency/Exceedance Curves**: Added to Statistics Report after event bar chart — exceedance probability curve (Weibull plotting position), cumulative frequency distribution, return period analysis (2-100yr)
 - **Transect Editor**: Station-elevation table editor with add/remove rows, Manning's N (left/right/channel), bank station markers, live AreaChart cross-section preview, save to project

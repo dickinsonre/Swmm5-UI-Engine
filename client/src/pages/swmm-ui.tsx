@@ -27,6 +27,7 @@ import AIAssistPanel, { runDiagnostics } from '@/components/swmm/AIAssistPanel';
 import { HelpTopicsDialog, HelpTutorialDialog, HelpErrorsDialog } from '@/components/swmm/HelpDialogs';
 import HelpManualsDialog from '@/components/swmm/HelpManualsDialog';
 import AppsLauncherDialog from '@/components/swmm/AppsLauncherDialog';
+import RptHtmlView from '@/components/swmm/RptHtmlView';
 import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
 import RoundTripAuditDialog from '@/components/swmm/RoundTripAuditDialog';
@@ -286,6 +287,7 @@ export default function SwmmUI() {
   const [reportContent, setReportContent] = useState<string | null>(null);
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [reportSearchTerm, setReportSearchTerm] = useState('');
+  const [reportViewMode, setReportViewMode] = useState<'text' | 'html'>('text');
   const [splitScreenProject, setSplitScreenProject] = useState<{ project: SwmmProject; results: SimulationResults; fileName: string } | null>(null);
   const [regressionBaseline, setRegressionBaseline] = useState<RunSnapshot | null>(null);
   const [isModified, setIsModified] = useState(false);
@@ -3412,6 +3414,18 @@ export default function SwmmUI() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2 mb-1">
+            <div className="flex rounded border border-[#d0d0d8] overflow-hidden shrink-0">
+              {(['text', 'html'] as const).map(m => (
+                <button
+                  key={m}
+                  className={`px-2.5 py-1.5 text-[10px] font-semibold ${reportViewMode === m ? 'bg-[#2c6eb5] text-white' : 'bg-white text-[#4a4a5a] hover:bg-[#f0f0f4]'}`}
+                  onClick={() => setReportViewMode(m)}
+                  data-testid={`btn-report-view-${m}`}
+                >
+                  {m === 'text' ? 'Text' : 'HTML'}
+                </button>
+              ))}
+            </div>
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-[#9090a0]" />
               <input
@@ -3447,22 +3461,25 @@ export default function SwmmUI() {
               </button>
             ))}
           </div>
-          <div className="flex-1 overflow-auto min-h-0">
-            <pre
-              className="text-[11px] leading-[1.4] p-3 rounded border border-[#d0d0d8] bg-[#f8f8fa] whitespace-pre overflow-x-auto font-mono"
-              style={{ maxHeight: 'calc(85vh - 200px)' }}
-              data-testid="report-content"
-            >
-              {(() => {
-                const text = reportContent || 'No report available.';
-                if (!reportSearchTerm) return text;
-                const escaped = reportSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
-                return parts.map((part, i) =>
-                  i % 2 === 1 ? <mark key={i} className="bg-yellow-200 text-[#2a2a3e]">{part}</mark> : part
-                );
-              })()}
-            </pre>
+          <div className="flex-1 overflow-auto min-h-0" style={{ maxHeight: 'calc(85vh - 200px)' }}>
+            {reportViewMode === 'html' && reportContent ? (
+              <RptHtmlView content={reportContent} searchTerm={reportSearchTerm} />
+            ) : (
+              <pre
+                className="text-[11px] leading-[1.4] p-3 rounded border border-[#d0d0d8] bg-[#f8f8fa] whitespace-pre overflow-x-auto font-mono"
+                data-testid="report-content"
+              >
+                {(() => {
+                  const text = reportContent || 'No report available.';
+                  if (!reportSearchTerm) return text;
+                  const escaped = reportSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+                  return parts.map((part, i) =>
+                    i % 2 === 1 ? <mark key={i} className="bg-yellow-200 text-[#2a2a3e]">{part}</mark> : part
+                  );
+                })()}
+              </pre>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button
