@@ -6099,7 +6099,7 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
 
   // Build one .dat file per variable (a SWMM calibration file holds a single variable)
   const buildCalibrationFiles = (): { varName: string; cat: string; content: string }[] => {
-    const validEntries = entries.filter(e => e.locationId && e.date && e.time && e.value !== '' && !isNaN(parseFloat(e.value)));
+    const validEntries = entries.filter(e => e.locationId && e.date && e.time && (e.value === '' || !isNaN(parseFloat(e.value))));
     const byVar = new Map<string, CalibrationEntry[]>();
     for (const e of validEntries) {
       const key = e.varKey && CALIB_VAR_BY_KEY.has(e.varKey) ? e.varKey : currentVar.key;
@@ -6123,7 +6123,7 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
       for (const [locId, pts] of byLocation) {
         lines.push(locId);
         for (const pt of pts) {
-          lines.push(`           ${pt.date.padEnd(12)} ${pt.time.padEnd(8)} ${pt.value}`);
+          lines.push(`           ${pt.date.padEnd(12)} ${pt.time.padEnd(8)} ${pt.value === '' ? '0' : pt.value}`);
         }
         lines.push(``);
       }
@@ -6186,6 +6186,7 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   const validCount = entries.filter(e => e.locationId && e.date && e.time && e.value !== '' && !isNaN(parseFloat(e.value))).length;
+  const downloadableCount = entries.filter(e => e.locationId && e.date && e.time && (e.value === '' || !isNaN(parseFloat(e.value)))).length;
 
   const hasMixedVars = useMemo(() => {
     const keys = new Set(entries.map(e => e.varKey || currentVar.key));
@@ -6195,7 +6196,7 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
   const distinctFileCount = useMemo(() => {
     const keys = new Set(
       entries
-        .filter(e => e.locationId && e.date && e.time && e.value !== '' && !isNaN(parseFloat(e.value)))
+        .filter(e => e.locationId && e.date && e.time && (e.value === '' || !isNaN(parseFloat(e.value))))
         .map(e => (e.varKey && CALIB_VAR_BY_KEY.has(e.varKey) ? e.varKey : currentVar.key))
     );
     return keys.size;
@@ -6492,7 +6493,8 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
           size="sm"
           className="h-7 text-[11px] bg-[#2c6eb5] hover:bg-[#245a9a] text-white"
           onClick={handleDownload}
-          disabled={validCount === 0}
+          disabled={downloadableCount === 0}
+          title={downloadableCount === 0 ? 'Add at least one row with a location, date, and time (generate a template or add rows). Blank values are written as 0.' : undefined}
           data-testid="calib-create-download"
         >
           <Download className="w-3 h-3 mr-1" /> Download .dat File
