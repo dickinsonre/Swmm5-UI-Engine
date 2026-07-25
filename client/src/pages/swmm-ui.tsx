@@ -6217,10 +6217,21 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
           <label className="text-[11px] font-semibold text-[#2c3e6b] mb-1 block">Category</label>
           <div className="flex items-center gap-3 h-8">
             {(['node', 'link', 'subcatch'] as const).map(c => (
-              <label key={c} className={`flex items-center gap-1 text-[11px] ${!allParams && category === c ? 'text-[#2c6eb5] font-semibold' : 'text-[#9090a0]'}`}>
+              <button
+                key={c}
+                type="button"
+                disabled={allParams}
+                onClick={() => {
+                  if (category === c) return;
+                  const first = Array.from(CALIB_VAR_BY_KEY.values()).find(i => i.cat === c);
+                  if (first) handleVariableChange(first.key);
+                }}
+                className={`flex items-center gap-1 text-[11px] cursor-pointer disabled:cursor-default bg-transparent border-0 p-0 ${!allParams && category === c ? 'text-[#2c6eb5] font-semibold' : 'text-[#9090a0] hover:text-[#4a4a5a]'}`}
+                data-testid={`calib-create-cat-${c}`}
+              >
                 <span className={`inline-block w-2.5 h-2.5 rounded-full border ${!allParams && category === c ? 'bg-[#2c6eb5] border-[#2c6eb5]' : 'bg-white border-[#c0c0cc]'}`} />
                 {c === 'node' ? 'Node' : c === 'link' ? 'Link' : 'Subcatchment'}
-              </label>
+              </button>
             ))}
             <label className="flex items-center gap-1 text-[11px] text-[#2c3e6b] font-medium ml-2 cursor-pointer">
               <input
