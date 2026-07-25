@@ -346,3 +346,17 @@
     min-height: 44px;
   }
 }
+
+/* ===== App dark mode (smart inversion) =====
+   The desktop-style UI uses a fixed light palette throughout; inverting at the
+   root with a hue rotation keeps hues (blues stay blue) while flipping
+   lightness. Media that should keep true colors is re-inverted. */
+.app-dark {
+  filter: invert(1) hue-rotate(180deg);
+  color-scheme: dark;
+}
+.app-dark img,
+.app-dark video,
+.app-dark iframe {
+  filter: invert(1) hue-rotate(180deg);
+}

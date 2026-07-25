@@ -52,6 +52,7 @@ import {
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen, LayoutGrid,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
   Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity, HeartPulse, Box, ShieldCheck,
+  Moon, Sun,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
@@ -137,6 +138,19 @@ export default function SwmmUI() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuTab>('Project');
   const [selectedObj, setSelectedObj] = useState<SelectedObject>(null);
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return localStorage.getItem('swmm5-dark-mode') === 'true'; } catch { return false; }
+  });
+  const toggleDarkMode = () => {
+    setDarkMode(d => {
+      try { localStorage.setItem('swmm5-dark-mode', String(!d)); } catch {}
+      return !d;
+    });
+  };
+  useEffect(() => {
+    document.body.classList.toggle('app-dark', darkMode);
+    return () => { document.body.classList.remove('app-dark'); };
+  }, [darkMode]);
   const [showSubcatch, setShowSubcatch] = useState(true);
   const [subcatchTheme, setSubcatchTheme] = useState('imperv');
   const [nodeTheme, setNodeTheme] = useState('depth');
@@ -1785,6 +1799,12 @@ export default function SwmmUI() {
           {expertMode ? 'Expert' : 'Standard'}
         </button>
         <div className="flex items-center gap-1 pr-2 sm:pr-3">
+          <ToolbarIconButton
+            icon={darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            onClick={toggleDarkMode}
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            testId="btn-dark-mode"
+          />
           <ToolbarIconButton icon={<Save className="w-3.5 h-3.5" />} onClick={handleSave} title="Save" testId="btn-save" />
           <ToolbarIconButton icon={<FolderOpen className="w-3.5 h-3.5" />} onClick={() => fileInputRef.current?.click()} title="Open" testId="btn-open" />
           <span className="hidden sm:inline"><ToolbarIconButton icon={<Search className="w-3.5 h-3.5" />} title="Find" testId="btn-find" /></span>
