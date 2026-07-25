@@ -5861,6 +5861,7 @@ interface CalibrationEntry {
   date: string;
   time: string;
   value: string;
+  varKey?: string;
 }
 
 const CALIB_VARIABLES = [
@@ -5883,6 +5884,9 @@ const CALIB_VARIABLES = [
   ]},
 ];
 
+const CALIB_VAR_BY_KEY: Map<string, { key: string; label: string; varName: string; cat: 'node' | 'link' | 'subcatch' }> =
+  new Map(CALIB_VARIABLES.flatMap(g => g.items.map(i => [i.key, i] as const)));
+
 function CalibrationFileCreator({ project, results, onLoadData }: {
   project: SwmmProject;
   results: SimulationResults | null;
@@ -5893,6 +5897,7 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
   const [useSimTimes, setUseSimTimes] = useState(false);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [templateInterval, setTemplateInterval] = useState('60');
+  const [allParams, setAllParams] = useState(false);
 
   const currentVar = useMemo(() => {
     for (const grp of CALIB_VARIABLES) {
@@ -5928,6 +5933,19 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
     return subcatchIds;
   }, [category, nodeIds, linkIds, subcatchIds]);
 
+  // In all-parameters mode, locations span every category; values are "cat:id" composites
+  const allLocationGroups = useMemo(() => ([
+    { label: 'Nodes', cat: 'node' as const, ids: nodeIds },
+    { label: 'Links', cat: 'link' as const, ids: linkIds },
+    { label: 'Subcatchments', cat: 'subcatch' as const, ids: subcatchIds },
+  ]), [nodeIds, linkIds, subcatchIds]);
+
+  const selectableValues = useMemo(() => (
+    allParams
+      ? allLocationGroups.flatMap(g => g.ids.map(id => `${g.cat}:${id}`))
+      : locationIds
+  ), [allParams, allLocationGroups, locationIds]);
+
   const handleVariableChange = (val: string) => {
     setVariableKey(val);
     setSelectedLocations([]);
@@ -5949,6 +5967,39 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
 
   const generateTemplate = () => {
     if (selectedLocations.length === 0) return;
+    // Expand each selection into (locationId, varKey) pairs
+    const pairs: { locId: string; varKey: string }[] = [];
+    if (allParams) {
+      for (const sel of selectedLocations) {
+        const ci = sel.indexOf(':');
+        if (ci < 0) continue;
+        const cat = sel.slice(0, ci);
+        const locId = sel.slice(ci + 1);
+        for (const grp of CALIB_VARIABLES) {
+          for (const item of grp.items) {
+            if (item.cat === cat) pairs.push({ locId, varKey: item.key });
+          }
+        }
+      }
+    } else {
+      for (const locId of selectedLocations) pairs.push({ locId, varKey: currentVar.key });
+    }
+    // Guard against huge templates before committing to state
+    {
+      const interval = parseInt(templateInterval) || 60;
+      const stepsPerPair = useSimTimes && results && results.timeSteps.length > 0
+        ? Math.ceil(results.timeSteps.length / Math.max(1, Math.round(interval / 15)))
+        : Math.floor((24 * 60) / interval) + 1;
+      const projected = pairs.length * stepsPerPair;
+      if (projected > 20000) {
+        const ok = window.confirm(
+          `This template will generate about ${projected.toLocaleString()} rows ` +
+          `(${pairs.length.toLocaleString()} location/parameter combinations × ~${stepsPerPair} time steps). ` +
+          `Large templates can be slow to edit. Consider a longer interval or fewer locations.\n\nGenerate anyway?`
+        );
+        if (!ok) return;
+      }
+    }
     const newEntries: CalibrationEntry[] = [];
     let startDate = '01/01/2024';
     let startHour = 0;
@@ -5966,7 +6017,7 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
 
     if (useSimTimes && results && results.timeSteps.length > 0) {
       const step = Math.max(1, Math.round(interval / 15));
-      for (const locId of selectedLocations) {
+      for (const { locId, varKey } of pairs) {
         for (let i = 0; i < results.timeSteps.length; i += step) {
           const ts = results.timeSteps[i];
           const dtParts = ts.dateTime.split(/\s+/);
@@ -5975,23 +6026,24 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
             date: dtParts[0] || startDate,
             time: dtParts[1] || '0:00',
             value: '',
+            varKey,
           });
         }
       }
     } else {
-      for (const locId of selectedLocations) {
-        for (let h = startHour; h <= Math.min(endHour, startHour + 24); h++) {
-          for (let m = 0; m < 60; m += interval) {
-            if (interval >= 60 && m > 0) continue;
-            const hr = interval >= 60 ? h : h;
-            const mn = interval >= 60 ? 0 : m;
-            newEntries.push({
-              locationId: locId,
-              date: startDate,
-              time: `${hr}:${String(mn).padStart(2, '0')}`,
-              value: '',
-            });
-          }
+      const startMins = startHour * 60;
+      const endMins = Math.min(endHour, startHour + 24) * 60;
+      for (const { locId, varKey } of pairs) {
+        for (let mins = startMins; mins <= endMins; mins += interval) {
+          const hr = Math.floor(mins / 60);
+          const mn = mins % 60;
+          newEntries.push({
+            locationId: locId,
+            date: startDate,
+            time: `${hr}:${String(mn).padStart(2, '0')}`,
+            value: '',
+            varKey,
+          });
         }
       }
     }
@@ -6002,7 +6054,6 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
   const fillFromResults = () => {
     if (!results || results.timeSteps.length === 0) return;
     const epochs = results.timeSteps.map(ts => normalizeDateTime(ts.dateTime));
-    const varKey = variable.toLowerCase();
     setEntries(prev => prev.map(entry => {
       if (!entry.locationId || !entry.date || !entry.time) return entry;
       if (entry.value !== '') return entry;
@@ -6017,57 +6068,72 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
       }
       if (bestIdx < 0) return entry;
       const ts = results.timeSteps[bestIdx];
+      const entryVar = (entry.varKey && CALIB_VAR_BY_KEY.get(entry.varKey)) || currentVar;
+      const varKey = entryVar.varName.toLowerCase();
+      const cat = entryVar.cat;
       let val: number | undefined;
-      if (category === 'node') val = (ts.nodes[entry.locationId] as unknown as Record<string, number> | undefined)?.[varKey];
-      else if (category === 'link') val = (ts.links[entry.locationId] as unknown as Record<string, number> | undefined)?.[varKey];
+      if (cat === 'node') val = (ts.nodes[entry.locationId] as unknown as Record<string, number> | undefined)?.[varKey];
+      else if (cat === 'link') val = (ts.links[entry.locationId] as unknown as Record<string, number> | undefined)?.[varKey];
       else val = (ts.subcatchments[entry.locationId] as unknown as Record<string, number> | undefined)?.[varKey];
       if (val === undefined || val === null || isNaN(val)) return entry;
       return { ...entry, value: val.toFixed(3) };
     }));
   };
 
-  const generateCalibrationFile = (): string => {
-    const lines: string[] = [];
-    lines.push(`;; SWMM Calibration Data File`);
-    lines.push(`;; Generated by SWMM5-UI`);
-    lines.push(`;; Variable: ${variable}`);
-    lines.push(`;; Category: ${category}`);
-    lines.push(``);
-
+  // Build one .dat file per variable (a SWMM calibration file holds a single variable)
+  const buildCalibrationFiles = (): { varName: string; cat: string; content: string }[] => {
     const validEntries = entries.filter(e => e.locationId && e.date && e.time && e.value !== '' && !isNaN(parseFloat(e.value)));
-
-    const byLocation = new Map<string, CalibrationEntry[]>();
+    const byVar = new Map<string, CalibrationEntry[]>();
     for (const e of validEntries) {
-      if (!byLocation.has(e.locationId)) byLocation.set(e.locationId, []);
-      byLocation.get(e.locationId)!.push(e);
+      const key = e.varKey && CALIB_VAR_BY_KEY.has(e.varKey) ? e.varKey : currentVar.key;
+      if (!byVar.has(key)) byVar.set(key, []);
+      byVar.get(key)!.push(e);
     }
-
-    for (const [locId, pts] of byLocation) {
-      lines.push(locId);
-      for (const pt of pts) {
-        lines.push(`           ${pt.date.padEnd(12)} ${pt.time.padEnd(8)} ${pt.value}`);
-      }
+    const files: { varName: string; cat: string; content: string }[] = [];
+    for (const [key, ents] of byVar) {
+      const v = CALIB_VAR_BY_KEY.get(key) || currentVar;
+      const lines: string[] = [];
+      lines.push(`;; SWMM Calibration Data File`);
+      lines.push(`;; Generated by SWMM5-UI`);
+      lines.push(`;; Variable: ${v.varName}`);
+      lines.push(`;; Category: ${v.cat}`);
       lines.push(``);
+      const byLocation = new Map<string, CalibrationEntry[]>();
+      for (const e of ents) {
+        if (!byLocation.has(e.locationId)) byLocation.set(e.locationId, []);
+        byLocation.get(e.locationId)!.push(e);
+      }
+      for (const [locId, pts] of byLocation) {
+        lines.push(locId);
+        for (const pt of pts) {
+          lines.push(`           ${pt.date.padEnd(12)} ${pt.time.padEnd(8)} ${pt.value}`);
+        }
+        lines.push(``);
+      }
+      files.push({ varName: v.varName, cat: v.cat, content: lines.join('\n') });
     }
-
-    return lines.join('\n');
+    return files;
   };
 
-  const handleDownload = () => {
-    const content = generateCalibrationFile();
-    const blob = new Blob([content], { type: 'text/plain' });
+  const downloadOne = (f: { varName: string; cat: string; content: string }) => {
+    const blob = new Blob([f.content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${variable.toLowerCase()}_calibration.dat`;
+    a.download = `${f.cat}_${f.varName.toLowerCase()}_calibration.dat`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
+  const handleDownload = () => {
+    for (const f of buildCalibrationFiles()) downloadOne(f);
+  };
+
   const handleLoadIntoAnalysis = () => {
-    const content = generateCalibrationFile();
-    const ds = parseCalibrationFile(content);
-    onLoadData(ds);
+    for (const f of buildCalibrationFiles()) {
+      const ds = parseCalibrationFile(f.content, `${f.cat}_${f.varName.toLowerCase()}_calibration.dat`);
+      onLoadData(ds);
+    }
   };
 
   const handleImportCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -6104,15 +6170,38 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
 
   const validCount = entries.filter(e => e.locationId && e.date && e.time && e.value !== '' && !isNaN(parseFloat(e.value))).length;
 
+  const hasMixedVars = useMemo(() => {
+    const keys = new Set(entries.map(e => e.varKey || currentVar.key));
+    return keys.size > 1 || allParams;
+  }, [entries, currentVar, allParams]);
+
+  const distinctFileCount = useMemo(() => {
+    const keys = new Set(
+      entries
+        .filter(e => e.locationId && e.date && e.time && e.value !== '' && !isNaN(parseFloat(e.value)))
+        .map(e => (e.varKey && CALIB_VAR_BY_KEY.has(e.varKey) ? e.varKey : currentVar.key))
+    );
+    return keys.size;
+  }, [entries, currentVar]);
+
+  const catForEntry = (entry: CalibrationEntry): 'node' | 'link' | 'subcatch' => {
+    const v = entry.varKey && CALIB_VAR_BY_KEY.get(entry.varKey);
+    return v ? v.cat : category;
+  };
+
   return (
     <div className="flex flex-col gap-3" data-testid="calib-create-content">
+      <datalist id="calib-loc-list-node">{nodeIds.map(id => <option key={id} value={id} />)}</datalist>
+      <datalist id="calib-loc-list-link">{linkIds.map(id => <option key={id} value={id} />)}</datalist>
+      <datalist id="calib-loc-list-subcatch">{subcatchIds.map(id => <option key={id} value={id} />)}</datalist>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="text-[11px] font-semibold text-[#2c3e6b] mb-1 block">Variable / Parameter</label>
           <select
-            className="w-full h-8 text-[11px] border border-[#d0d0d8] rounded px-2 bg-white"
+            className="w-full h-8 text-[11px] border border-[#d0d0d8] rounded px-2 bg-white disabled:opacity-50"
             value={variableKey}
             onChange={e => handleVariableChange(e.target.value)}
+            disabled={allParams}
             data-testid="calib-create-variable"
           >
             {CALIB_VARIABLES.map(grp => (
@@ -6128,11 +6217,21 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
           <label className="text-[11px] font-semibold text-[#2c3e6b] mb-1 block">Category</label>
           <div className="flex items-center gap-3 h-8">
             {(['node', 'link', 'subcatch'] as const).map(c => (
-              <label key={c} className={`flex items-center gap-1 text-[11px] ${category === c ? 'text-[#2c6eb5] font-semibold' : 'text-[#9090a0]'}`}>
-                <span className={`inline-block w-2.5 h-2.5 rounded-full border ${category === c ? 'bg-[#2c6eb5] border-[#2c6eb5]' : 'bg-white border-[#c0c0cc]'}`} />
+              <label key={c} className={`flex items-center gap-1 text-[11px] ${!allParams && category === c ? 'text-[#2c6eb5] font-semibold' : 'text-[#9090a0]'}`}>
+                <span className={`inline-block w-2.5 h-2.5 rounded-full border ${!allParams && category === c ? 'bg-[#2c6eb5] border-[#2c6eb5]' : 'bg-white border-[#c0c0cc]'}`} />
                 {c === 'node' ? 'Node' : c === 'link' ? 'Link' : 'Subcatchment'}
               </label>
             ))}
+            <label className="flex items-center gap-1 text-[11px] text-[#2c3e6b] font-medium ml-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allParams}
+                onChange={e => { setAllParams(e.target.checked); setSelectedLocations([]); }}
+                className="w-3 h-3"
+                data-testid="calib-create-all-params"
+              />
+              All parameters (all categories)
+            </label>
           </div>
         </div>
       </div>
@@ -6141,7 +6240,23 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
         <div className="text-[11px] font-semibold text-[#2c3e6b] mb-2">Template Generator</div>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex-1 min-w-[180px]">
-            <label className="text-[10px] text-[#6b6b7b] mb-0.5 block">Select Locations</label>
+            <div className="flex items-center gap-2 mb-0.5">
+              <label className="text-[10px] text-[#6b6b7b]">Select Locations</label>
+              <button
+                className="text-[9px] text-[#2c6eb5] hover:underline"
+                onClick={() => setSelectedLocations(selectableValues)}
+                data-testid="calib-create-select-all"
+              >
+                Select All ({selectableValues.length})
+              </button>
+              <button
+                className="text-[9px] text-[#9090a0] hover:underline"
+                onClick={() => setSelectedLocations([])}
+                data-testid="calib-create-select-none"
+              >
+                Clear
+              </button>
+            </div>
             <select
               multiple
               className="w-full h-20 text-[10px] border border-[#d0d0d8] rounded px-1 bg-white font-mono"
@@ -6149,11 +6264,21 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
               onChange={e => setSelectedLocations(Array.from(e.target.selectedOptions, o => o.value))}
               data-testid="calib-create-locations"
             >
-              {locationIds.map(id => (
-                <option key={id} value={id}>{id}</option>
-              ))}
+              {allParams
+                ? allLocationGroups.filter(g => g.ids.length > 0).map(g => (
+                    <optgroup key={g.cat} label={g.label}>
+                      {g.ids.map(id => (
+                        <option key={`${g.cat}:${id}`} value={`${g.cat}:${id}`}>{id}</option>
+                      ))}
+                    </optgroup>
+                  ))
+                : locationIds.map(id => (
+                    <option key={id} value={id}>{id}</option>
+                  ))}
             </select>
-            <div className="text-[9px] text-[#9090a0] mt-0.5">Hold Ctrl/Cmd to select multiple</div>
+            <div className="text-[9px] text-[#9090a0] mt-0.5">
+              {selectedLocations.length > 0 ? `${selectedLocations.length} selected · ` : ''}Hold Ctrl/Cmd to select multiple
+            </div>
           </div>
           <div className="w-24">
             <label className="text-[10px] text-[#6b6b7b] mb-0.5 block">Interval (min)</label>
@@ -6229,6 +6354,7 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
             <tr>
               <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8] w-8">#</th>
               <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Location ID</th>
+              {hasMixedVars && <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Parameter</th>}
               <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Date (MM/DD/YYYY)</th>
               <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Time (HH:MM)</th>
               <th className="text-left px-2 py-1.5 font-semibold text-[#2c3e6b] border-b border-[#d0d0d8]">Value</th>
@@ -6236,22 +6362,25 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
             </tr>
           </thead>
           <tbody>
-            {entries.map((entry, i) => (
+            {entries.slice(0, 300).map((entry, i) => (
               <tr key={i} className="hover:bg-[#f8f8fa] border-b border-[#e8e8ee]">
                 <td className="px-2 py-0.5 text-[#9090a0] text-[10px]">{i + 1}</td>
                 <td className="px-1 py-0.5">
-                  <select
+                  <input
+                    type="text"
                     className="w-full h-6 text-[10px] border border-[#e0e0e8] rounded px-1 bg-white font-mono"
+                    placeholder="— location —"
                     value={entry.locationId}
                     onChange={e => updateEntry(i, 'locationId', e.target.value)}
+                    list={`calib-loc-list-${catForEntry(entry)}`}
                     data-testid={`calib-create-loc-${i}`}
-                  >
-                    <option value="">— select —</option>
-                    {locationIds.map(id => (
-                      <option key={id} value={id}>{id}</option>
-                    ))}
-                  </select>
+                  />
                 </td>
+                {hasMixedVars && (
+                  <td className="px-2 py-0.5 text-[10px] text-[#4a4a5a] whitespace-nowrap" data-testid={`calib-create-var-${i}`}>
+                    {(entry.varKey && CALIB_VAR_BY_KEY.get(entry.varKey)?.label) || currentVar.label}
+                  </td>
+                )}
                 <td className="px-1 py-0.5">
                   <input
                     type="text"
@@ -6297,11 +6426,18 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
             ))}
           </tbody>
         </table>
+        {entries.length > 300 && (
+          <div className="text-[10px] text-[#6b6b7b] px-2 py-1.5 bg-[#f8f8fa] border-t border-[#e0e0e8]" data-testid="calib-create-row-cap">
+            Showing first 300 of {entries.length} rows. All rows are included in Fill Blanks, Load into Analysis, and Download.
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 border-t border-[#e0e0e8] pt-3">
         <div className="text-[10px] text-[#6b6b7b] flex-1">
-          File format: SWMM .dat calibration file with {category} {variable} measurements
+          {distinctFileCount > 1
+            ? `SWMM .dat calibration files — one per parameter (${distinctFileCount} files)`
+            : `File format: SWMM .dat calibration file with ${category} ${variable} measurements`}
         </div>
         <Button
           size="sm"
@@ -6334,6 +6470,22 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
           <Download className="w-3 h-3 mr-1" /> Download .dat File
         </Button>
       </div>
+
+      {distinctFileCount > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5" data-testid="calib-create-file-list">
+          <span className="text-[10px] text-[#6b6b7b]">Download individually (if your browser blocks multiple downloads):</span>
+          {buildCalibrationFiles().map(f => (
+            <button
+              key={`${f.cat}.${f.varName}`}
+              className="text-[9px] font-mono px-1.5 py-0.5 border border-[#d0d0d8] rounded bg-white text-[#2c6eb5] hover:bg-[#f0f4fa]"
+              onClick={() => downloadOne(f)}
+              data-testid={`calib-create-dl-${f.cat}-${f.varName.toLowerCase()}`}
+            >
+              {f.cat}_{f.varName.toLowerCase()}.dat
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="text-[9px] text-[#9090a0] border border-[#e8e8ee] rounded p-2 bg-[#fafafa]">
         <span className="font-semibold">Tip:</span> Select locations from your model, generate a template with time intervals,
