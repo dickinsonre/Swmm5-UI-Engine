@@ -517,13 +517,50 @@ export default function SectionGridView({ project }: { project: SwmmProject }) {
   const populated = sections.filter(s => s.count > 0);
   const [selected, setSelected] = useState<string | null>(null);
   const [colStats, setColStats] = useState<ColStats | null>(null);
+  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const activeSection = populated.find(s => s.def.name === selected) || populated[0];
 
   const activeRows = useMemo(
     () => (activeSection ? activeSection.def.rows(project).slice(0, MAX_ROWS) : []),
     [activeSection, project]
   );
-  const active = activeSection ? { def: activeSection.def, rows: activeRows, count: activeSection.count } : null;
+  const sortedRows = useMemo(() => {
+    if (!sort) return activeRows;
+    const { col, dir } = sort;
+    const vals = activeRows.map(r => String(r[col] ?? ''));
+    const allNumeric = vals.every(v => v === '' || !isNaN(parseFloat(v)));
+    return activeRows
+      .map((row, i) => ({ row, i }))
+      .sort((a, b) => {
+        const va = String(a.row[col] ?? '');
+        const vb = String(b.row[col] ?? '');
+        if (va === '' && vb === '') return a.i - b.i;
+        if (va === '') return 1;
+        if (vb === '') return -1;
+        let cmp: number;
+        if (allNumeric) {
+          cmp = parseFloat(va) - parseFloat(vb);
+        } else {
+          cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
+        }
+        return cmp !== 0 ? cmp * dir : a.i - b.i;
+      })
+      .map(x => x.row);
+  }, [activeRows, sort]);
+  const active = activeSection ? { def: activeSection.def, rows: sortedRows, count: activeSection.count } : null;
+
+  const handleSelectSection = (name: string) => {
+    setSelected(name);
+    setSort(null);
+  };
+
+  const handleSortClick = (ci: number) => {
+    setSort(prev => {
+      if (!prev || prev.col !== ci) return { col: ci, dir: 1 };
+      if (prev.dir === 1) return { col: ci, dir: -1 };
+      return null;
+    });
+  };
 
   if (!populated.length) {
     return <div className="p-6 text-[11px] text-[#6b6b7b]">No data in this project.</div>;
@@ -539,7 +576,7 @@ export default function SectionGridView({ project }: { project: SwmmProject }) {
             <button
               key={def.name}
               disabled={empty}
-              onClick={() => setSelected(def.name)}
+              onClick={() => handleSelectSection(def.name)}
               className={`w-full text-left px-2 py-1 text-[10px] flex justify-between items-center gap-1 border-b border-[#f0f0f4] ${
                 isActive ? 'bg-[#2c6eb5] text-white' : empty ? 'text-[#b0b0bc] cursor-default' : 'text-[#2a2a3e] hover:bg-[#eef2f8]'
               }`}
@@ -559,8 +596,9 @@ export default function SectionGridView({ project }: { project: SwmmProject }) {
                 {active.def.columns.map((col, ci) => (
                   <th
                     key={col}
-                    className="text-left px-2 py-1 border-b border-r border-[#d0d0d8] font-semibold text-[#2c3e6b] whitespace-nowrap cursor-context-menu hover:bg-[#e6ecf5]"
-                    title="Right-click for column statistics"
+                    className="text-left px-2 py-1 border-b border-r border-[#d0d0d8] font-semibold text-[#2c3e6b] whitespace-nowrap cursor-pointer select-none hover:bg-[#e6ecf5]"
+                    title="Click to sort · right-click for column statistics"
+                    onClick={() => handleSortClick(ci)}
                     onContextMenu={e => {
                       e.preventDefault();
                       setColStats(computeColStats(active.def.name, col, active.def.rows(project), ci));
@@ -568,6 +606,9 @@ export default function SectionGridView({ project }: { project: SwmmProject }) {
                     data-testid={`grid-col-${ci}`}
                   >
                     {col}
+                    {sort?.col === ci && (
+                      <span className="ml-1 text-[#2c6eb5]">{sort.dir === 1 ? '▲' : '▼'}</span>
+                    )}
                   </th>
                 ))}
               </tr>
