@@ -1512,9 +1512,11 @@ function bmLinks(group){
         const trx = (L.shape==='IRREGULAR' && L.transect && model.transects) ? model.transects[L.transect] : null;
         if(trx){
           prof = transectProfile(trx);                 // engine-verified surveyed shape
-          const maxW = world.extent*0.12;
-          if(fullH*prof.w > maxW) fullH = maxW/prof.w; // shrink whole section, keep true aspect
         }
+        // clamp visual width for ALL extruded sections (wide shallow channels like a
+        // 100-ft-wide x 0.1-ft-deep swale otherwise render wider than the whole model)
+        const maxW = world.extent*0.12;
+        if(fullH*prof.w > maxW) fullH = maxW/prof.w;   // shrink whole section, keep true aspect
         const geo = extrudeSection(prof, pts, fullH, 1);
         const open = !prof.closed;
         const gm = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:col,
