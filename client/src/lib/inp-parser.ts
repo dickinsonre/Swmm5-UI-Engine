@@ -945,7 +945,15 @@ export function projectToInp(project: SwmmProject): string {
 
   lines.push('[OPTIONS]');
   for (const [key, val] of Object.entries(project.options)) {
-    lines.push(`${key.padEnd(20)} ${val}`);
+    let out = val;
+    // VARIABLE_STEP must be numeric (adjustment factor 0-2); repair YES/NO
+    // values written by an earlier UI bug so the engine doesn't reject the file.
+    if (key === 'VARIABLE_STEP') {
+      const u = String(val).trim().toUpperCase();
+      if (u === 'YES' || u === 'ON' || u === 'TRUE') out = '0.75';
+      else if (u === 'NO' || u === 'OFF' || u === 'FALSE') out = '0';
+    }
+    lines.push(`${key.padEnd(20)} ${out}`);
   }
   lines.push('');
 

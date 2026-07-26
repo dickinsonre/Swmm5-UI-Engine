@@ -194,7 +194,7 @@ function TimeStepsTab({ opts, setOpt }: { opts: Record<string, string>; setOpt: 
       <OptRow label="Lengthening Step"><OptInput opts={opts} field="LENGTHENING_STEP" setOpt={setOpt} placeholder="0" /></OptRow>
 
       <div className="text-xs font-semibold text-[#3a5070] mt-3 mb-2">Variable Time Step</div>
-      <OptRow label="Variable Step"><OptSwitch opts={opts} field="VARIABLE_STEP" setOpt={setOpt} /></OptRow>
+      <OptRow label="Variable Step (0-2)"><OptInput opts={opts} field="VARIABLE_STEP" setOpt={setOpt} placeholder="0.75" /></OptRow>
       <OptRow label="Min. Routing Step"><OptInput opts={opts} field="MINIMUM_STEP" setOpt={setOpt} placeholder="0.5" /></OptRow>
     </div>
   );

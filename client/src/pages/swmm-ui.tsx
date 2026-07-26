@@ -38,6 +38,7 @@ import { buildProvenance, type RunProvenance } from '@/lib/engine-diagnostics';
 import { REGRESSION_METRICS, extractRunSnapshot, compareSnapshots, comparisonToCsv, getDefaultTolerances, type RunSnapshot, type ToleranceSet } from '@/lib/regression-compare';
 import SpeedBar from '@/components/swmm/SpeedBar';
 import SectionGridView from '@/components/swmm/SectionGridView';
+import DiffToolDialog from '@/components/swmm/DiffToolDialog';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
 import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark } from '@/components/swmm/SyntheticWarning';
 import { computeIntegrityInfo, IntegrityChip, IntegrityReportDialog, RecoveryDialog } from '@/components/swmm/IntegrityStatus';
@@ -52,7 +53,7 @@ import {
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen, LayoutGrid,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
   Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity, HeartPulse, Box, ShieldCheck,
-  Moon, Sun,
+  Moon, Sun, GitCompareArrows,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
@@ -169,7 +170,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'roundtripAudit' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | 'diagramGallery' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'roundtripAudit' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | 'diagramGallery' | 'diffTool' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
   const [detailsView, setDetailsView] = useState<'grid' | 'inp'>('grid');
   const [findSearchTerm, setFindSearchTerm] = useState('');
@@ -686,6 +687,31 @@ export default function SwmmUI() {
     setSnapshotRefresh(n => n + 1);
     toast({ title: 'Saved', description: `${fileName} downloaded` });
   }, [project, fileName, toast]);
+
+  const handleSaveAs = useCallback(async () => {
+    const input = window.prompt('Save As — enter a file name:', fileName);
+    if (input === null) return;
+    let newName = input.trim();
+    if (!newName) return;
+    if (!/\.inp$/i.test(newName)) newName += '.inp';
+    const { projectToInp } = await import('@/lib/inp-parser');
+    const text = projectToInp(project);
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = newName;
+    a.click();
+    URL.revokeObjectURL(url);
+    setFileName(newName);
+    setIsModified(false);
+    saveSnapshot(newName, text, true);
+    setRecoveryBaseline();
+    setSnapshotRefresh(n => n + 1);
+    toast({ title: 'Saved', description: `${newName} downloaded` });
+  }, [project, fileName, toast]);
+
+  const getCurrentInpForDiff = useCallback(() => ({ name: fileName, text: projectToInp(project) }), [project, fileName]);
 
   const handleViewTable = useCallback((section: string) => {
     const optionsSections = ['OPTIONS', 'opt-general', 'opt-hydrology', 'opt-hydraulics', 'opt-routing', 'opt-quality', 'opt-dates', 'opt-timesteps', 'opt-reporting'];
@@ -1818,6 +1844,8 @@ export default function SwmmUI() {
             <ToolbarButton icon={<FolderOpen className="w-4 h-4" />} label="Open" onClick={() => fileInputRef.current?.click()} testId="btn-open-file" />
             <ToolbarButton icon={<Github className="w-4 h-4" />} label="GitHub" onClick={() => { setOpenDialog('github'); if (ghBrowseItems.length === 0) ghBrowse(''); }} testId="btn-github" />
             <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save" onClick={handleSave} testId="btn-save-file" />
+            <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save As" onClick={handleSaveAs} testId="btn-save-as" />
+            <ToolbarButton icon={<GitCompareArrows className="w-4 h-4" />} label="Diff" onClick={() => setOpenDialog('diffTool')} testId="btn-diff" />
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" onClick={() => setOpenDialog('exportData')} testId="btn-export" />
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" onClick={() => { setImportPreviewText(''); setImportFileName(''); setDxfLayers([]); setDxfSelectedLayers(new Set()); setDxfEntities([]); setGeojsonFeatures([]); setGeojsonFields([]); setGeojsonIdField(''); setGeojsonElevField(''); setOpenDialog('importData'); }} testId="btn-import" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
@@ -3861,6 +3889,12 @@ export default function SwmmUI() {
         onOpenChange={v => !v && setOpenDialog(null)}
         project={project}
         projectName={fileName?.replace(/\.inp$/i, '')}
+      />
+
+      <DiffToolDialog
+        open={openDialog === 'diffTool'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        getCurrentInp={getCurrentInpForDiff}
       />
 
       <DiagramGalleryDialog
