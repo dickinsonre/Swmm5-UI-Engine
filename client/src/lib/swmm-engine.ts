@@ -183,6 +183,7 @@ export function createWasmEngine(): SwmmEngine {
         if (outData && outData.length > 100) {
           parsed = parseSwmmOut(outData.buffer, project);
           parsed.reportContent = rptText;
+          parsed.outRaw = new Uint8Array(outData);
           applyRptContinuity(parsed, rptText);
         } else {
           parsed = parseRptToResults(rptText, project);
@@ -275,6 +276,7 @@ export function createLocalEngine(): SwmmEngine {
           const outBuffer = await outResp.arrayBuffer();
           parsed = parseSwmmOut(outBuffer, project);
           parsed.reportContent = result.reportContent;
+          parsed.outRaw = new Uint8Array(outBuffer);
           applyRptContinuity(parsed, result.reportContent);
         } catch (outErr) {
           console.warn('Failed to fetch/parse .out binary, falling back to .rpt:', outErr);
@@ -287,6 +289,7 @@ export function createLocalEngine(): SwmmEngine {
           for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
           parsed = parseSwmmOut(bytes.buffer, project);
           parsed.reportContent = result.reportContent;
+          parsed.outRaw = bytes;
           applyRptContinuity(parsed, result.reportContent);
         } catch (outErr) {
           console.warn('Failed to parse .out binary, falling back to .rpt:', outErr);

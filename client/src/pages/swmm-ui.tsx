@@ -53,7 +53,7 @@ import {
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen, LayoutGrid,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
   Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity, HeartPulse, Box, ShieldCheck,
-  Moon, Sun, GitCompareArrows,
+  Moon, Sun, GitCompareArrows, LogOut,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
@@ -710,6 +710,37 @@ export default function SwmmUI() {
     setSnapshotRefresh(n => n + 1);
     toast({ title: 'Saved', description: `${newName} downloaded` });
   }, [project, fileName, toast]);
+
+  const handleExit = useCallback(() => {
+    const base = (fileName || 'model').replace(/\.inp$/i, '');
+    const synthetic = results?.engineUsed === 'mock';
+    const files: { name: string; data: BlobPart; type: string }[] = [];
+    const text = projectToInp(project);
+    files.push({ name: `${base}.inp`, data: text, type: 'text/plain' });
+    const rpt = results?.reportContent ?? reportContent;
+    if (rpt) files.push({ name: `${base}${synthetic ? '_SYNTHETIC' : ''}.rpt`, data: rpt, type: 'text/plain' });
+    if (results?.outRaw && results.outRaw.length > 0 && !synthetic) {
+      // Copy into a plain ArrayBuffer so the Blob is backed by exactly these bytes.
+      files.push({ name: `${base}.out`, data: results.outRaw.slice().buffer as ArrayBuffer, type: 'application/octet-stream' });
+    }
+    files.forEach((f, i) => setTimeout(() => {
+      const blob = new Blob([f.data], { type: f.type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }, i * 400));
+    setIsModified(false);
+    saveSnapshot(fileName, text, true);
+    setRecoveryBaseline();
+    setSnapshotRefresh(n => n + 1);
+    const skipped = !rpt ? ' (no report yet — run a simulation to also get .rpt/.out)' : (!results?.outRaw || synthetic) ? ' (no binary .out available for this run)' : '';
+    toast({ title: 'Project files saved', description: `Downloading ${files.map(f => f.name).join(', ')}${skipped}. They land together in your Downloads folder.` });
+  }, [project, fileName, results, reportContent, toast]);
 
   const getCurrentInpForDiff = useCallback(() => ({ name: fileName, text: projectToInp(project) }), [project, fileName]);
 
@@ -1846,6 +1877,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save" onClick={handleSave} testId="btn-save-file" />
             <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save As" onClick={handleSaveAs} testId="btn-save-as" />
             <ToolbarButton icon={<GitCompareArrows className="w-4 h-4" />} label="Diff" onClick={() => setOpenDialog('diffTool')} testId="btn-diff" />
+            <ToolbarButton icon={<LogOut className="w-4 h-4" />} label="Exit" onClick={handleExit} testId="btn-exit" />
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" onClick={() => setOpenDialog('exportData')} testId="btn-export" />
             <ToolbarButton icon={<Upload className="w-4 h-4" />} label="Import" onClick={() => { setImportPreviewText(''); setImportFileName(''); setDxfLayers([]); setDxfSelectedLayers(new Set()); setDxfEntities([]); setGeojsonFeatures([]); setGeojsonFields([]); setGeojsonIdField(''); setGeojsonElevField(''); setOpenDialog('importData'); }} testId="btn-import" />
             <ToolbarButton icon={<Settings className="w-4 h-4" />} label="Prefs" onClick={() => setOpenDialog('preferences')} testId="btn-prefs" />
