@@ -5969,6 +5969,7 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [templateInterval, setTemplateInterval] = useState('60');
   const [allParams, setAllParams] = useState(false);
+  const { toast } = useToast();
 
   const currentVar = useMemo(() => {
     for (const grp of CALIB_VARIABLES) {
@@ -6192,12 +6193,27 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
     const a = document.createElement('a');
     a.href = url;
     a.download = `${f.cat}_${f.varName.toLowerCase()}_calibration.dat`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    // Revoke later — revoking immediately can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
   const handleDownload = () => {
-    for (const f of buildCalibrationFiles()) downloadOne(f);
+    const files = buildCalibrationFiles();
+    if (files.length === 0) {
+      toast({
+        title: 'Nothing to download yet',
+        description: 'No complete rows. Pick locations and click "Generate Template" (or set a Location ID, date, and time on a row), then download.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    // Stagger multiple downloads; firing them all in the same tick makes
+    // browsers silently drop everything after the first file.
+    files.forEach((f, i) => setTimeout(() => downloadOne(f), i * 400));
+    toast({ title: 'Downloading', description: files.length === 1 ? '1 calibration .dat file' : `${files.length} calibration .dat files (allow multiple downloads if prompted)` });
   };
 
   const handleLoadIntoAnalysis = () => {
@@ -6547,7 +6563,6 @@ function CalibrationFileCreator({ project, results, onLoadData }: {
           size="sm"
           className="h-7 text-[11px] bg-[#2c6eb5] hover:bg-[#245a9a] text-white"
           onClick={handleDownload}
-          disabled={downloadableCount === 0}
           title={downloadableCount === 0 ? 'Add at least one row with a location, date, and time (generate a template or add rows). Blank values are written as 0.' : undefined}
           data-testid="calib-create-download"
         >
