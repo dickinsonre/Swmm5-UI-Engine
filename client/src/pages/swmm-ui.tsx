@@ -1427,6 +1427,36 @@ export default function SwmmUI() {
     setContextMenu(null);
   }, []);
 
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (contextMenu && contextMenuRef.current) {
+      const first = contextMenuRef.current.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+      first?.focus();
+    }
+  }, [contextMenu]);
+
+  const handleMenuKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const menu = contextMenuRef.current;
+    if (!menu) return;
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[(idx + 1) % items.length].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(idx - 1 + items.length) % items.length].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      items[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      items[items.length - 1].focus();
+    }
+  }, []);
+
   const handleCopy = useCallback(() => {
     const target = contextMenu?.obj || selectedObj;
     if (!target) return;
@@ -3994,6 +4024,7 @@ export default function SwmmUI() {
 
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           className="fixed z-50 min-w-[140px] py-1 rounded shadow-xl"
           style={{
             left: contextMenu.x,
@@ -4004,6 +4035,7 @@ export default function SwmmUI() {
           role="menu"
           aria-label="Map context menu"
           data-testid="context-menu"
+          onKeyDown={handleMenuKeyDown}
         >
           {contextMenu.obj && (
             <>
@@ -4052,6 +4084,8 @@ function ContextMenuItem({ icon, label, onClick, disabled, danger, testId }: {
 }) {
   return (
     <button
+      role="menuitem"
+      tabIndex={-1}
       onClick={e => { e.stopPropagation(); onClick?.(); }}
       disabled={disabled}
       className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] transition-colors

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { SwmmProject, SimulationResults } from '@/lib/swmm-types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -138,6 +138,42 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
   }, []);
 
   const closeCtx = useCallback(() => setContextMenu(null), []);
+
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (contextMenu && ctxMenuRef.current) {
+      const first = ctxMenuRef.current.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+      first?.focus();
+    }
+  }, [contextMenu]);
+
+  const handleMenuKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const menu = ctxMenuRef.current;
+    if (!menu) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeCtx();
+      return;
+    }
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[(idx + 1) % items.length].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(idx - 1 + items.length) % items.length].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      items[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      items[items.length - 1].focus();
+    }
+  }, [closeCtx]);
 
   const handleSort = useCallback((dir: 'asc' | 'desc') => {
     setSortDir(dir);
@@ -434,13 +470,18 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
           {contextMenu && (
             <>
               <div className="fixed inset-0 z-[60]" onClick={closeCtx} onContextMenu={e => { e.preventDefault(); closeCtx(); }} />
-              <div className="absolute z-[70] bg-white border border-[#c0c0cc] rounded-lg shadow-xl py-1 min-w-[200px]"
+              <div ref={ctxMenuRef} className="absolute z-[70] bg-white border border-[#c0c0cc] rounded-lg shadow-xl py-1 min-w-[200px]"
                 style={{ left: Math.min(contextMenu.x, 300), top: Math.min(contextMenu.y, 200) }}
+                role="menu"
+                aria-label="Table context menu"
+                onKeyDown={handleMenuKeyDown}
                 data-testid="table-context-menu">
                 {menuItems.map((item, i) => (
                   <div key={i}>
                     {item.separator && i > 0 && <div className="h-px bg-[#e0e0e8] my-1" />}
                     <button
+                      role="menuitem"
+                      tabIndex={-1}
                       className="w-full text-left px-3 py-1.5 text-[11px] text-[#2a2a3e] hover:bg-[#e8f0ff] flex items-center gap-2 transition-colors"
                       onClick={item.action}
                       data-testid={`ctx-${item.label.toLowerCase().replace(/[^a-z]/g, '-')}`}
