@@ -1,0 +1,369 @@
+# Grade: **82/100 — B**
+
+This is an unusually ambitious and useful SWMM repository. As a **browser-based SWMM editor, visualization environment, and experimental engine interface**, I would score it around **90/100**. As software intended to support defensible engineering decisions, it is closer to **74/100** because native SWMM output, reconstructed results, and estimated diagnostic variables are not yet separated rigorously enough.
+
+## Scorecard
+
+| Area                              |      Score | Assessment                                                                                                                |
+| --------------------------------- | ---------: | ------------------------------------------------------------------------------------------------------------------------- |
+| Product scope and usability       |      19/20 | Excellent breadth, standard/expert modes, recovery, diagnostics, maps, tables, imports, comparisons                       |
+| SWMM model coverage               |      19/20 | Broad INP support, four engine modes, native `.out` parsing, WASM, CFL tools                                              |
+| Numerical fidelity and provenance |      14/20 | Real SWMM engines are present, but some displayed series and “internals” are reconstructed estimates                      |
+| Architecture and maintainability  |      13/15 | Good supporting modules, but the main page is still a very large application controller                                   |
+| Testing and quality control       |      10/15 | Strong parser-focused tests, but inadequate engine, server, binary parser, and UI automation                              |
+| Deployment and repository hygiene |       7/10 | Several thoughtful safeguards, but no CI gate, rate-limit bypass, documentation inconsistencies, and no root license file |
+| **Total**                         | **82/100** | **Strong B**                                                                                                              |
+
+## What is particularly good
+
+The project has genuine technical depth:
+
+* It provides local native, browser WASM, remote, and synthetic/mock engine modes.
+* The engine diagnostics include availability checks, provenance, a bundled self-test model, continuity-error review, and cross-engine peak-flow comparison.
+* The INP parser covers a large portion of the SWMM data model, and the round-trip suite includes numerous targeted checks for storage, LIDs, pollutants, groundwater, snowpacks, transects, controls, curves, patterns, losses, and other sections.
+* The server has upload limits, executable probing, a simulation timeout, GitHub host allowlisting, temporary-directory isolation, compressed large `.out` delivery, and cleanup logic.
+* Autosave is sensibly limited to five snapshots, detects browser quota failures, and exposes recovery state rather than silently pretending autosave succeeded.
+* The recent context-menu keyboard work is a meaningful accessibility improvement.
+
+The repository is also much more than a single oversized component. It has separate parser, output-parser, engine, diagnostics, model-health, regression-comparison, import/export, autosave, visualization, and editing modules. The handover document reports more than 20,000 lines of core application code and identifies the major architectural components clearly.
+
+# Highest-priority corrections
+
+## 1. Do not reconstruct unlabeled “real” time series from report summaries
+
+This is the most important engineering issue.
+
+When only an `.rpt` report is available, `parseRptToResults()` creates 96 artificial reporting periods and generates hydrograph shapes using exponential and sinusoidal functions. It scales those shapes using summary maxima from the report. Remote runs use this function directly, and local runs also fall back to it when binary parsing is unavailable.
+
+Those values are not SWMM-computed time-series results. However, the result is assigned `engineUsed: 'remote'` or `'local'`, while the synthetic-warning system explicitly describes only the mock engine as synthetic.
+
+This could make an animation or graph look like actual engine output when only the peak summary is authoritative.
+
+### Recommended design
+
+Add explicit result fidelity:
+
+```ts
+type ResultFidelity =
+  | "native-binary"
+  | "report-summary"
+  | "synthetic-mock";
+
+interface SimulationResults {
+  fidelity: ResultFidelity;
+  timeSteps: TimeStepResults[];
+  summary: SimulationSummary;
+  reportContent?: string;
+  outRaw?: Uint8Array;
+}
+```
+
+For `report-summary` results:
+
+* Show summary tables and continuity information.
+* Disable time-series animation, profile animation, phase-space plots, and time-dependent maps.
+* Do not create artificial reporting periods.
+* Display: **“Summary values from SWMM report; binary time-series results were unavailable.”**
+
+The remote BatchSWMM service should return the `.out` file or structured time-series output so all real engine modes use the same binary parser.
+
+## 2. Relabel “solver internals” as derived diagnostic estimates
+
+`computeExtendedVariables()` calculates many values after the simulation using assumptions and approximations. Examples include:
+
+* Storage surface area estimated from depth.
+* DWF approximated as 10% of lateral inflow.
+* Newton–Raphson iterations inferred from estimated head-correction thresholds.
+* Groundwater components divided into fixed 60%, 30%, and 10% proportions.
+* Pollutant concentrations and loads generated using simple multipliers.
+* Snow temperatures and aquifer properties assigned fixed values.
+
+The variable catalog currently places these under names such as **Solver Internals**, **Momentum Equation Terms**, **LID Internals**, and **Groundwater**.
+
+These are potentially useful diagnostics, but they are not necessarily the actual internal values used by SWMM’s solver.
+
+I recommend three provenance classes:
+
+* **Native SWMM output**
+* **Derived from SWMM output**
+* **Heuristic or assumed estimate**
+
+Every variable should expose its derivation in a tooltip:
+
+```ts
+interface DerivedVariableMetadata {
+  source: "native" | "derived" | "heuristic";
+  formula?: string;
+  assumptions?: string[];
+}
+```
+
+Rename the category from **Solver Internals** to **Estimated Solver Diagnostics** until the values are exported directly from an instrumented SWMM engine.
+
+## 3. Correct the server’s success/failure classification
+
+The local-run handler contains this logic:
+
+```ts
+if (hasErrors || outSize === 0) {
+  if (hasErrors) {
+    // failed
+  } else {
+    // success
+  }
+}
+```
+
+Consequently, a run with no `.out` file but no recognized `"ERROR"` string is returned as successful. A nonzero process exit code can also be treated as success when an output file happens to exist and the simple text check does not detect an error.
+
+Use all three conditions:
+
+```ts
+const reportValid =
+  /EPA STORM WATER MANAGEMENT MODEL/i.test(reportContent);
+
+const success =
+  code === 0 &&
+  outSize > 0 &&
+  reportValid &&
+  !hasErrors;
+
+if (!success) {
+  respond(() =>
+    res.status(422).json({
+      status: "failed",
+      error:
+        code !== 0
+          ? `SWMM exited with code ${code}`
+          : outSize === 0
+            ? "SWMM did not produce a binary output file"
+            : "SWMM produced an invalid report",
+      reportContent,
+      stdout,
+      stderr,
+      exitCode: code,
+      engineUsed: "local",
+    }),
+  );
+  return;
+}
+```
+
+## 4. Apply rate limiting to the route the application actually uses
+
+`/api/swmm/run` applies the per-IP simulation cooldown, but `/api/swmm/run-or-proxy` does not. The local client engine calls `/api/swmm/run-or-proxy`, meaning the normal application path bypasses the rate limiter.
+
+Move the check into shared middleware or into `runLocalSimulation()` itself. Also add:
+
+* A maximum number of concurrent native processes.
+* Cancellation when the HTTP client disconnects.
+* A memory limit or process/container isolation.
+* Connection limits on the WebSocket proxy.
+* Environment configuration for the remote BatchSWMM URL rather than two hardcoded copies.
+
+## 5. Strengthen conduit discretization
+
+The discretizer is a valuable feature, but the current implementation can alter model behavior in ways that are not sufficiently controlled.
+
+### Lengthening
+
+Lengthening changes only `conduit.length`. Roughness and other hydraulic parameters are not adjusted to preserve the original conduit’s hydraulic behavior.
+
+This should either:
+
+* Be explicitly labeled as physical model editing, or
+* Reproduce SWMM’s lengthening treatment and preserve equivalent conveyance.
+
+### Intermediate inverts
+
+New junction elevations are interpolated between node elevations, while the original conduit profile is defined by:
+
+```text
+upstream node elevation + upstream offset
+downstream node elevation + downstream offset
+```
+
+Interpolating node elevations without incorporating offsets can create discontinuities between the split segments.
+
+### Flap gates
+
+The original flap-gate value is copied to every new segment. A flap gate normally belongs at the downstream end of the original conduit; it should ordinarily be assigned only to the last segment.
+
+### Referenced object IDs
+
+The original conduit ID disappears, but controls, report selections, tags, and other raw sections can still reference it because the project is spread into the new object without rewriting those references.
+
+Before calling this production-ready, add tests for:
+
+* Original versus discretized peak flow.
+* Original versus discretized HGL.
+* Continuity error.
+* Conduit offsets.
+* Flap gates.
+* Controls referencing the original conduit.
+* Minor losses.
+* Force mains.
+* Pumps, weirs, orifices, and downstream structures.
+* Irregular and custom cross-sections.
+
+The present CFL calculation should also be described as a **screening indicator**, not a complete representation of SWMM’s dynamic-wave timestep calculation. It currently uses `sqrt(gD)` and diameter alone.
+
+## 6. Correct binary-output time handling and truncation
+
+The output parser reads `reportStart` and each period’s encoded date, but does not use either one. Instead, it constructs dates from the model start plus `period × reportStep`. It also silently limits results to 5,000 periods.
+
+Recommended changes:
+
+* Convert the SWMM serial date stored for each period into an actual timestamp.
+* Use `reportStart` when appropriate.
+* Never silently discard periods.
+* For large models, retain all periods in a compact typed-array representation or downsample explicitly.
+* Mark downsampling in metadata and preserve extrema.
+* Add output-parser golden tests using known SWMM `.out` files with pollutants, report-start offsets, long simulations, and multiple flow-unit systems.
+
+## 7. Break up `swmm-ui.tsx`
+
+The handover identifies `swmm-ui.tsx` as approximately 6,074 lines. The component owns project state, file loading, GitHub browsing, autosave, engine selection, simulation execution, imports, exports, dialogs, undo/redo, mobile behavior, animation, CFL analysis, map state, context menus, provenance, and many other concerns.
+
+The large number of state variables and effects confirms that it functions as an application-wide controller.
+
+Refactor toward:
+
+```text
+features/
+  project/
+  simulation/
+  map/
+  results/
+  imports/
+  diagnostics/
+  discretization/
+
+hooks/
+  useProjectDocument.ts
+  useSimulationController.ts
+  useEngineAvailability.ts
+  useProjectAutosave.ts
+  useUndoRedo.ts
+  useGitHubModels.ts
+```
+
+A reducer or small external store would make compound transitions safer. For example, loading a project currently requires many separate `setState()` calls to clear results, time index, selection, report state, and modified state.
+
+## 8. Preserve comments and formatting in INP files
+
+The parser removes all lines beginning with `;` during section extraction. Therefore, user comments, section headings, model assumptions, calibration notes, and much of the original formatting are lost when a file is saved.
+
+The round-trip tests deliberately normalize whitespace and remove comments, so they cannot detect this loss.
+
+The UI audit also says raw sections are passed through “verbatim,” but the parser has already removed comments and normalized their structure.
+
+For a model editor, use an AST-like representation:
+
+```ts
+type InpLine =
+  | { type: "section"; name: string }
+  | { type: "data"; section: string; fields: string[]; raw: string }
+  | { type: "comment"; raw: string }
+  | { type: "blank"; raw: string };
+```
+
+Then modify only fields the user edits while retaining untouched lines exactly.
+
+Also replace silent invalid-number conversion with validation diagnostics. `parseFloat2()` currently converts an invalid or missing numeric token to zero, potentially turning malformed input into a plausible but incorrect model.
+
+# Testing assessment
+
+The existing test work is meaningful. The test command runs:
+
+1. INP round-trip auditing.
+2. Calibration parsing/export.
+3. CFL analysis and discretization.
+
+The round-trip suite is especially strong and contains many domain-specific assertions. The strict TypeScript configuration is also appropriate.
+
+However, the repository needs automated coverage for:
+
+* `.out` binary parsing.
+* Native/WASM/remote parity.
+* Server route behavior.
+* Timeout and process cleanup.
+* Missing or malformed `.out` files.
+* Output-period date handling.
+* Long simulations over 5,000 periods.
+* Report-only result labeling.
+* Discretization hydraulic equivalence.
+* Import/export round trips.
+* Undo/redo and autosave recovery.
+* Accessibility and keyboard navigation.
+* Core UI workflows.
+
+The recent commit says keyboard behavior was verified with Playwright, but Playwright is not present in the package manifest and no UI suite is included in the test runner.
+
+I would replace the shell-only test harness with Vitest and add Playwright. The current `bash tests/run-all.sh` command is also inconvenient for ordinary Windows environments.
+
+# Repository documentation and hygiene
+
+The README is clean but much too small for a project of this complexity. It should document:
+
+* Exact differences between native, WASM, remote, and mock results.
+* Which result types contain authentic binary time series.
+* Which variables are derived estimates.
+* Browser and deployment requirements.
+* Linux native-engine limitations.
+* External FILE-based time-series limitations.
+* Security considerations for public deployments.
+* Testing and verification commands.
+* How the WASM and native engines were compiled.
+* SWMM source provenance and applicable licenses.
+* Current known limitations.
+
+There is also a documentation contradiction: the README describes Drizzle ORM, while the package manifest has no Drizzle dependency and the handover correctly states that the project uses no database.
+
+Other cleanup:
+
+* Add a root `LICENSE` file.
+* Rename the package from `rest-express` to `swmm5-ui-engine`.
+* Add package description, repository, author, and engine requirements.
+* Remove unused template dependencies.
+* Add a root GitHub Actions workflow for `check`, tests, build, and Playwright.
+* Add releases and version tags tied to SWMM engine builds.
+* Move old pasted reviews and generated planning text out of `attached_assets` or into a clearly labeled archive.
+
+# Recommended repair sequence
+
+## First release-hardening pass
+
+1. Introduce result-fidelity metadata.
+2. Stop generating unlabeled time series from report summaries.
+3. Relabel extended variables as native, derived, or heuristic.
+4. Correct process success/failure detection.
+5. Apply rate limiting and concurrency controls to every run route.
+6. Fix output timestamps and the 5,000-period truncation.
+
+## Second pass
+
+7. Add output-parser and cross-engine golden tests.
+8. Harden discretization and reference rewriting.
+9. Add Vitest, Playwright, and GitHub Actions.
+10. Preserve INP comments and original formatting.
+
+## Third pass
+
+11. Split `swmm-ui.tsx` into feature controllers and hooks.
+12. Replace hardcoded remote service URLs with configuration.
+13. Complete the README, license, releases, and packaging.
+
+## Bottom line
+
+**This is an impressive SWMM application and a strong codebase for continued development.** It already has more meaningful modeling functionality than many polished demonstration applications. I would use it confidently for model exploration, visualization, teaching, browser-based editing, and development experiments.
+
+For final engineering interpretation, I would currently trust:
+
+* Native or WASM runs where the binary `.out` was parsed successfully.
+* Continuity errors extracted from the real report.
+* Direct SWMM output variables.
+
+I would not yet treat reconstructed report-only time series or the 200-plus derived “internal” variables as authoritative SWMM engine values. Correcting that provenance boundary is the clearest path from **B** to **A-level engineering software**.
+
+This was a static review of the current `main` branch; I inspected the code and repository through GitHub but did not execute the test suite locally.
