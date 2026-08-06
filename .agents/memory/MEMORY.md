@@ -1,2 +1,3 @@
 - [SWMM .out binary header layout](swmm-out-format.md) — .out input-property sections are interleaved per object class and a reporting-vars section precedes results; misreading silently falls back to .rpt on small models.
+- [E2E browser testing in this repl](e2e-browser-testing.md) — playwright-core + Nix chromium works; bundled headless shell lacks glibs; dispatchEvent for context menus (rows re-render constantly).
 - [Deployment proxy response limits](deployment-response-limits.md) — responses over ~32MiB die silently in production; serve large binaries via separate gzip endpoint, never base64-in-JSON.

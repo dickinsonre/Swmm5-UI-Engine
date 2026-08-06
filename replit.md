@@ -74,6 +74,7 @@ Title `#2c3e6b`, menu `#3a5070`, toolbar/status `#f0f0f4`, panels `#f8f8fa`, bor
 
 ## Testing
 - `tests/roundtrip/` — INP round-trip suite: `npx tsx tests/roundtrip/run.ts` (parse → export → re-parse → deep-compare + field assertions). Fixtures in `tests/roundtrip/fixtures/`.
+- `tests/e2e/table-context-menu-kbd.ts` — Playwright e2e for Table View context-menu keyboard nav: `npx tsx tests/e2e/table-context-menu-kbd.ts` (app must be running on :5000; uses system chromium via playwright-core).
 
 ## External Dependencies
 - EPA SWMM 5.2.4 binary (local dev only); WASM engine bundled in client/public/
