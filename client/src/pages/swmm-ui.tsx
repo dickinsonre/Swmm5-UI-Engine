@@ -31,6 +31,7 @@ import RptHtmlView from '@/components/swmm/RptHtmlView';
 import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
 import RoundTripAuditDialog from '@/components/swmm/RoundTripAuditDialog';
+import { runRoundTripAudit } from '@/lib/roundtrip-audit';
 import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@/components/swmm/PhaseSpaceDialog';
 import Viewer3DDialog from '@/components/swmm/Viewer3DDialog';
 import DiagramGalleryDialog from '@/components/swmm/DiagramGallery';
@@ -310,6 +311,7 @@ export default function SwmmUI() {
   const [recoverySnapshot, setRecoverySnapshot] = useState<AutosaveSnapshot | null>(null);
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [autosaveError, setAutosaveError] = useState<string | null>(null);
+  const [saveAuditWarning, setSaveAuditWarning] = useState<{ diffCount: number; omittedCount: number; onConfirm: () => void } | null>(null);
   const [snapshotRefresh, setSnapshotRefresh] = useState(0);
   const justLoadedRef = useRef(false);
   const animRef = useRef<number | null>(null);
@@ -671,22 +673,37 @@ export default function SwmmUI() {
     setLoading(false);
   }, [toast, addRecentFile]);
 
+  /** Run audit and call `proceed` immediately if clean, or show a warning dialog first. */
+  const withAuditCheck = useCallback((proceed: () => void) => {
+    const report = runRoundTripAudit(project);
+    const riskDiffs = report.diffs.filter(d => d.kind === 'omitted' || d.kind === 'altered');
+    if (riskDiffs.length === 0) {
+      proceed();
+      return;
+    }
+    const omittedCount = report.diffs.filter(d => d.kind === 'omitted').length;
+    setSaveAuditWarning({ diffCount: riskDiffs.length, omittedCount, onConfirm: proceed });
+  }, [project]);
+
   const handleSave = useCallback(async () => {
-    const { projectToInp } = await import('@/lib/inp-parser');
-    const text = projectToInp(project);
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
-    setIsModified(false);
-    saveSnapshot(fileName, text, true);
-    setRecoveryBaseline();
-    setSnapshotRefresh(n => n + 1);
-    toast({ title: 'Saved', description: `${fileName} downloaded` });
-  }, [project, fileName, toast]);
+    const doSave = async () => {
+      const { projectToInp } = await import('@/lib/inp-parser');
+      const text = projectToInp(project);
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      setIsModified(false);
+      saveSnapshot(fileName, text, true);
+      setRecoveryBaseline();
+      setSnapshotRefresh(n => n + 1);
+      toast({ title: 'Saved', description: `${fileName} downloaded` });
+    };
+    withAuditCheck(doSave);
+  }, [project, fileName, toast, withAuditCheck]);
 
   const handleSaveAs = useCallback(async () => {
     const input = window.prompt('Save As — enter a file name:', fileName);
@@ -694,53 +711,59 @@ export default function SwmmUI() {
     let newName = input.trim();
     if (!newName) return;
     if (!/\.inp$/i.test(newName)) newName += '.inp';
-    const { projectToInp } = await import('@/lib/inp-parser');
-    const text = projectToInp(project);
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = newName;
-    a.click();
-    URL.revokeObjectURL(url);
-    setFileName(newName);
-    setIsModified(false);
-    saveSnapshot(newName, text, true);
-    setRecoveryBaseline();
-    setSnapshotRefresh(n => n + 1);
-    toast({ title: 'Saved', description: `${newName} downloaded` });
-  }, [project, fileName, toast]);
-
-  const handleExit = useCallback(() => {
-    const base = (fileName || 'model').replace(/\.inp$/i, '');
-    const synthetic = results?.engineUsed === 'mock';
-    const files: { name: string; data: BlobPart; type: string }[] = [];
-    const text = projectToInp(project);
-    files.push({ name: `${base}.inp`, data: text, type: 'text/plain' });
-    const rpt = results?.reportContent ?? reportContent;
-    if (rpt) files.push({ name: `${base}${synthetic ? '_SYNTHETIC' : ''}.rpt`, data: rpt, type: 'text/plain' });
-    if (results?.outRaw && results.outRaw.length > 0 && !synthetic) {
-      // Copy into a plain ArrayBuffer so the Blob is backed by exactly these bytes.
-      files.push({ name: `${base}.out`, data: results.outRaw.slice().buffer as ArrayBuffer, type: 'application/octet-stream' });
-    }
-    files.forEach((f, i) => setTimeout(() => {
-      const blob = new Blob([f.data], { type: f.type });
+    const doSaveAs = async () => {
+      const { projectToInp } = await import('@/lib/inp-parser');
+      const text = projectToInp(project);
+      const blob = new Blob([text], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = f.name;
-      document.body.appendChild(a);
+      a.download = newName;
       a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    }, i * 400));
-    setIsModified(false);
-    saveSnapshot(fileName, text, true);
-    setRecoveryBaseline();
-    setSnapshotRefresh(n => n + 1);
-    const skipped = !rpt ? ' (no report yet — run a simulation to also get .rpt/.out)' : (!results?.outRaw || synthetic) ? ' (no binary .out available for this run)' : '';
-    toast({ title: 'Project files saved', description: `Downloading ${files.map(f => f.name).join(', ')}${skipped}. They land together in your Downloads folder.` });
-  }, [project, fileName, results, reportContent, toast]);
+      URL.revokeObjectURL(url);
+      setFileName(newName);
+      setIsModified(false);
+      saveSnapshot(newName, text, true);
+      setRecoveryBaseline();
+      setSnapshotRefresh(n => n + 1);
+      toast({ title: 'Saved', description: `${newName} downloaded` });
+    };
+    withAuditCheck(doSaveAs);
+  }, [project, fileName, toast, withAuditCheck]);
+
+  const handleExit = useCallback(() => {
+    const doExit = () => {
+      const base = (fileName || 'model').replace(/\.inp$/i, '');
+      const synthetic = results?.engineUsed === 'mock';
+      const files: { name: string; data: BlobPart; type: string }[] = [];
+      const text = projectToInp(project);
+      files.push({ name: `${base}.inp`, data: text, type: 'text/plain' });
+      const rpt = results?.reportContent ?? reportContent;
+      if (rpt) files.push({ name: `${base}${synthetic ? '_SYNTHETIC' : ''}.rpt`, data: rpt, type: 'text/plain' });
+      if (results?.outRaw && results.outRaw.length > 0 && !synthetic) {
+        // Copy into a plain ArrayBuffer so the Blob is backed by exactly these bytes.
+        files.push({ name: `${base}.out`, data: results.outRaw.slice().buffer as ArrayBuffer, type: 'application/octet-stream' });
+      }
+      files.forEach((f, i) => setTimeout(() => {
+        const blob = new Blob([f.data], { type: f.type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = f.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      }, i * 400));
+      setIsModified(false);
+      saveSnapshot(fileName, text, true);
+      setRecoveryBaseline();
+      setSnapshotRefresh(n => n + 1);
+      const skipped = !rpt ? ' (no report yet — run a simulation to also get .rpt/.out)' : (!results?.outRaw || synthetic) ? ' (no binary .out available for this run)' : '';
+      toast({ title: 'Project files saved', description: `Downloading ${files.map(f => f.name).join(', ')}${skipped}. They land together in your Downloads folder.` });
+    };
+    withAuditCheck(doExit);
+  }, [project, fileName, results, reportContent, toast, withAuditCheck]);
 
   const getCurrentInpForDiff = useCallback(() => ({ name: fileName, text: projectToInp(project) }), [project, fileName]);
 
@@ -3936,6 +3959,57 @@ export default function SwmmUI() {
         onOpenChange={v => !v && setOpenDialog(null)}
         project={project}
       />
+
+      {/* Round-trip audit save warning dialog */}
+      <Dialog open={!!saveAuditWarning} onOpenChange={v => { if (!v) setSaveAuditWarning(null); }}>
+        <DialogContent className="max-w-sm p-0 gap-0" data-testid="dialog-save-audit-warning">
+          <DialogHeader className="px-4 pt-4 pb-3 border-b border-[#d0d0d8]">
+            <DialogTitle className="text-[13px] text-[#2a2a3e] flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-yellow-500" />
+              Data may be lost on save
+            </DialogTitle>
+            <DialogDescription className="text-[11px] text-[#6b6b7b] mt-1">
+              The Round-Trip Audit found{' '}
+              <b>{saveAuditWarning?.diffCount ?? 0} field{(saveAuditWarning?.diffCount ?? 0) !== 1 ? 's' : ''}</b>
+              {(saveAuditWarning?.omittedCount ?? 0) > 0 && (
+                <> ({saveAuditWarning?.omittedCount} omitted)</>
+              )}{' '}
+              that would be altered or removed when the file is written. The saved .inp will not match what is currently in memory.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-4 py-3 space-y-3">
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 text-[11px] h-8 border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4]"
+                onClick={() => { setSaveAuditWarning(null); setOpenDialog('roundtripAudit'); }}
+                data-testid="btn-audit-warning-view"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+                View Full Audit
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 text-[11px] h-8 bg-yellow-500 hover:bg-yellow-600 text-white"
+                onClick={() => { const fn = saveAuditWarning?.onConfirm; setSaveAuditWarning(null); fn?.(); }}
+                data-testid="btn-audit-warning-save-anyway"
+              >
+                Save Anyway
+              </Button>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="w-full text-[11px] h-7 text-[#6b6b7b] hover:bg-[#f0f0f4]"
+              onClick={() => setSaveAuditWarning(null)}
+              data-testid="btn-audit-warning-cancel"
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <PhaseSpaceDialog
         open={expertMode && openDialog === 'phaseSpace'}
