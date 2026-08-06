@@ -60,6 +60,7 @@ export interface NetworkMapHandle {
   getCanvas: () => HTMLCanvasElement | null;
   fitExtent: () => void;
   centerOnWorld: (wx: number, wy: number) => void;
+  worldToViewport: (wx: number, wy: number) => { x: number; y: number } | null;
 }
 
 const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
@@ -210,12 +211,6 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
     }));
   }, [canvasSize]);
 
-  useImperativeHandle(ref, () => ({
-    getCanvas: () => canvasRef.current,
-    fitExtent,
-    centerOnWorld,
-  }), [fitExtent, centerOnWorld]);
-
   useEffect(() => {
     if (project.coordinates !== lastProjectCoords.current) {
       lastProjectCoords.current = project.coordinates;
@@ -245,6 +240,22 @@ const NetworkMap = forwardRef<NetworkMapHandle, Props>(function NetworkMap({
       -wy * mapState.zoom + mapState.panY,
     ];
   }, [mapState]);
+
+  useImperativeHandle(ref, () => ({
+    getCanvas: () => canvasRef.current,
+    fitExtent,
+    centerOnWorld,
+    worldToViewport: (wx: number, wy: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      const [sx, sy] = worldToScreen(wx, wy);
+      return {
+        x: Math.min(Math.max(rect.left + sx, rect.left), rect.right),
+        y: Math.min(Math.max(rect.top + sy, rect.top), rect.bottom),
+      };
+    },
+  }), [fitExtent, centerOnWorld, worldToScreen]);
 
   const screenToWorld = useCallback((sx: number, sy: number): [number, number] => {
     return [

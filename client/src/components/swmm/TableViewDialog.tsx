@@ -140,12 +140,30 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
   const closeCtx = useCallback(() => setContextMenu(null), []);
 
   const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const ctxPrevFocusRef = useRef<HTMLElement | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (contextMenu && ctxMenuRef.current) {
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active !== document.body && !ctxMenuRef.current.contains(active)) {
+        ctxPrevFocusRef.current = active;
+      }
       const first = ctxMenuRef.current.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
       first?.focus();
+    } else if (!contextMenu && ctxPrevFocusRef.current) {
+      const prev = ctxPrevFocusRef.current;
+      ctxPrevFocusRef.current = null;
+      if (document.contains(prev)) prev.focus();
     }
+  }, [contextMenu]);
+
+  const handleTableKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
+    if (!isMenuKey || contextMenu) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: 40, y: 40 });
   }, [contextMenu]);
 
   const handleMenuKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -343,7 +361,16 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[95vw] bg-white border-[#d0d0d8] max-h-[90vh] overflow-hidden flex flex-col" data-testid="table-view-dialog">
+      <DialogContent
+        className="max-w-5xl w-[95vw] bg-white border-[#d0d0d8] max-h-[90vh] overflow-hidden flex flex-col"
+        data-testid="table-view-dialog"
+        onEscapeKeyDown={e => {
+          if (contextMenu) {
+            e.preventDefault();
+            closeCtx();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
             <Table2 className="w-4 h-4" /> Table — {mode === 'byObject' ? 'By Object' : 'By Variable'}
@@ -393,7 +420,14 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
           )}
         </div>
 
-        <div className="relative flex-1 min-h-0 scroll-area-container">
+        <div
+          ref={tableContainerRef}
+          className="relative flex-1 min-h-0 scroll-area-container focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6eb5] rounded"
+          tabIndex={0}
+          onKeyDown={handleTableKeyDown}
+          aria-label="Results table (press Shift+F10 for options)"
+          data-testid="table-view-container"
+        >
           <ScrollArea className="h-full border border-[#e0e0e8] rounded">
             {mode === 'byObject' && selectedObj && byObjectSorted ? (
               <table ref={tableRef} className="w-full text-[11px]" onContextMenu={e => handleContextMenu(e)}>

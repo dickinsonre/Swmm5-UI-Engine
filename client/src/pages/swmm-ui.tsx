@@ -1451,13 +1451,93 @@ export default function SwmmUI() {
   }, []);
 
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const ctxPrevFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (contextMenu && contextMenuRef.current) {
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active !== document.body && !contextMenuRef.current.contains(active)) {
+        ctxPrevFocusRef.current = active;
+      }
       const first = contextMenuRef.current.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
       first?.focus();
+    } else if (!contextMenu && ctxPrevFocusRef.current) {
+      const prev = ctxPrevFocusRef.current;
+      ctxPrevFocusRef.current = null;
+      if (document.contains(prev)) prev.focus();
     }
   }, [contextMenu]);
+
+  const getObjectWorldPos = useCallback((obj: SelectedObject): [number, number] | null => {
+    if (!obj) return null;
+    const { id, objType } = obj;
+    if (['junction', 'outfall', 'divider', 'storage'].includes(objType)) {
+      return project.coordinates[id] || null;
+    }
+    if (['conduit', 'pump', 'orifice', 'weir', 'outlet'].includes(objType)) {
+      const link = [...project.conduits, ...project.pumps, ...project.orifices, ...project.weirs, ...project.outlets].find(l => l.id === id);
+      if (!link) return null;
+      const a = project.coordinates[link.fromNode];
+      const b = project.coordinates[link.toNode];
+      if (a && b) return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      return a || b || null;
+    }
+    if (objType === 'subcatchment') {
+      const poly = project.polygons[id];
+      if (poly && poly.length > 0) {
+        const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+        const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+        return [cx, cy];
+      }
+      return null;
+    }
+    if (objType === 'raingage') {
+      return project.symbols[id] || null;
+    }
+    return null;
+  }, [project]);
+
+  const openContextMenuForSelected = useCallback(() => {
+    if (!selectedObj) return false;
+    const world = getObjectWorldPos(selectedObj);
+    let pos: { x: number; y: number } | null = null;
+    if (world) pos = networkMapRef.current?.worldToViewport(world[0], world[1]) || null;
+    if (!pos) {
+      const canvas = networkMapRef.current?.getCanvas();
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        pos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      } else {
+        pos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      }
+    }
+    const menuMargin = 8;
+    setContextMenu({
+      x: Math.min(Math.max(pos.x, menuMargin), window.innerWidth - 180),
+      y: Math.min(Math.max(pos.y, menuMargin), window.innerHeight - 240),
+      obj: selectedObj,
+    });
+    return true;
+  }, [selectedObj, getObjectWorldPos]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
+      if (!isMenuKey) return;
+      if (openDialog || activeSubDialog || showReportDialog) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (t && t.closest('[role="dialog"]')) return;
+      if (contextMenu) {
+        e.preventDefault();
+        setContextMenu(null);
+        return;
+      }
+      if (openContextMenuForSelected()) e.preventDefault();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [openContextMenuForSelected, contextMenu, openDialog, activeSubDialog, showReportDialog]);
 
   const handleMenuKeyDown = useCallback((e: React.KeyboardEvent) => {
     const menu = contextMenuRef.current;
