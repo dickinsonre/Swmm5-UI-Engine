@@ -313,6 +313,9 @@ export default function SwmmUI() {
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [autosaveError, setAutosaveError] = useState<string | null>(null);
   const [saveAuditWarning, setSaveAuditWarning] = useState<{ diffCount: number; omittedCount: number; onConfirm: () => void } | null>(null);
+  const [auditWarnDontAskAgain, setAuditWarnDontAskAgain] = useState(false);
+  // In-memory only: resets on page reload so users are re-warned after loading a new session
+  const auditWarnSuppressedRef = useRef(false);
   const [snapshotRefresh, setSnapshotRefresh] = useState(0);
   const justLoadedRef = useRef(false);
   const animRef = useRef<number | null>(null);
@@ -678,10 +681,11 @@ export default function SwmmUI() {
   const withAuditCheck = useCallback((proceed: () => void) => {
     const report = runRoundTripAudit(project);
     const gate = evaluateSaveGate(report);
-    if (gate.clean) {
+    if (gate.clean || auditWarnSuppressedRef.current) {
       proceed();
       return;
     }
+    setAuditWarnDontAskAgain(false);
     setSaveAuditWarning({ diffCount: gate.diffCount, omittedCount: gate.omittedCount, onConfirm: proceed });
   }, [project]);
 
@@ -4081,6 +4085,16 @@ export default function SwmmUI() {
             </DialogDescription>
           </DialogHeader>
           <div className="px-4 py-3 space-y-3">
+            <label className="flex items-center gap-2 text-[11px] text-[#6b6b7b] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="w-3.5 h-3.5 accent-yellow-500"
+                checked={auditWarnDontAskAgain}
+                onChange={e => setAuditWarnDontAskAgain(e.target.checked)}
+                data-testid="checkbox-audit-warning-dont-ask"
+              />
+              Don't warn again this session
+            </label>
             <div className="flex gap-2">
               <Button
                 size="sm"
@@ -4095,7 +4109,7 @@ export default function SwmmUI() {
               <Button
                 size="sm"
                 className="flex-1 text-[11px] h-8 bg-yellow-500 hover:bg-yellow-600 text-white"
-                onClick={() => { const fn = saveAuditWarning?.onConfirm; setSaveAuditWarning(null); fn?.(); }}
+                onClick={() => { if (auditWarnDontAskAgain) auditWarnSuppressedRef.current = true; const fn = saveAuditWarning?.onConfirm; setSaveAuditWarning(null); fn?.(); }}
                 data-testid="btn-audit-warning-save-anyway"
               >
                 Save Anyway
