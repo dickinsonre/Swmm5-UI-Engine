@@ -117,6 +117,26 @@ function hasData(v: unknown): boolean {
   return true;
 }
 
+export interface SaveGateDecision {
+  clean: boolean;
+  diffCount: number;
+  omittedCount: number;
+}
+
+/**
+ * Decide whether a save may proceed without warning: only 'omitted' and
+ * 'altered' diffs are considered risky; 'added' diffs do not block a save.
+ * Used by the save/save-as/exit gate in the UI and by the roundtrip tests.
+ */
+export function evaluateSaveGate(report: RoundTripAuditReport): SaveGateDecision {
+  const riskDiffs = report.diffs.filter(d => d.kind === 'omitted' || d.kind === 'altered');
+  return {
+    clean: riskDiffs.length === 0,
+    diffCount: riskDiffs.length,
+    omittedCount: report.diffs.filter(d => d.kind === 'omitted').length,
+  };
+}
+
 /**
  * Run the round-trip audit against the current in-memory project:
  * export via projectToInp, re-parse, deep-compare normalized forms.

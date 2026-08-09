@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { parseInpFile, projectToInp, SAMPLE_INP } from '../../client/src/lib/inp-parser';
+import { runSaveAuditTests } from './save-audit';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -217,6 +218,8 @@ if (failures.length) {
   console.log(`${failures.length} FAILED:`);
   failures.forEach(f => console.log(f));
 }
+
+if (runSaveAuditTests() > 0) failed++;
 
 console.log(failed ? `\nRESULT: FAIL (${failed} failing group(s))` : '\nRESULT: PASS');
 process.exit(failed ? 1 : 0);

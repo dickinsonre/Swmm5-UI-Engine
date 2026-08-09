@@ -31,7 +31,7 @@ import RptHtmlView from '@/components/swmm/RptHtmlView';
 import EngineDiagnosticsDialog from '@/components/swmm/EngineDiagnosticsDialog';
 import ModelHealthDialog from '@/components/swmm/ModelHealthDialog';
 import RoundTripAuditDialog from '@/components/swmm/RoundTripAuditDialog';
-import { runRoundTripAudit } from '@/lib/roundtrip-audit';
+import { runRoundTripAudit, evaluateSaveGate } from '@/lib/roundtrip-audit';
 import PhaseSpaceDialog, { objTypeToElementType, type PhaseSpaceTarget } from '@/components/swmm/PhaseSpaceDialog';
 import Viewer3DDialog from '@/components/swmm/Viewer3DDialog';
 import DiagramGalleryDialog from '@/components/swmm/DiagramGallery';
@@ -676,13 +676,12 @@ export default function SwmmUI() {
   /** Run audit and call `proceed` immediately if clean, or show a warning dialog first. */
   const withAuditCheck = useCallback((proceed: () => void) => {
     const report = runRoundTripAudit(project);
-    const riskDiffs = report.diffs.filter(d => d.kind === 'omitted' || d.kind === 'altered');
-    if (riskDiffs.length === 0) {
+    const gate = evaluateSaveGate(report);
+    if (gate.clean) {
       proceed();
       return;
     }
-    const omittedCount = report.diffs.filter(d => d.kind === 'omitted').length;
-    setSaveAuditWarning({ diffCount: riskDiffs.length, omittedCount, onConfirm: proceed });
+    setSaveAuditWarning({ diffCount: gate.diffCount, omittedCount: gate.omittedCount, onConfirm: proceed });
   }, [project]);
 
   const handleSave = useCallback(async () => {
