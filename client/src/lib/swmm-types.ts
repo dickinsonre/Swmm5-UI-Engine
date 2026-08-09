@@ -411,7 +411,7 @@ export interface SimulationResults {
   reportContent?: string;
   /** Raw SWMM .out binary (when the run produced one), kept so the user can save it alongside the .inp/.rpt. */
   outRaw?: Uint8Array;
-  engineUsed?: 'local' | 'wasm' | 'remote' | 'mock';
+  engineUsed?: 'local' | 'wasm' | 'wasm6' | 'remote' | 'mock';
 }
 
 export type SelectedObject = {

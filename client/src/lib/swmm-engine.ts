@@ -19,7 +19,7 @@ function applyRptContinuity(parsed: SimulationResults, rptText: string | undefin
 
 export interface SwmmEngine {
   isLoaded: boolean;
-  mode: 'mock' | 'remote' | 'local' | 'wasm';
+  mode: 'mock' | 'remote' | 'local' | 'wasm' | 'wasm6';
   run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults>;
   getStatus(): string;
 }
@@ -205,6 +205,160 @@ export function createWasmEngine(): SwmmEngine {
     },
     getStatus() {
       return 'EPA SWMM 5.2.4 (WASM In-Browser)';
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SWMM6 (OpenSWMM 6.0.0-alpha.3) in-browser WASM engine.
+// Built from HydroCouple/openswmm.engine swmm6_rel with Emscripten
+// (MODULARIZE factory createOswmm6Module). Unlike the SWMM5 wasm, a FRESH
+// module instance is created per run: the engine traps are unrecoverable and
+// MEMFS lives in the glue, so a new factory call gives clean state each time.
+// ---------------------------------------------------------------------------
+
+let wasm6Binary: ArrayBuffer | null = null;
+let wasm6ScriptLoaded: Promise<void> | null = null;
+
+function loadWasm6Script(): Promise<void> {
+  if (wasm6ScriptLoaded) return wasm6ScriptLoaded;
+  wasm6ScriptLoaded = new Promise<void>((resolve, reject) => {
+    if (typeof (window as any).createOswmm6Module === 'function') { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = '/wasm6/openswmm6.js';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load openswmm6.js'));
+    document.head.appendChild(script);
+  });
+  wasm6ScriptLoaded.catch(() => { wasm6ScriptLoaded = null; });
+  return wasm6ScriptLoaded;
+}
+
+async function createWasm6Instance(onProgress?: (pct: number, msg: string) => void): Promise<any> {
+  if (onProgress) onProgress(5, 'Downloading OpenSWMM 6 WASM engine...');
+  const [, binary] = await Promise.all([
+    loadWasm6Script(),
+    (async () => {
+      if (wasm6Binary) return wasm6Binary;
+      const resp = await fetch('/wasm6/openswmm6.wasm');
+      if (!resp.ok) throw new Error('Failed to download openswmm6.wasm: HTTP ' + resp.status);
+      wasm6Binary = await resp.arrayBuffer();
+      return wasm6Binary;
+    })(),
+  ]);
+  if (onProgress) onProgress(20, 'Initializing OpenSWMM 6 module...');
+  const factory = (window as any).createOswmm6Module;
+  if (typeof factory !== 'function') throw new Error('createOswmm6Module factory not found after script load');
+  const mod = await factory({
+    wasmBinary: binary,
+    noInitialRun: true,
+    print: (t: string) => console.log('[SWMM6 WASM]', t),
+    printErr: (t: string) => console.warn('[SWMM6 WASM]', t),
+    locateFile: (path: string) => '/wasm6/' + path,
+  });
+  if (typeof mod._swmm_engine_run !== 'function') {
+    throw new Error('openswmm6.wasm loaded but swmm_engine_run is not exported');
+  }
+  return mod;
+}
+
+export async function checkWasm6Engine(): Promise<boolean> {
+  try {
+    const [jsResp, wasmResp] = await Promise.all([
+      fetch('/wasm6/openswmm6.js', { method: 'HEAD' }),
+      fetch('/wasm6/openswmm6.wasm', { method: 'HEAD' }),
+    ]);
+    if (!jsResp.ok || !wasmResp.ok) return false;
+    const jsCt = jsResp.headers.get('content-type') || '';
+    if (!jsCt.includes('javascript')) return false;
+    const wasmCt = wasmResp.headers.get('content-type') || '';
+    return !wasmCt.includes('text/html');
+  } catch {
+    return false;
+  }
+}
+
+export function createWasm6Engine(): SwmmEngine {
+  return {
+    isLoaded: true,
+    mode: 'wasm6' as const,
+    async run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults> {
+      const inpText = projectToInp(project);
+
+      // Fresh instance per run — no stale MEMFS files, trap recovery for free.
+      const mod = await createWasm6Instance(onProgress);
+
+      if (onProgress) onProgress(30, 'Writing model to WASM filesystem...');
+      mod.FS.writeFile('/model.inp', inpText);
+
+      if (onProgress) onProgress(35, 'Running OpenSWMM 6.0.0-alpha.3 (WASM)...');
+
+      let errCode: number;
+      try {
+        errCode = mod.ccall(
+          'swmm_engine_run',
+          'number',
+          ['string', 'string', 'string', 'number'],
+          ['/model.inp', '/model.rpt', '/model.out', 0]
+        );
+      } catch (runErr: any) {
+        // Emscripten exit() throws even on success — treat ExitStatus 0 as OK.
+        if (runErr && runErr.name === 'ExitStatus' && runErr.status === 0) {
+          errCode = 0;
+        } else {
+          throw runErr;
+        }
+      }
+
+      let rptText = '';
+      try {
+        rptText = new TextDecoder().decode(mod.FS.readFile('/model.rpt'));
+      } catch {}
+
+      // SWMM6 engines have exited 0 on fatal parses — verify results exist in
+      // the report rather than trusting the return code alone.
+      const rptHasErrors = /^\s*ERROR\s+\d+/m.test(rptText);
+      if (errCode !== 0 || rptHasErrors || !rptText) {
+        const errLines = rptText.split('\n').filter((l: string) => /ERROR/i.test(l)).slice(0, 5).join('; ');
+        const err = new Error(
+          `OpenSWMM 6 error${errCode ? ` code ${errCode}` : ''}. ${errLines || 'Empty or invalid report.'}`
+        ) as any;
+        err.reportContent = rptText;
+        throw err;
+      }
+
+      if (onProgress) onProgress(80, 'Parsing simulation results...');
+
+      // SWMM6 requires a valid binary .out — no report-summary fallback here,
+      // since parseRptToResults fabricates time series that would be
+      // mislabeled as real SWMM6 output.
+      let outData: Uint8Array | null = null;
+      try { outData = mod.FS.readFile('/model.out'); } catch {}
+      if (!outData || outData.length <= 100) {
+        const err = new Error('OpenSWMM 6 run produced no usable binary output (.out) — treating run as failed.') as any;
+        err.reportContent = rptText;
+        throw err;
+      }
+      let parsed: SimulationResults;
+      try {
+        // SWMM6 writes the classic .out layout (same magic; version int 60000)
+        parsed = parseSwmmOut(outData.buffer as ArrayBuffer, project);
+      } catch (parseErr: any) {
+        const err = new Error(`OpenSWMM 6 binary output could not be parsed: ${parseErr?.message || parseErr}`) as any;
+        err.reportContent = rptText;
+        throw err;
+      }
+      parsed.reportContent = rptText;
+      parsed.outRaw = new Uint8Array(outData);
+      applyRptContinuity(parsed, rptText);
+
+      computeExtendedVariables(project, parsed);
+      parsed.engineUsed = 'wasm6';
+      if (onProgress) onProgress(100, 'Simulation complete');
+      return parsed;
+    },
+    getStatus() {
+      return 'OpenSWMM 6.0.0-alpha.3 (WASM In-Browser)';
     },
   };
 }

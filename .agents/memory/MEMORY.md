@@ -2,3 +2,4 @@
 - [E2E browser testing in this repl](e2e-browser-testing.md) — playwright-core + Nix chromium works; bundled headless shell lacks glibs; dispatchEvent for context menus (rows re-render constantly).
 - [Deployment proxy response limits](deployment-response-limits.md) — responses over ~32MiB die silently in production; serve large binaries via separate gzip endpoint, never base64-in-JSON.
 - [Radix Dialog Escape vs nested custom menus](radix-dialog-escape.md) — Radix captures Escape on document before React handlers; use DialogContent onEscapeKeyDown + preventDefault to close only a nested menu.
+- [SWMM6 WASM engine](swmm6-wasm-engine.md) — how client/public/wasm6 was built (3 patches, -fexceptions, EM_CACHE) and run rules: fresh instance per run, noInitialRun, never trust exit code.
