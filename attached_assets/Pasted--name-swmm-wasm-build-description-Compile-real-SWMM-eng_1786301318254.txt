@@ -1,0 +1,96 @@
+---
+name: swmm-wasm-build
+description: Compile real SWMM engines to WebAssembly for the browser — EPA SWMM5 (plain C, the easy one) and OpenSWMM 6 swmm6_rel (C++20; needs -fexceptions, three source patches, GEOPACKAGE/2D/GPU off) — plus the run discipline (Web Worker, fresh instance per run, MEMFS hazards, unrecoverable traps) and the prebuilt alternatives when no build is needed. Use whenever Bob (1) wants a SWMM5 or SWMM6 engine running in a browser app, (2) mentions emcc, Emscripten, emcmake, WASM, MEMFS, MODULARIZE, EXPORTED_FUNCTIONS, or instantiateWasm, (3) hits a wasm that loads but exposes no API, an abort right after parsing (missing -fexceptions), or "both async and sync fetching of the wasm failed", (4) asks how to serve or deploy engine artifacts (Netlify, SINGLE_FILE, COOP/COEP), (5) tests an engine in Node or a Web Worker, or (6) needs the prebuilt LocalSWMM or npm engine artifacts and their pinned hashes. Recipes proven in the ReSWMM project; for the .inp-side SWMM6 options see swmm6-inp-conversion.
+---
+
+# SWMM engines in WebAssembly — SWMM5 and SWMM6
+
+Two engines, two very different rides:
+
+- **EPA SWMM5** — plain C, no threads, all I/O through stdio: an almost
+  ideal Emscripten candidate. One `emcc` command.
+  Read `references/swmm5-wasm-build.md`.
+- **OpenSWMM 6** (`swmm6_rel` branch, 6.0.0-alpha.3) — C++ with
+  exceptions, a background IO thread, a plugin loader, and OpenMP
+  fallbacks. Needs `-fexceptions` everywhere, three source patches, and
+  three CMake features off. Read `references/swmm6-wasm-build.md`.
+
+Decide build-vs-prebuilt first. Prebuilt paths that already work:
+`@fileops/swmm-wasm-web@0.0.4` (EPA 5.2.2, single 756 KB JS with the wasm
+embedded, browser global `window.createModule`) and LocalSWMM's committed
+OpenSWMM artifacts (6.0.0-**alpha.2** — which hard-crashes on any
+`[VIRTUAL_JUNCTIONS]` model; VJ merged after alpha.2). Build from source
+when you need alpha.3+ features, your own patches, or pinned provenance.
+
+## Rules shared by both engines
+
+**Cache.** Emscripten builds its own libc on first use; on read-only
+installs (Nix, Replit) the default cache path is unwritable and every
+build fails. `export EM_CACHE=/tmp/emcache` before anything. First run
+pays ~90 s for libc; the SWMM compile itself is ~20 s. Tested emcc:
+3.1.51.
+
+**Link-flag contract** (both engines):
+
+- `MODULARIZE=1` + `EXPORT_NAME=...` — factory function, so you can make
+  a fresh module per run.
+- `ENVIRONMENT=web,worker` — strips Node loader code; the engine belongs
+  in a Web Worker.
+- `ALLOW_MEMORY_GROWTH=1` — big models exceed the default heap.
+- `EXPORTED_FUNCTIONS` — every entry point you will call, leading
+  underscore, **plus `_malloc,_free`**. Forgetting this produces a wasm
+  that loads fine and exposes no API — it has bitten before. After every
+  rebuild verify `typeof mod._<fn> === 'function'`.
+- `EXPORTED_RUNTIME_METHODS` — at least
+  `["FS","ccall","cwrap","getValue","UTF8ToString","stringToUTF8"]`.
+  You need `FS` (MEMFS) to write the `.inp` in and read `.rpt`/`.out`
+  back; the real disk is never touched.
+
+**Serving.** Ship the glue `.js` + `.wasm` where the bundler serves them
+as-is (e.g. `client/public/wasm*/` for Vite) and do NOT import the glue
+through the bundler — it locates the `.wasm` relative to its own URL and
+bundling breaks that (`Module.locateFile` is the escape hatch). For
+drag-and-drop deploys, `-sSINGLE_FILE=1` inlines the wasm into the JS:
+no `.wasm` MIME configuration, and single-threaded builds need no
+COOP/COEP headers.
+
+**Run discipline** (all engines, all builds):
+
+- Run inside a **Web Worker**. A wasm trap (OOB, unreachable) is
+  unrecoverable in the instance — terminating the worker is the only
+  reliable cancel AND the only trap recovery.
+- **Fresh module instance per run** is the safe default (SWMM5 has
+  global state; a fresh factory call also gives fresh MEMFS). Measured
+  nuance: EPA 5.2.2 wasm was byte-identical across A→B→A reuse on the
+  whole classic corpus, so reuse is empirically safe there — but a
+  rebuild buys trap recovery, and **MEMFS lives in the JS glue, not the
+  wasm instance**, so a fresh `WebAssembly.Instance` alone does not
+  clear leftover files (hot-start files are the proven contamination
+  vector).
+- **Unlink the output paths before every run** so a failed run yields
+  0 bytes instead of the previous run's `.rpt`/`.out`.
+- Emscripten's `exit()` throws — a clean rc 0 can land in your `catch`
+  block. Handle it.
+- Node testing of a `web,worker` build: load the glue with
+  `new Function` and pass `wasmBinary` explicitly — and for builds that
+  still try to fetch, supply the `instantiateWasm` hook; `wasmBinary`
+  alone can abort with "both async and sync fetching of the wasm
+  failed".
+
+**Cross-engine facts worth exploiting.** `src/cli/main.cpp` (SWMM6) and
+`src/run/main.c` (SWMM5) take the same `inp rpt out` argv, so one
+browser contract can drive both. Both write the classic `.out` binary
+layout (same magic 516114522; only the version int differs, 5xxxx vs
+60000), so one `.out` parser reads both. Always confirm which engine
+actually ran from the `.rpt` version header, never from which file you
+think you built — and state the metric with any parity claim (peak-flow
+parity and continuity parity give different answers on the same pair of
+runs).
+
+## References
+
+- `references/swmm5-wasm-build.md` — the one-command SWMM5 recipe,
+  one-shot vs step API, worker wiring, gotchas.
+- `references/swmm6-wasm-build.md` — swmm6_rel from source: the legacy
+  trap, the three patches, `-fexceptions`, the CMake + link commands,
+  the handle-based API, prebuilt alpha.2 fallback with pinned hashes.
