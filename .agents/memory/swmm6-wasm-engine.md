@@ -19,3 +19,6 @@ Run rules (client, `createWasm6Engine` in swmm-engine.ts):
 - **Never trust exit code**: SWMM6 exits 0 on fatal parses — verify the .rpt has no `ERROR nnn` lines and results exist.
 - `.out` is classic SWMM5 binary layout (same magic, version 60000) — the existing `parseSwmmOut` reads it unchanged.
 - Confirm which engine ran from the `.rpt` header ("OPENSWMM ENGINE - VERSION 6.0.0-alpha.3"), never from assumptions.
+
+## Running the engine in Node (fixture generation)
+`require()` of client/public/wasm6/openswmm6.js returns `{}` under Node CJS interop; instead read the file and eval via `new Function('module','exports',src+';return module.exports;')`. Pass `wasmBinary: fs.readFileSync(...wasm)` (locateFile paths fail — the loader fetch()es them). Then `FS.writeFile('/model.inp',...)`, `callMain([...])`, read the rpt from FS. Real SWMM5/SWMM6 .rpt fixtures live in tests/fixtures/ with the source .inp.

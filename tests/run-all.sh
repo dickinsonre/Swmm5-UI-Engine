@@ -29,6 +29,7 @@ run_suite "INP Round-Trip Audit"        tests/roundtrip/run.ts
 run_suite "Calibration Parser/Export"   tests/calibration.test.ts
 run_suite "CFL Analysis & Discretize"  tests/cfl.test.ts
 run_suite "Engine Scatter Comparison"  tests/scatter-compare.test.ts
+run_suite "Batch Verdict Comparison"   tests/batch-compare.test.ts
 
 echo ""
 echo "══════════════════════════════════════════"
