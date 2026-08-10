@@ -318,7 +318,12 @@ export default function SwmmUI() {
   const [showRightPanel, setShowRightPanel] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [reportContent, setReportContent] = useState<string | null>(null);
+  // SWMM6 .rpt from a "Compare 5+6" run — shown as a second tab in the report dialog.
+  const [compareReportContent, setCompareReportContent] = useState<string | null>(null);
+  const [reportEngineTab, setReportEngineTab] = useState<'5' | '6'>('5');
   const [showReportDialog, setShowReportDialog] = useState(false);
+  // Report shown in the report dialog: SWMM6 tab only exists after a Compare 5+6 run.
+  const activeReportContent = reportEngineTab === '6' && compareReportContent ? compareReportContent : reportContent;
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [reportViewMode, setReportViewMode] = useState<'text' | 'html'>('text');
   const [splitScreenProject, setSplitScreenProject] = useState<{ project: SwmmProject; results: SimulationResults; fileName: string } | null>(null);
@@ -427,6 +432,7 @@ export default function SwmmUI() {
       setFileName(snap.fileName);
       setResults(null);
       setCompareResults(null);
+      setCompareReportContent(null);
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -545,6 +551,7 @@ export default function SwmmUI() {
       setIsModified(false);
       setResults(null);
       setCompareResults(null);
+      setCompareReportContent(null);
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -612,6 +619,7 @@ export default function SwmmUI() {
       setIsModified(false);
       setResults(null);
       setCompareResults(null);
+      setCompareReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
@@ -655,6 +663,7 @@ export default function SwmmUI() {
       setFileName(item.name);
       setResults(null);
       setCompareResults(null);
+      setCompareReportContent(null);
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -682,6 +691,7 @@ export default function SwmmUI() {
     setIsModified(false);
     setResults(null);
     setCompareResults(null);
+    setCompareReportContent(null);
     setReportContent(null);
     setSimStatus('none');
     setTimeStep(0);
@@ -704,6 +714,7 @@ export default function SwmmUI() {
       setIsModified(false);
       setResults(null);
       setCompareResults(null);
+      setCompareReportContent(null);
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -902,6 +913,7 @@ export default function SwmmUI() {
     // otherwise stale SWMM6 data from an older (possibly edited) model would
     // remain paired with whatever results end up on screen.
     setCompareResults(null);
+    setCompareReportContent(null);
     const runStartedAt = Date.now();
 
     const abortCtrl = new AbortController();
@@ -936,6 +948,11 @@ export default function SwmmUI() {
           && res5.fidelity !== 'report-summary' && res6.fidelity !== 'report-summary';
         setCompareResults(bothNative ? res6 : null);
         setReportContent(res5.reportContent || null);
+        setCompareReportContent(res6.reportContent || null);
+        setReportEngineTab('5');
+        if (res5.reportContent || res6.reportContent) {
+          setShowReportDialog(true);
+        }
         setSimStatus('current');
         setTimeStep(0);
         toast({
@@ -988,6 +1005,7 @@ export default function SwmmUI() {
       setRunProvenance(buildProvenance(res, engine.mode, runStartedAt, Date.now()));
       setResults(res);
       setCompareResults(null);
+      setCompareReportContent(null);
       setReportContent(res.reportContent || null);
       if (res.reportContent) {
         setShowReportDialog(true);
@@ -1376,6 +1394,7 @@ export default function SwmmUI() {
     setDiscretizationResult(result);
     setResults(null);
     setCompareResults(null);
+    setCompareReportContent(null);
     setReportContent(null);
     setSimStatus('none');
     setTimeStep(0);
@@ -3772,6 +3791,9 @@ export default function SwmmUI() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <BarChart3 className="w-4 h-4" /> SWMM Report
+              {compareReportContent && (
+                <span className="text-[10px] font-normal text-[#1a7a6a] border border-[#1a9e8a] rounded px-1.5 py-0.5">Compare 5+6</span>
+              )}
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
               {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
             </DialogTitle>
@@ -3779,6 +3801,20 @@ export default function SwmmUI() {
               Full simulation report output (.rpt file contents). Use the search bar to find sections.
             </DialogDescription>
           </DialogHeader>
+          {compareReportContent && (
+            <div className="flex rounded border border-[#d0d0d8] overflow-hidden self-start mb-1" data-testid="report-engine-tabs">
+              {([['5', 'SWMM 5.2.4'], ['6', 'OpenSWMM 6']] as const).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  className={`px-3 py-1.5 text-[10px] font-semibold ${reportEngineTab === tab ? 'bg-[#1a9e8a] text-white' : 'bg-white text-[#4a4a5a] hover:bg-[#f0f0f4]'}`}
+                  onClick={() => setReportEngineTab(tab)}
+                  data-testid={`btn-report-engine-${tab}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-2 mb-1">
             <div className="flex rounded border border-[#d0d0d8] overflow-hidden shrink-0">
               {(['text', 'html'] as const).map(m => (
@@ -3803,9 +3839,9 @@ export default function SwmmUI() {
                 data-testid="input-report-search"
               />
             </div>
-            {reportSearchTerm && reportContent && (
+            {reportSearchTerm && activeReportContent && (
               <span className="text-[10px] text-[#6b6b7b] shrink-0">
-                {(reportContent.toLowerCase().match(new RegExp(reportSearchTerm.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length} matches
+                {(activeReportContent.toLowerCase().match(new RegExp(reportSearchTerm.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length} matches
               </span>
             )}
           </div>
@@ -3828,15 +3864,15 @@ export default function SwmmUI() {
             ))}
           </div>
           <div className="flex-1 overflow-auto min-h-0" style={{ maxHeight: 'calc(85vh - 200px)' }}>
-            {reportViewMode === 'html' && reportContent ? (
-              <RptHtmlView content={reportContent} searchTerm={reportSearchTerm} />
+            {reportViewMode === 'html' && activeReportContent ? (
+              <RptHtmlView content={activeReportContent} searchTerm={reportSearchTerm} />
             ) : (
               <pre
                 className="text-[11px] leading-[1.4] p-3 rounded border border-[#d0d0d8] bg-[#f8f8fa] whitespace-pre overflow-x-auto font-mono"
                 data-testid="report-content"
               >
                 {(() => {
-                  const text = reportContent || 'No report available.';
+                  const text = activeReportContent || 'No report available.';
                   if (!reportSearchTerm) return text;
                   const escaped = reportSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                   const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
@@ -3852,8 +3888,8 @@ export default function SwmmUI() {
               variant="outline"
               size="sm"
               onClick={() => {
-                if (reportContent) {
-                  const text = results?.engineUsed === 'mock' ? SYNTHETIC_TEXT_HEADER + reportContent : reportContent;
+                if (activeReportContent) {
+                  const text = results?.engineUsed === 'mock' ? SYNTHETIC_TEXT_HEADER + activeReportContent : activeReportContent;
                   navigator.clipboard.writeText(text);
                   toast({ title: 'Copied', description: 'Report copied to clipboard' });
                 }
@@ -3867,14 +3903,15 @@ export default function SwmmUI() {
               variant="outline"
               size="sm"
               onClick={() => {
-                if (reportContent) {
+                if (activeReportContent) {
                   const isMock = results?.engineUsed === 'mock';
-                  const text = isMock ? SYNTHETIC_TEXT_HEADER + reportContent : reportContent;
+                  const text = isMock ? SYNTHETIC_TEXT_HEADER + activeReportContent : activeReportContent;
                   const blob = new Blob([text], { type: 'text/plain' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = (fileName || 'model').replace(/\.inp$/i, '') + (isMock ? '_SYNTHETIC.rpt' : '.rpt');
+                  const engineSuffix = compareReportContent ? (reportEngineTab === '6' ? '_swmm6' : '_swmm5') : '';
+                  a.download = (fileName || 'model').replace(/\.inp$/i, '') + engineSuffix + (isMock ? '_SYNTHETIC.rpt' : '.rpt');
                   a.click();
                   URL.revokeObjectURL(url);
                 }
