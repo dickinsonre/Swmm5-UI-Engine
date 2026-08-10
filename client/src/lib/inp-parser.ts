@@ -31,6 +31,7 @@ import {
   type Street,
   type Inlet,
   type InletUsage,
+  type InpComments,
   createEmptyProject,
 } from './swmm-types';
 
@@ -38,30 +39,65 @@ function splitFields(line: string): string[] {
   return line.trim().split(/\s+/);
 }
 
+const MAX_PARSE_WARNINGS = 100;
+let activeParseWarnings: string[] | null = null;
+let parseWarningContext = '';
+
 function parseFloat2(s: string | undefined): number {
   if (!s) return 0;
   const v = parseFloat(s);
-  return isNaN(v) ? 0 : v;
+  if (isNaN(v)) {
+    if (activeParseWarnings && activeParseWarnings.length < MAX_PARSE_WARNINGS) {
+      const where = parseWarningContext ? ` in [${parseWarningContext}]` : '';
+      activeParseWarnings.push(`Invalid numeric value "${s}"${where} was treated as 0`);
+    }
+    return 0;
+  }
+  return v;
 }
 
-function extractSections(text: string): Record<string, string[]> {
+function extractSections(text: string): { sections: Record<string, string[]>; comments: InpComments } {
   const sections: Record<string, string[]> = {};
+  const comments: InpComments = { header: [], sections: {} };
   let currentSection = '';
+  let pendingComments: string[] = [];
+
+  const flushPending = () => {
+    if (!pendingComments.length) return;
+    if (!currentSection) {
+      comments.header.push(...pendingComments);
+    } else {
+      if (!comments.sections[currentSection]) comments.sections[currentSection] = [];
+      comments.sections[currentSection].push({
+        anchor: sections[currentSection].length,
+        lines: pendingComments,
+      });
+    }
+    pendingComments = [];
+  };
 
   const lines = text.split(/\r?\n/);
   for (const rawLine of lines) {
     const line = rawLine.trimEnd();
     const sectionMatch = line.match(/^\[([A-Z_]+)\]/i);
     if (sectionMatch) {
+      flushPending();
       currentSection = sectionMatch[1].toUpperCase();
       sections[currentSection] = [];
       continue;
     }
-    if (currentSection && line.trim() && !line.trimStart().startsWith(';')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith(';')) {
+      pendingComments.push(line);
+      continue;
+    }
+    if (currentSection && trimmed) {
+      flushPending();
       sections[currentSection].push(line);
     }
   }
-  return sections;
+  flushPending();
+  return { sections, comments };
 }
 
 function parseTitle(lines: string[]): string[] {
@@ -661,7 +697,9 @@ function parseAquifers(lines: string[]): Aquifer[] {
       bottomElev: parseFloat2(p[10]),
       waterTableElev: parseFloat2(p[11]),
       unsatMoisture: parseFloat2(p[12]),
-      params: p.slice(13).map(parseFloat2),
+      // Trailing tokens may include an optional monthly pattern *name*
+      // (e.g. "SEASONAL"), so non-numeric values here are not a parse error.
+      params: p.slice(13).map(s => { const v = parseFloat(s); return isNaN(v) ? 0 : v; }),
     };
   }).filter(a => a.id);
 }
@@ -764,8 +802,11 @@ function parseMapExtent(lines: string[]): { x1: number; y1: number; x2: number; 
 }
 
 export function parseInpFile(text: string): SwmmProject {
-  const sections = extractSections(text);
+  const { sections, comments } = extractSections(text);
   const project = createEmptyProject();
+  project.comments = comments;
+  const warnings: string[] = [];
+  activeParseWarnings = warnings;
 
   const knownSections = new Set([
     'TITLE', 'OPTIONS', 'REPORT', 'RAINGAGES',
@@ -779,7 +820,9 @@ export function parseInpFile(text: string): SwmmProject {
     'COORDINATES', 'VERTICES', 'POLYGONS', 'SYMBOLS', 'LABELS', 'MAP',
   ]);
 
+  try {
   for (const [section, lines] of Object.entries(sections)) {
+    parseWarningContext = section;
     switch (section) {
       case 'TITLE':
         project.title = parseTitle(lines);
@@ -911,7 +954,12 @@ export function parseInpFile(text: string): SwmmProject {
         break;
     }
   }
+  } finally {
+    activeParseWarnings = null;
+    parseWarningContext = '';
+  }
 
+  project.parseWarnings = warnings;
   return project;
 }
 
@@ -1386,7 +1434,74 @@ export function projectToInp(project: SwmmProject): string {
     }
   }
 
-  return lines.join('\n');
+  return injectComments(lines.join('\n'), project.comments);
+}
+
+/**
+ * Re-insert comment lines captured at parse time into freshly generated INP
+ * text. Each comment block is anchored to the 0-based index of the data line
+ * that followed it inside its section; blocks whose anchor exceeds the
+ * section's current data-line count are emitted at the end of the section.
+ * Comments belonging to sections no longer present in the output are appended
+ * at the end of the file so they are never silently lost.
+ */
+function injectComments(text: string, comments?: InpComments): string {
+  if (!comments) return text;
+  const hasAny = comments.header.length > 0 || Object.values(comments.sections).some(b => b.length > 0);
+  if (!hasAny) return text;
+
+  const out: string[] = [...comments.header];
+  const used = new Set<object>();
+  let currentSection = '';
+  let dataIdx = 0;
+
+  const flushSection = (section: string, everything: boolean) => {
+    const blocks = comments.sections[section] || [];
+    for (const b of blocks) {
+      if (used.has(b)) continue;
+      if (everything || b.anchor <= dataIdx) {
+        used.add(b);
+        out.push(...b.lines);
+      }
+    }
+  };
+
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\[([A-Z_]+)\]/i);
+    if (m) {
+      if (currentSection) flushSection(currentSection, true);
+      currentSection = m[1].toUpperCase();
+      dataIdx = 0;
+      out.push(line);
+      continue;
+    }
+    const trimmed = line.trim();
+    if (currentSection && trimmed && !trimmed.startsWith(';')) {
+      const blocks = comments.sections[currentSection] || [];
+      for (const b of blocks) {
+        if (!used.has(b) && b.anchor === dataIdx) {
+          used.add(b);
+          out.push(...b.lines);
+        }
+      }
+      dataIdx++;
+    }
+    out.push(line);
+  }
+  if (currentSection) flushSection(currentSection, true);
+
+  // Comments from sections that were dropped from the output entirely.
+  const orphans: string[] = [];
+  for (const blocks of Object.values(comments.sections)) {
+    for (const b of blocks) {
+      if (!used.has(b)) orphans.push(...b.lines);
+    }
+  }
+  if (orphans.length) {
+    if (out[out.length - 1]?.trim()) out.push('');
+    out.push(...orphans);
+  }
+  return out.join('\n');
 }
 
 export const SAMPLE_INP = `[TITLE]

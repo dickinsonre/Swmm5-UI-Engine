@@ -138,6 +138,17 @@ interface LinkDrawState {
 
 export default function SwmmUI() {
   const { toast } = useToast();
+  const notifyParseWarnings = useCallback((parsed: SwmmProject) => {
+    const warnings = parsed.parseWarnings || [];
+    if (!warnings.length) return;
+    const shown = warnings.slice(0, 3).join('; ');
+    toast({
+      title: `${warnings.length} parse warning${warnings.length > 1 ? 's' : ''}`,
+      description: `${shown}${warnings.length > 3 ? ` (+${warnings.length - 3} more)` : ''}`,
+      variant: 'destructive',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [project, setProject] = useState<SwmmProject>(() => createEmptyProject());
   const [fileName, setFileName] = useState('Greenville_SI.inp');
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -525,6 +536,7 @@ export default function SwmmUI() {
     try {
       const text = await file.text();
       const parsed = parseInpFile(text);
+      notifyParseWarnings(parsed);
       justLoadedRef.current = true;
       setProject(parsed);
       setFileName(file.name);
@@ -589,6 +601,7 @@ export default function SwmmUI() {
       if (!resp.ok) throw new Error(`Failed to fetch: ${resp.statusText}`);
       const text = await resp.text();
       const parsed = parseInpFile(text);
+      notifyParseWarnings(parsed);
       const name = fetchUrl.split('/').pop() || 'github_file.inp';
       justLoadedRef.current = true;
       setProject(parsed);
@@ -632,6 +645,7 @@ export default function SwmmUI() {
       if (!resp.ok) throw new Error(`Failed to fetch: ${resp.statusText}`);
       const text = await resp.text();
       const parsed = parseInpFile(text);
+      notifyParseWarnings(parsed);
       setProject(parsed);
       setFileName(item.name);
       setResults(null);
@@ -676,6 +690,7 @@ export default function SwmmUI() {
       if (!resp.ok) throw new Error(`Failed to load sample: ${resp.statusText}`);
       const text = await resp.text();
       const parsed = parseInpFile(text);
+      notifyParseWarnings(parsed);
       justLoadedRef.current = true;
       setProject(parsed);
       setFileName(sampleName);

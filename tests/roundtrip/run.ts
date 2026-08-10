@@ -80,6 +80,10 @@ function normalizeProject(p: ReturnType<typeof parseInpFile>): ReturnType<typeof
   clone.rawSections = raw;
   // Title lines: trim
   clone.title = (clone.title || []).map(t => t.trim()).filter(Boolean);
+  // Comment/warning metadata is verified textually in the comment-preservation
+  // tests below, not via the structural diff.
+  delete clone.comments;
+  delete clone.parseWarnings;
   return clone;
 }
 
@@ -217,6 +221,92 @@ if (failures.length) {
   failed++;
   console.log(`${failures.length} FAILED:`);
   failures.forEach(f => console.log(f));
+}
+
+// ---- Comment preservation (raw text comparison — no comment stripping) ----
+console.log('\n=== Comment preservation ===');
+{
+  let cFail = 0;
+  const check = (desc: string, ok: boolean, detail?: string) => {
+    if (ok) console.log(`  ✓ ${desc}`);
+    else { cFail++; console.log(`  ✗ ${desc}${detail ? ` — ${detail}` : ''}`); }
+  };
+
+  const commentLines = (text: string): string[] =>
+    text.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith(';'));
+
+  // Every full-line comment in every fixture must survive load → save verbatim.
+  for (const fx of fixtures) {
+    const original = commentLines(fx.text);
+    if (!original.length) continue;
+    const exported = projectToInp(parseInpFile(fx.text));
+    const after = commentLines(exported);
+    const counts = new Map<string, number>();
+    for (const l of after) counts.set(l, (counts.get(l) || 0) + 1);
+    const missing = original.filter(l => {
+      const n = counts.get(l) || 0;
+      if (n <= 0) return true;
+      counts.set(l, n - 1);
+      return false;
+    });
+    check(`${fx.name}: all ${original.length} comment line(s) preserved`,
+      missing.length === 0, `missing: ${missing.slice(0, 3).join(' | ')}`);
+  }
+
+  // Anchoring: comments stay attached to the data line that follows them,
+  // header comments stay at the top, and comments survive a second round trip.
+  const annotated = `; Model header note line 1
+; Model header note line 2
+[TITLE]
+Annotated model
+
+[JUNCTIONS]
+;;Name  Elev  MaxDepth  InitDepth  SurDepth  Aponded
+J1   100.0  6.0  0  0  0
+; calibration note: J2 invert lowered per 2024 survey
+J2   98.5   6.0  0  0  0
+
+[OUTFALLS]
+OF1  90.0  FREE  NO
+; trailing outfall note
+
+[CONDUITS]
+C1  J1  J2  400  0.013  0  0  0  0
+C2  J2  OF1 300  0.013  0  0  0  0
+
+[XSECTIONS]
+C1  CIRCULAR  2.0  0  0  0  1
+C2  CIRCULAR  1.5  0  0  0  1
+`;
+  const rt1 = projectToInp(parseInpFile(annotated));
+  const rt2 = projectToInp(parseInpFile(rt1));
+  for (const [label, txt] of [['1st round trip', rt1], ['2nd round trip', rt2]] as const) {
+    const lines = txt.split('\n').map(l => l.trim());
+    check(`${label}: header comments stay before first section`,
+      lines[0] === '; Model header note line 1' && lines[1] === '; Model header note line 2');
+    const noteIdx = lines.indexOf('; calibration note: J2 invert lowered per 2024 survey');
+    check(`${label}: calibration note anchored directly above J2 line`,
+      noteIdx > 0 && lines[noteIdx + 1]?.startsWith('J2'),
+      `note at ${noteIdx}, next line: ${lines[noteIdx + 1]}`);
+    const hdrIdx = lines.indexOf(';;Name  Elev  MaxDepth  InitDepth  SurDepth  Aponded');
+    check(`${label}: column-header comment stays at top of [JUNCTIONS]`,
+      hdrIdx > 0 && lines[hdrIdx - 1] === '[JUNCTIONS]' && lines[hdrIdx + 1]?.startsWith('J1'));
+    check(`${label}: trailing outfall note preserved`,
+      lines.includes('; trailing outfall note'));
+  }
+
+  // parseFloat2: malformed numeric tokens must surface a warning, not vanish.
+  const badInp = `[JUNCTIONS]\nJ1  abc  6.0  0  0  0\n`;
+  const badProj = parseInpFile(badInp);
+  check('malformed numeric token produces a parse warning',
+    (badProj.parseWarnings || []).some(w => w.includes('"abc"') && w.includes('[JUNCTIONS]')),
+    `warnings: ${JSON.stringify(badProj.parseWarnings)}`);
+  check('clean sample parse produces no warnings',
+    (parseInpFile(SAMPLE_INP).parseWarnings || []).length === 0,
+    `warnings: ${JSON.stringify(parseInpFile(SAMPLE_INP).parseWarnings?.slice(0, 5))}`);
+
+  if (cFail > 0) failed++;
+  console.log(cFail ? `Comment preservation: ${cFail} FAILED` : 'Comment preservation: all passed');
 }
 
 if (runSaveAuditTests() > 0) failed++;

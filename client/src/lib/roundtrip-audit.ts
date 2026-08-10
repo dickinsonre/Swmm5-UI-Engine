@@ -89,6 +89,11 @@ export function normalizeProject(p: SwmmProject): SwmmProject {
   }
   clone.rawSections = raw;
   clone.title = (clone.title || []).map(t => t.trim()).filter(Boolean);
+  // Comments and parse warnings are metadata, not model data: comment
+  // preservation is verified textually (see roundtrip tests), and anchor
+  // indices may legitimately shift when the writer drops invalid lines.
+  delete clone.comments;
+  delete clone.parseWarnings;
   return clone;
 }
 

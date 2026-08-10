@@ -349,7 +349,26 @@ export interface SwmmProject {
   labels: MapLabel[];
   mapExtent: MapExtent | null;
   rawSections: Record<string, string[]>;
+  /** Comment lines (';'-prefixed) captured on parse, re-emitted on save. */
+  comments?: InpComments;
+  /** Non-fatal warnings produced while parsing the INP file. */
+  parseWarnings?: string[];
   results: SimulationResults | null;
+}
+
+/** A block of consecutive full-line comments anchored to the data line
+ *  (0-based index within its section) that follows it. Blocks whose anchor
+ *  is >= the section's data-line count sit at the end of the section. */
+export interface CommentBlock {
+  anchor: number;
+  lines: string[];
+}
+
+export interface InpComments {
+  /** Comment lines appearing before the first [SECTION] header. */
+  header: string[];
+  /** Comment blocks per (uppercased) section name. */
+  sections: Record<string, CommentBlock[]>;
 }
 
 export interface NodeResult {
