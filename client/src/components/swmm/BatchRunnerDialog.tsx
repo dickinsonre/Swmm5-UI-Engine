@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Layers, FolderOpen, X, Play, Square, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { parseInpFile } from '@/lib/inp-parser';
-import { createLocalEngine, createWasmEngine, createWasm6Engine, createRemoteEngine } from '@/lib/swmm-engine';
+import { createLocalEngine, createWasmEngine, createWasm6Engine, createRemoteEngine, runWasmEngineInWorker } from '@/lib/swmm-engine';
 import type { SwmmEngine } from '@/lib/swmm-engine';
+import type { SimulationResults } from '@/lib/swmm-types';
 import {
   parseReportMetrics, extractEngineVersion, buildComparison,
   BATCH_ENGINE_LABELS,
@@ -63,6 +64,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
   const [partialNotice, setPartialNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const cancelRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nextIdRef = useRef(1);
   // Single-owner report storage (engine\0fileId -> rpt text), bounded in aggregate.
@@ -118,6 +120,8 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
     setRunning(true);
     invalidateResults();
     cancelRef.current = false;
+    const abortCtrl = new AbortController();
+    abortRef.current = abortCtrl;
 
     const engineRuns: EngineRun[] = [];
     const completedEngines: EngineRun[] = []; // only fully-completed engine passes
@@ -140,8 +144,15 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
         const t0 = performance.now();
         try {
           const project = parseInpFile(file.text);
-          const engine = ENGINE_FACTORIES[engineId]();
-          const res = await engine.run(project);
+          let res: SimulationResults;
+          if (engineId === 'wasm' || engineId === 'wasm6') {
+            // In-browser engines run in a dedicated web worker: the UI stays
+            // responsive and Cancel hard-terminates the in-flight run.
+            res = await runWasmEngineInWorker(engineId, project, { signal: abortCtrl.signal });
+          } else {
+            const engine = ENGINE_FACTORIES[engineId]();
+            res = await engine.run(project);
+          }
           const rpt = res.reportContent || '';
           const hasReport = cacheReport(key, rpt);
           results.push({
@@ -155,6 +166,14 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
           });
           setProgress(p => ({ ...p, [key]: 'success' }));
         } catch (err: any) {
+          if (err?.name === 'AbortError') {
+            // Hard-cancelled mid-run: the worker was terminated immediately.
+            cancelled = true;
+            engineComplete = false;
+            results.push({ fileName: file.name, status: 'cancelled', cacheKey: key });
+            setProgress(p => ({ ...p, [key]: 'cancelled' }));
+            continue;
+          }
           const rpt = typeof err?.reportContent === 'string' ? err.reportContent : undefined;
           const hasReport = cacheReport(key, rpt);
           results.push({
@@ -174,6 +193,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
       if (cancelRef.current) { cancelled = true; break; }
     }
 
+    abortRef.current = null;
     setCurrentLabel('');
     setRunning(false);
 
@@ -283,7 +303,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
             ))}
             <div className="ml-auto flex items-center gap-2">
               {running ? (
-                <Button size="sm" variant="destructive" onClick={() => { cancelRef.current = true; }} data-testid="btn-batch-cancel">
+                <Button size="sm" variant="destructive" onClick={() => { cancelRef.current = true; abortRef.current?.abort(); }} data-testid="btn-batch-cancel">
                   <Square className="w-3.5 h-3.5 mr-1" /> Cancel
                 </Button>
               ) : (
@@ -294,7 +314,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
             </div>
           </div>
           {running && currentLabel && (
-            <p className="text-xs text-muted-foreground" data-testid="text-batch-progress">Running — {currentLabel} (Cancel finishes the current file, then stops)</p>
+            <p className="text-xs text-muted-foreground" data-testid="text-batch-progress">Running — {currentLabel} (Cancel stops in-browser engine runs immediately)</p>
           )}
           {partialNotice && (
             <p className="text-xs px-2 py-1.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400" data-testid="text-batch-partial">{partialNotice}</p>

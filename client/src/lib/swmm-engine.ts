@@ -365,6 +365,160 @@ export function createWasm6Engine(): SwmmEngine {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Web-worker runner for the in-browser WASM engines (batch runs).
+//
+// The engine executes inside a dedicated worker (client/public/swmm-worker.js)
+// so long simulations never block the main thread, and cancellation is a hard
+// worker.terminate() that kills the in-flight run immediately. A FRESH worker
+// is spawned per run — this preserves the fresh-module-instance rule for
+// SWMM6 and guarantees clean MEMFS state for SWMM 5.
+// Parsing/validation of the raw .rpt/.out happens here on the main thread,
+// with the same rules as the direct createWasmEngine/createWasm6Engine paths.
+// ---------------------------------------------------------------------------
+
+export interface WorkerRunOptions {
+  signal?: AbortSignal;
+  onProgress?: (pct: number, msg: string) => void;
+}
+
+interface WorkerDone {
+  errCode: number;
+  rptText: string;
+  outData: Uint8Array | null;
+}
+
+function runInWorker(
+  engineId: 'wasm' | 'wasm6',
+  inpText: string,
+  opts: WorkerRunOptions
+): Promise<WorkerDone> {
+  return new Promise<WorkerDone>((resolve, reject) => {
+    if (opts.signal?.aborted) {
+      reject(makeAbortError());
+      return;
+    }
+    const worker = new Worker('/swmm-worker.js');
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      opts.signal?.removeEventListener('abort', onAbort);
+      worker.terminate();
+      fn();
+    };
+    const onAbort = () => finish(() => reject(makeAbortError()));
+    opts.signal?.addEventListener('abort', onAbort);
+    worker.onmessage = (e: MessageEvent) => {
+      const msg = e.data || {};
+      if (msg.type === 'progress') {
+        opts.onProgress?.(msg.pct, msg.msg);
+      } else if (msg.type === 'done') {
+        finish(() => resolve({ errCode: msg.errCode, rptText: msg.rptText || '', outData: msg.outData || null }));
+      } else if (msg.type === 'error') {
+        finish(() => reject(new Error(msg.message || 'WASM worker error')));
+      }
+    };
+    worker.onerror = (e) => {
+      finish(() => reject(new Error(`WASM worker failed: ${e.message || 'unknown error'}`)));
+    };
+    worker.postMessage({ type: 'run', engine: engineId, inpText });
+  });
+}
+
+function makeAbortError(): Error {
+  const err = new Error('Run cancelled');
+  err.name = 'AbortError';
+  return err;
+}
+
+/**
+ * Normalize a typed-array view to an ArrayBuffer that starts exactly at the
+ * view's first byte. parseSwmmOut assumes the SWMM magic number sits at
+ * offset 0, but a Uint8Array crossing the worker boundary may be a view with
+ * a non-zero byteOffset into a larger buffer.
+ */
+export function toExactArrayBuffer(view: Uint8Array): ArrayBuffer {
+  if (view.byteOffset === 0 && view.byteLength === view.buffer.byteLength) {
+    return view.buffer as ArrayBuffer;
+  }
+  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
+}
+
+export async function runWasmEngineInWorker(
+  engineId: 'wasm' | 'wasm6',
+  project: SwmmProject,
+  opts: WorkerRunOptions = {}
+): Promise<SimulationResults> {
+  const inpText = projectToInp(project);
+  const { errCode, rptText, outData } = await runInWorker(engineId, inpText, opts);
+
+  if (engineId === 'wasm6') {
+    // SWMM6 engines have exited 0 on fatal parses — verify results exist in
+    // the report rather than trusting the return code alone.
+    const rptHasErrors = /^\s*ERROR\s+\d+/m.test(rptText);
+    if (errCode !== 0 || rptHasErrors || !rptText) {
+      const errLines = rptText.split('\n').filter((l: string) => /ERROR/i.test(l)).slice(0, 5).join('; ');
+      const err = new Error(
+        `OpenSWMM 6 error${errCode ? ` code ${errCode}` : ''}. ${errLines || 'Empty or invalid report.'}`
+      ) as any;
+      err.reportContent = rptText;
+      throw err;
+    }
+    // SWMM6 requires a valid binary .out — no report-summary fallback.
+    if (!outData || outData.length <= 100) {
+      const err = new Error('OpenSWMM 6 run produced no usable binary output (.out) — treating run as failed.') as any;
+      err.reportContent = rptText;
+      throw err;
+    }
+    if (opts.onProgress) opts.onProgress(80, 'Parsing simulation results...');
+    let parsed: SimulationResults;
+    try {
+      parsed = parseSwmmOut(toExactArrayBuffer(outData), project);
+    } catch (parseErr: any) {
+      const err = new Error(`OpenSWMM 6 binary output could not be parsed: ${parseErr?.message || parseErr}`) as any;
+      err.reportContent = rptText;
+      throw err;
+    }
+    parsed.reportContent = rptText;
+    parsed.outRaw = outData;
+    parsed.fidelity = 'native-binary';
+    applyRptContinuity(parsed, rptText);
+    computeExtendedVariables(project, parsed);
+    parsed.engineUsed = 'wasm6';
+    if (opts.onProgress) opts.onProgress(100, 'Simulation complete');
+    return parsed;
+  }
+
+  // SWMM 5 (wasm)
+  if (errCode !== 0) {
+    const errLines = rptText.split('\n').filter((l: string) => /ERROR|WARNING/i.test(l)).slice(0, 5).join('; ');
+    const err = new Error(`SWMM error code ${errCode}. ${errLines || 'Check report for details.'}`) as any;
+    err.reportContent = rptText;
+    throw err;
+  }
+  if (opts.onProgress) opts.onProgress(80, 'Parsing simulation results...');
+  let parsed: SimulationResults;
+  try {
+    if (outData && outData.length > 100) {
+      parsed = parseSwmmOut(toExactArrayBuffer(outData), project);
+      parsed.reportContent = rptText;
+      parsed.outRaw = outData;
+      parsed.fidelity = 'native-binary';
+      applyRptContinuity(parsed, rptText);
+    } else {
+      parsed = parseRptToResults(rptText, project);
+    }
+  } catch (outErr) {
+    console.warn('Failed to parse WASM .out binary, falling back to .rpt:', outErr);
+    parsed = parseRptToResults(rptText, project);
+  }
+  computeExtendedVariables(project, parsed);
+  parsed.engineUsed = 'wasm';
+  if (opts.onProgress) opts.onProgress(100, 'Simulation complete');
+  return parsed;
+}
+
 export function createLocalEngine(): SwmmEngine {
   return {
     isLoaded: true,
