@@ -26,6 +26,11 @@ const SIM_TIMEOUT_MS = 180000; // kill runaway simulations after 3 minutes
 const SIM_COOLDOWN_MS = 8000;
 const lastSimByIp = new Map<string, number>();
 
+// Cap concurrent native SWMM processes so a burst of requests cannot
+// exhaust CPU/memory on the container.
+const MAX_CONCURRENT_SIMS = 2;
+let activeSims = 0;
+
 // Large binary .out results are NOT embedded in the JSON response (base64
 // inflates them ~33% and deployment proxies cap responses around 32 MiB,
 // which silently kills big-model results in production). Instead they are
@@ -149,9 +154,28 @@ function sendEngineUnavailable(res: Response, detail?: string) {
 
 // Shared simulation service used by both run endpoints:
 // validate → execute → timeout → cleanup → normalized errors → engine metadata.
-async function runLocalSimulation(inpText: string, res: Response): Promise<void> {
+async function runLocalSimulation(inpText: string, req: Request, res: Response): Promise<void> {
+  // Rate limiting lives here so every run route (run, run-or-proxy, and any
+  // future route) is covered by the same per-IP cooldown.
+  const rateCheck = checkSimRateLimit(req);
+  if (!rateCheck.allowed) {
+    res.status(429).json({
+      error: `Too many simulation requests. Please wait ${Math.ceil(rateCheck.retryAfterMs / 1000)} seconds before running again.`,
+      retryAfterMs: rateCheck.retryAfterMs,
+    });
+    return;
+  }
+
   if (!(await probeEngine())) {
     sendEngineUnavailable(res);
+    return;
+  }
+
+  if (activeSims >= MAX_CONCURRENT_SIMS) {
+    res.status(429).json({
+      error: 'Server is busy running other simulations. Please try again shortly.',
+      retryAfterMs: 3000,
+    });
     return;
   }
 
@@ -162,6 +186,12 @@ async function runLocalSimulation(inpText: string, res: Response): Promise<void>
   const inpPath = join(tmpDir, 'model.inp');
   const rptPath = join(tmpDir, 'model.rpt');
   const outPath = join(tmpDir, 'model.out');
+
+  activeSims++;
+  let simSlotReleased = false;
+  const releaseSimSlot = () => {
+    if (!simSlotReleased) { simSlotReleased = true; activeSims--; }
+  };
 
   try {
     await writeFile(inpPath, inpText, 'utf-8');
@@ -180,27 +210,64 @@ async function runLocalSimulation(inpText: string, res: Response): Promise<void>
       await cleanup();
     }, SIM_TIMEOUT_MS);
 
+    // If the HTTP client disconnects mid-run, kill the child process so
+    // abandoned simulations don't keep burning CPU.
+    const onClientGone = () => {
+      if (!responded) {
+        responded = true;
+        console.log('[swmm] client disconnected; killing simulation process');
+        try { proc.kill('SIGKILL'); } catch {}
+      }
+    };
+    res.on('close', onClientGone);
+
     proc.stdout.on('data', (data) => { stdout += data.toString(); });
     proc.stderr.on('data', (data) => { stderr += data.toString(); });
 
     proc.on('close', async (code) => {
       clearTimeout(killTimer);
+      res.removeListener('close', onClientGone);
+      releaseSimSlot();
       let reportContent = '';
       try { reportContent = await readFile(rptPath, 'utf-8'); } catch (e: any) { console.log('[swmm] Failed to read rpt:', e.message); }
       let outSize = 0;
       try { outSize = (await stat(outPath)).size; } catch (e: any) { console.log('[swmm] Failed to stat out:', e.message); }
-      const hasErrors = reportContent.includes('ERROR') || stdout.includes('There are errors') || stdout.includes('has errors');
 
-      if (hasErrors || outSize === 0) {
-        console.log(`[swmm] rpt=${reportContent.length} bytes, out=${outSize} bytes, exit=${code}, errors=${hasErrors}`);
+      // Strict success classification: ALL conditions must hold, otherwise
+      // the run is reported as failed with a specific reason. Never report
+      // success on a nonzero exit, missing .out, or an invalid report.
+      const errorLines = reportContent
+        .split('\n')
+        .filter((line) => line.includes('ERROR'))
+        .map((line) => line.trim())
+        .slice(0, 20);
+      const stdoutHasErrors = stdout.includes('There are errors') || stdout.includes('has errors');
+      const reportValid = reportContent.includes('EPA STORM WATER MANAGEMENT MODEL');
+
+      let failureReason: string | null = null;
+      if (code !== 0) {
+        failureReason = `SWMM engine exited with code ${code}`;
+      } else if (outSize === 0) {
+        failureReason = 'SWMM produced no results (.out file missing or empty)';
+      } else if (!reportValid) {
+        failureReason = 'SWMM report file is missing or invalid';
+      } else if (errorLines.length > 0 || stdoutHasErrors) {
+        failureReason = 'SWMM simulation completed with errors';
+      }
+
+      if (failureReason) {
+        console.log(`[swmm] FAILED: ${failureReason} (rpt=${reportContent.length} bytes, out=${outSize} bytes, exit=${code}, errorLines=${errorLines.length})`);
         await cleanup();
-        respond(() => {
-          if (hasErrors) {
-            res.json({ status: 'failed', error: 'SWMM simulation completed with errors', reportContent, stdout, exitCode: code, engineUsed: 'local' });
-          } else {
-            res.json({ status: 'success', reportContent, stdout, exitCode: code, engineUsed: 'local' });
-          }
-        });
+        respond(() => res.status(422).json({
+          status: 'failed',
+          error: failureReason,
+          errorLines,
+          reportContent,
+          stdout,
+          stderr,
+          exitCode: code,
+          engineUsed: 'local',
+        }));
         return;
       }
 
@@ -224,12 +291,15 @@ async function runLocalSimulation(inpText: string, res: Response): Promise<void>
 
     proc.on('error', async (err) => {
       clearTimeout(killTimer);
+      res.removeListener('close', onClientGone);
+      releaseSimSlot();
       markEngineUnavailable(err as NodeJS.ErrnoException);
       console.log(`[swmm] spawn failed (${err.message}); marking local engine unavailable`);
       await cleanup();
       respond(() => sendEngineUnavailable(res, `Local engine cannot execute: ${err.message}`));
     });
   } catch (error: any) {
+    releaseSimSlot();
     await cleanup();
     if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -346,13 +416,6 @@ export async function registerRoutes(
   });
 
   app.post("/api/swmm/run", async (req: Request, res: Response) => {
-    const rateCheck = checkSimRateLimit(req);
-    if (!rateCheck.allowed) {
-      return res.status(429).json({
-        error: `Too many simulation requests. Please wait ${Math.ceil(rateCheck.retryAfterMs / 1000)} seconds before running again.`,
-        retryAfterMs: rateCheck.retryAfterMs,
-      });
-    }
     try {
       const body = await readBodyWithLimit(req);
       const contentType = req.headers['content-type'] || '';
@@ -378,7 +441,7 @@ export async function registerRoutes(
         inpText = body.toString('utf-8');
       }
 
-      await runLocalSimulation(inpText, res);
+      await runLocalSimulation(inpText, req, res);
     } catch (error: any) {
       if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
     }
@@ -387,7 +450,7 @@ export async function registerRoutes(
   app.post("/api/swmm/run-or-proxy", async (req: Request, res: Response) => {
     try {
       const body = await readBodyWithLimit(req);
-      await runLocalSimulation(body.toString('utf-8'), res);
+      await runLocalSimulation(body.toString('utf-8'), req, res);
     } catch (error: any) {
       if (!res.headersSent) res.status(error.statusCode || 500).json({ error: error.message });
     }
