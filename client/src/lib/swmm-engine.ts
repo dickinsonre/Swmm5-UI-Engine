@@ -200,6 +200,7 @@ export function createWasmEngine(): SwmmEngine {
 
       computeExtendedVariables(project, parsed);
       parsed.engineUsed = 'wasm';
+      parsed.inpUsed = inpText;
       if (onProgress) onProgress(100, 'Simulation complete');
 
       return parsed;
@@ -356,6 +357,7 @@ export function createWasm6Engine(): SwmmEngine {
 
       computeExtendedVariables(project, parsed);
       parsed.engineUsed = 'wasm6';
+      parsed.inpUsed = inpText;
       if (onProgress) onProgress(100, 'Simulation complete');
       return parsed;
     },
@@ -486,6 +488,7 @@ export async function runWasmEngineInWorker(
     applyRptContinuity(parsed, rptText);
     computeExtendedVariables(project, parsed);
     parsed.engineUsed = 'wasm6';
+    parsed.inpUsed = inpText;
     if (opts.onProgress) opts.onProgress(100, 'Simulation complete');
     return parsed;
   }
@@ -515,6 +518,7 @@ export async function runWasmEngineInWorker(
   }
   computeExtendedVariables(project, parsed);
   parsed.engineUsed = 'wasm';
+  parsed.inpUsed = inpText;
   if (opts.onProgress) opts.onProgress(100, 'Simulation complete');
   return parsed;
 }
@@ -613,6 +617,7 @@ export function createLocalEngine(): SwmmEngine {
 
       computeExtendedVariables(project, parsed);
       parsed.engineUsed = 'local';
+      parsed.inpUsed = inpText;
       if (onProgress) onProgress(100, 'Simulation complete');
 
       return parsed;
@@ -693,6 +698,7 @@ export function createRemoteEngine(): SwmmEngine {
                   const parsed = parseRptToResults(result.reportContent, project);
                   computeExtendedVariables(project, parsed);
                   parsed.engineUsed = 'remote';
+                  parsed.inpUsed = inpText;
                   if (onProgress) onProgress(100, 'Simulation complete');
                   resolve(parsed);
                 } catch (e: any) {

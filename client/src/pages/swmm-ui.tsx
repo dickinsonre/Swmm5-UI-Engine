@@ -320,12 +320,18 @@ export default function SwmmUI() {
   const [reportContent, setReportContent] = useState<string | null>(null);
   // SWMM6 .rpt from a "Compare 5+6" run — shown as a second tab in the report dialog.
   const [compareReportContent, setCompareReportContent] = useState<string | null>(null);
-  const [reportEngineTab, setReportEngineTab] = useState<'5' | '6'>('5');
+  const [reportEngineTab, setReportEngineTab] = useState<'5' | '6' | 'split'>('5');
   const [showReportDialog, setShowReportDialog] = useState(false);
   // Report shown in the report dialog: SWMM6 tab only exists after a Compare 5+6 run.
+  // 'split' shows both panes; copy/download in split mode use the SWMM5 report.
   const activeReportContent = reportEngineTab === '6' && compareReportContent ? compareReportContent : reportContent;
+  const reportSplitActive = reportEngineTab === 'split' && !!compareReportContent;
+  // Exact .inp text fed to the engine for the active tab (SWMM6 tab uses the compare run's).
+  const activeInpContent = reportEngineTab === '6'
+    ? (compareResults?.inpUsed ?? null)
+    : (results?.inpUsed ?? null);
   const [reportSearchTerm, setReportSearchTerm] = useState('');
-  const [reportViewMode, setReportViewMode] = useState<'text' | 'html'>('text');
+  const [reportViewMode, setReportViewMode] = useState<'text' | 'html' | 'inp'>('text');
   const [splitScreenProject, setSplitScreenProject] = useState<{ project: SwmmProject; results: SimulationResults; fileName: string } | null>(null);
   const [regressionBaseline, setRegressionBaseline] = useState<RunSnapshot | null>(null);
   const [isModified, setIsModified] = useState(false);
@@ -432,7 +438,7 @@ export default function SwmmUI() {
       setFileName(snap.fileName);
       setResults(null);
       setCompareResults(null);
-      setCompareReportContent(null);
+      setCompareReportContent(null); setReportEngineTab('5');
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -551,7 +557,7 @@ export default function SwmmUI() {
       setIsModified(false);
       setResults(null);
       setCompareResults(null);
-      setCompareReportContent(null);
+      setCompareReportContent(null); setReportEngineTab('5');
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -619,7 +625,7 @@ export default function SwmmUI() {
       setIsModified(false);
       setResults(null);
       setCompareResults(null);
-      setCompareReportContent(null);
+      setCompareReportContent(null); setReportEngineTab('5');
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
@@ -663,7 +669,7 @@ export default function SwmmUI() {
       setFileName(item.name);
       setResults(null);
       setCompareResults(null);
-      setCompareReportContent(null);
+      setCompareReportContent(null); setReportEngineTab('5');
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -691,7 +697,7 @@ export default function SwmmUI() {
     setIsModified(false);
     setResults(null);
     setCompareResults(null);
-    setCompareReportContent(null);
+    setCompareReportContent(null); setReportEngineTab('5');
     setReportContent(null);
     setSimStatus('none');
     setTimeStep(0);
@@ -714,7 +720,7 @@ export default function SwmmUI() {
       setIsModified(false);
       setResults(null);
       setCompareResults(null);
-      setCompareReportContent(null);
+      setCompareReportContent(null); setReportEngineTab('5');
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -913,7 +919,7 @@ export default function SwmmUI() {
     // otherwise stale SWMM6 data from an older (possibly edited) model would
     // remain paired with whatever results end up on screen.
     setCompareResults(null);
-    setCompareReportContent(null);
+    setCompareReportContent(null); setReportEngineTab('5');
     const runStartedAt = Date.now();
 
     const abortCtrl = new AbortController();
@@ -1005,7 +1011,7 @@ export default function SwmmUI() {
       setRunProvenance(buildProvenance(res, engine.mode, runStartedAt, Date.now()));
       setResults(res);
       setCompareResults(null);
-      setCompareReportContent(null);
+      setCompareReportContent(null); setReportEngineTab('5');
       setReportContent(res.reportContent || null);
       if (res.reportContent) {
         setShowReportDialog(true);
@@ -1394,7 +1400,7 @@ export default function SwmmUI() {
     setDiscretizationResult(result);
     setResults(null);
     setCompareResults(null);
-    setCompareReportContent(null);
+    setCompareReportContent(null); setReportEngineTab('5');
     setReportContent(null);
     setSimStatus('none');
     setTimeStep(0);
@@ -3802,29 +3808,35 @@ export default function SwmmUI() {
             </DialogDescription>
           </DialogHeader>
           {compareReportContent && (
-            <div className="flex rounded border border-[#d0d0d8] overflow-hidden self-start mb-1" data-testid="report-engine-tabs">
-              {([['5', 'SWMM 5.2.4'], ['6', 'OpenSWMM 6']] as const).map(([tab, label]) => (
-                <button
-                  key={tab}
-                  className={`px-3 py-1.5 text-[10px] font-semibold ${reportEngineTab === tab ? 'bg-[#1a9e8a] text-white' : 'bg-white text-[#4a4a5a] hover:bg-[#f0f0f4]'}`}
-                  onClick={() => setReportEngineTab(tab)}
-                  data-testid={`btn-report-engine-${tab}`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 mb-1">
+              <div className="flex rounded-md border-2 border-[#c0c0cc] overflow-hidden" data-testid="report-engine-tabs">
+                {([['5', 'SWMM 5.2.4 Report', '#2c6eb5'], ['6', 'OpenSWMM 6 Report', '#1a9e8a'], ['split', 'Side by Side', '#5a5a6e']] as const).map(([tab, label, color]) => (
+                  <button
+                    key={tab}
+                    className="px-4 py-2 text-xs font-bold transition-colors"
+                    style={reportEngineTab === tab
+                      ? { backgroundColor: color, color: '#ffffff' }
+                      : { backgroundColor: '#ffffff', color: color }}
+                    onClick={() => setReportEngineTab(tab)}
+                    data-testid={`btn-report-engine-${tab}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] text-[#6b6b7b]">Both engine reports are available — switch tabs or view side by side.</span>
             </div>
           )}
           <div className="flex items-center gap-2 mb-1">
             <div className="flex rounded border border-[#d0d0d8] overflow-hidden shrink-0">
-              {(['text', 'html'] as const).map(m => (
+              {(['text', 'html', 'inp'] as const).map(m => (
                 <button
                   key={m}
                   className={`px-2.5 py-1.5 text-[10px] font-semibold ${reportViewMode === m ? 'bg-[#2c6eb5] text-white' : 'bg-white text-[#4a4a5a] hover:bg-[#f0f0f4]'}`}
                   onClick={() => setReportViewMode(m)}
                   data-testid={`btn-report-view-${m}`}
                 >
-                  {m === 'text' ? 'Text' : 'HTML'}
+                  {m === 'text' ? 'Text' : m === 'html' ? 'HTML' : 'Input (.inp)'}
                 </button>
               ))}
             </div>
@@ -3863,6 +3875,29 @@ export default function SwmmUI() {
               </button>
             ))}
           </div>
+          {reportSplitActive ? (
+            <div className="flex-1 min-h-0 grid grid-cols-2 gap-2" style={{ maxHeight: 'calc(85vh - 200px)' }} data-testid="report-split-view">
+              {([
+                ['SWMM 5.2.4', reportViewMode === 'inp' ? (results?.inpUsed ?? null) : reportContent, '#2c6eb5'],
+                ['OpenSWMM 6', reportViewMode === 'inp' ? (compareResults?.inpUsed ?? null) : compareReportContent, '#1a9e8a'],
+              ] as const).map(([label, content, color]) => (
+                <div key={label} className="flex flex-col min-h-0 overflow-hidden">
+                  <div className="text-[10px] font-bold px-2 py-1 rounded-t border border-b-0" style={{ color: '#ffffff', backgroundColor: color, borderColor: color }}>{label}</div>
+                  <pre className="flex-1 text-[10px] leading-[1.4] p-2 rounded-b border bg-[#f8f8fa] whitespace-pre overflow-auto font-mono" style={{ borderColor: color }}>
+                    {(() => {
+                      const text = content || 'No report available.';
+                      if (!reportSearchTerm) return text;
+                      const escaped = reportSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                      const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+                      return parts.map((part, i) =>
+                        i % 2 === 1 ? <mark key={i} className="bg-yellow-200 text-[#2a2a3e]">{part}</mark> : part
+                      );
+                    })()}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="flex-1 overflow-auto min-h-0" style={{ maxHeight: 'calc(85vh - 200px)' }}>
             {reportViewMode === 'html' && activeReportContent ? (
               <RptHtmlView content={activeReportContent} searchTerm={reportSearchTerm} />
@@ -3872,7 +3907,9 @@ export default function SwmmUI() {
                 data-testid="report-content"
               >
                 {(() => {
-                  const text = activeReportContent || 'No report available.';
+                  const text = reportViewMode === 'inp'
+                    ? (activeInpContent || 'No generated .inp captured for this run — re-run the simulation to capture it.')
+                    : (activeReportContent || 'No report available.');
                   if (!reportSearchTerm) return text;
                   const escaped = reportSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                   const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
@@ -3883,15 +3920,17 @@ export default function SwmmUI() {
               </pre>
             )}
           </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
-                if (activeReportContent) {
-                  const text = results?.engineUsed === 'mock' ? SYNTHETIC_TEXT_HEADER + activeReportContent : activeReportContent;
+                const src = reportViewMode === 'inp' ? activeInpContent : activeReportContent;
+                if (src) {
+                  const text = reportViewMode !== 'inp' && results?.engineUsed === 'mock' ? SYNTHETIC_TEXT_HEADER + src : src;
                   navigator.clipboard.writeText(text);
-                  toast({ title: 'Copied', description: 'Report copied to clipboard' });
+                  toast({ title: 'Copied', description: reportViewMode === 'inp' ? 'Generated .inp copied to clipboard' : 'Report copied to clipboard' });
                 }
               }}
               className="bg-white border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4]"
@@ -3903,15 +3942,17 @@ export default function SwmmUI() {
               variant="outline"
               size="sm"
               onClick={() => {
-                if (activeReportContent) {
-                  const isMock = results?.engineUsed === 'mock';
-                  const text = isMock ? SYNTHETIC_TEXT_HEADER + activeReportContent : activeReportContent;
+                const isInp = reportViewMode === 'inp';
+                const src = isInp ? activeInpContent : activeReportContent;
+                if (src) {
+                  const isMock = !isInp && results?.engineUsed === 'mock';
+                  const text = isMock ? SYNTHETIC_TEXT_HEADER + src : src;
                   const blob = new Blob([text], { type: 'text/plain' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
                   const engineSuffix = compareReportContent ? (reportEngineTab === '6' ? '_swmm6' : '_swmm5') : '';
-                  a.download = (fileName || 'model').replace(/\.inp$/i, '') + engineSuffix + (isMock ? '_SYNTHETIC.rpt' : '.rpt');
+                  a.download = (fileName || 'model').replace(/\.inp$/i, '') + engineSuffix + (isInp ? '_generated.inp' : isMock ? '_SYNTHETIC.rpt' : '.rpt');
                   a.click();
                   URL.revokeObjectURL(url);
                 }
@@ -5521,17 +5562,49 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
 
   const peakValues = useMemo(() => {
     if (chartData.length === 0 || lineKeys.length === 0) return {};
-    const peaks: Record<string, { max: number; time: string }> = {};
+    // Parse "MM/DD/YYYY HH:mm:ss" into epoch seconds for volume integration.
+    const parseT = (s: string): number => {
+      const m = /^(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)(?::(\d+))?$/.exec(s);
+      if (!m) return NaN;
+      const mo = +m[1], d = +m[2], y = +m[3], h = +m[4], mi = +m[5], sec = +(m[6] ?? 0);
+      if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || sec > 59) return NaN;
+      const dt = new Date(y, mo - 1, d, h, mi, sec);
+      // Reject dates JS silently normalized (e.g. 02/30 -> 03/02).
+      if (dt.getMonth() !== mo - 1 || dt.getDate() !== d) return NaN;
+      return dt.getTime() / 1000;
+    };
+    const times = chartData.map(r => parseT(r.time as string));
+    const stats: Record<string, { max: number; time: string; min: number; minTime: string; volume: number }> = {};
     for (const lk of lineKeys) {
-      let maxVal = -Infinity;
-      let maxTime = '';
-      for (const row of chartData) {
-        const val = row[lk.key] as number;
-        if (val > maxVal) { maxVal = val; maxTime = row.time as string; }
+      let maxVal = -Infinity, minVal = Infinity, volume = 0;
+      let maxTime = '', minTime = '';
+      let prevVal: number | null = null, prevT = NaN;
+      let hasInterval = false;
+      for (let i = 0; i < chartData.length; i++) {
+        const val = chartData[i][lk.key];
+        const t = times[i];
+        if (typeof val !== 'number' || !isFinite(val)) {
+          // Gap in this series: don't bridge the integral across missing data.
+          prevVal = null; prevT = NaN;
+          continue;
+        }
+        if (val > maxVal) { maxVal = val; maxTime = chartData[i].time as string; }
+        if (val < minVal) { minVal = val; minTime = chartData[i].time as string; }
+        if (!isFinite(t)) {
+          // Unparseable timestamp: value still counts for peak/min, but breaks the integral.
+          prevVal = null; prevT = NaN;
+          continue;
+        }
+        if (prevVal !== null && isFinite(prevT) && t > prevT) {
+          volume += ((prevVal + val) / 2) * (t - prevT); // trapezoidal ∫value·dt in unit·seconds
+          hasInterval = true;
+        }
+        prevVal = val; prevT = t;
       }
-      peaks[lk.key] = { max: maxVal, time: maxTime };
+      if (maxVal === -Infinity) continue;
+      stats[lk.key] = { max: maxVal, time: maxTime, min: minVal, minTime, volume: hasInterval ? volume : NaN };
     }
-    return peaks;
+    return stats;
   }, [chartData, lineKeys]);
 
   const handleCategoryChange = (cat: TsCat) => {
@@ -5727,15 +5800,44 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
               <span>{results.timeSteps.length} time steps</span>
               <span>·</span>
               <span>Duration: {results.timeSteps.length > 0 ? results.timeSteps[results.timeSteps.length - 1].dateTime : '—'}</span>
-              {((isSystem && activeVars.length === 1) || (!isSystem && elementIds.length === 1 && activeVars.length === 1)) && peakValues[activeVars[0]] && (
-                <>
-                  <span>·</span>
-                  <span className="font-medium text-[#2c6eb5]">
-                    Peak {allVarDefs.find(v => v.key === activeVars[0])?.label}: {peakValues[activeVars[0]].max.toFixed(3)} {allVarDefs.find(v => v.key === activeVars[0])?.unit} at {peakValues[activeVars[0]].time}
-                  </span>
-                </>
-              )}
             </div>
+            {Object.keys(peakValues).length > 0 && (
+              <div className="mt-1 border border-[#e0e0e8] rounded overflow-hidden" data-testid="ts-stats-table">
+                <table className="w-full text-[9px] text-[#4a4a5a]">
+                  <thead>
+                    <tr className="bg-[#f5f5f8] text-[#6b6b7b]">
+                      <th className="text-left px-2 py-1 font-semibold">Series</th>
+                      <th className="text-right px-2 py-1 font-semibold">Peak</th>
+                      <th className="text-left px-2 py-1 font-semibold">Peak Time</th>
+                      <th className="text-right px-2 py-1 font-semibold">Min</th>
+                      <th className="text-right px-2 py-1 font-semibold">Volume (∫·dt)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineKeys.map(lk => {
+                      const s = peakValues[lk.key];
+                      if (!s) return null;
+                      const baseKey = lk.key.replace(/__cmp$/, '');
+                      const varKey = activeVars.find(v => baseKey === v || baseKey.endsWith(`_${v}`));
+                      const unit = allVarDefs.find(v => v.key === varKey)?.unit || '';
+                      const fmt = (n: number) => Math.abs(n) >= 1e6 || (n !== 0 && Math.abs(n) < 1e-3) ? n.toExponential(3) : n.toLocaleString(undefined, { maximumFractionDigits: 3 });
+                      return (
+                        <tr key={lk.key} className="border-t border-[#ececf2]" data-testid={`ts-stats-row-${lk.key}`}>
+                          <td className="px-2 py-1">
+                            <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ backgroundColor: lk.color }} />
+                            {lk.label}
+                          </td>
+                          <td className="px-2 py-1 text-right font-mono font-medium text-[#2a2a3e]">{fmt(s.max)} {unit}</td>
+                          <td className="px-2 py-1">{s.time}</td>
+                          <td className="px-2 py-1 text-right font-mono">{fmt(s.min)} {unit}</td>
+                          <td className="px-2 py-1 text-right font-mono">{isFinite(s.volume) ? <>{fmt(s.volume)}{unit ? ` ${unit}·s` : ''}</> : '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </div>

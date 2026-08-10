@@ -439,6 +439,8 @@ export interface SimulationResults {
   reportContent?: string;
   /** Raw SWMM .out binary (when the run produced one), kept so the user can save it alongside the .inp/.rpt. */
   outRaw?: Uint8Array;
+  /** Exact .inp text that was fed to the engine for this run (for auditing options/sections). */
+  inpUsed?: string;
   engineUsed?: 'local' | 'wasm' | 'wasm6' | 'remote' | 'mock';
   fidelity?: ResultsFidelity;
 }
