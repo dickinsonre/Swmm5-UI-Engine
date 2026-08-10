@@ -28,7 +28,7 @@ export interface VarCategoryInfo {
 
 export const CATEGORY_INFO: VarCategoryInfo[] = [
   { id: 'NODE_STD', label: 'Standard (EPA)', scope: 'node', icon: '\u25CF', color: '#58a6ff' },
-  { id: 'NODE_SOLVER', label: 'Solver Internals', scope: 'node', icon: '\u26A1', color: '#f0883e' },
+  { id: 'NODE_SOLVER', label: 'Estimated Solver Diagnostics', scope: 'node', icon: '\u26A1', color: '#f0883e' },
   { id: 'NODE_RDII', label: 'RDII / DWF', scope: 'node', icon: '\uD83D\uDCA7', color: '#39d3d8' },
   { id: 'LINK_STD', label: 'Standard (EPA)', scope: 'link', icon: '\u2501', color: '#3fb950' },
   { id: 'LINK_MOMENTUM', label: 'Momentum Eq Terms', scope: 'link', icon: '\u2202Q', color: '#f85149' },

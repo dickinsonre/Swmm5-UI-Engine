@@ -184,6 +184,7 @@ export function createWasmEngine(): SwmmEngine {
           parsed = parseSwmmOut(outData.buffer, project);
           parsed.reportContent = rptText;
           parsed.outRaw = new Uint8Array(outData);
+          parsed.fidelity = 'native-binary';
           applyRptContinuity(parsed, rptText);
         } else {
           parsed = parseRptToResults(rptText, project);
@@ -329,9 +330,9 @@ export function createWasm6Engine(): SwmmEngine {
 
       if (onProgress) onProgress(80, 'Parsing simulation results...');
 
-      // SWMM6 requires a valid binary .out — no report-summary fallback here,
-      // since parseRptToResults fabricates time series that would be
-      // mislabeled as real SWMM6 output.
+      // SWMM6 requires a valid binary .out — no report-summary fallback here;
+      // parseRptToResults yields summary-only results (no time series), which
+      // would misrepresent a SWMM6 run that is expected to produce binary output.
       let outData: Uint8Array | null = null;
       try { outData = mod.FS.readFile('/model.out'); } catch {}
       if (!outData || outData.length <= 100) {
@@ -350,6 +351,7 @@ export function createWasm6Engine(): SwmmEngine {
       }
       parsed.reportContent = rptText;
       parsed.outRaw = new Uint8Array(outData);
+      parsed.fidelity = 'native-binary';
       applyRptContinuity(parsed, rptText);
 
       computeExtendedVariables(project, parsed);
@@ -431,6 +433,7 @@ export function createLocalEngine(): SwmmEngine {
           parsed = parseSwmmOut(outBuffer, project);
           parsed.reportContent = result.reportContent;
           parsed.outRaw = new Uint8Array(outBuffer);
+          parsed.fidelity = 'native-binary';
           applyRptContinuity(parsed, result.reportContent);
         } catch (outErr) {
           console.warn('Failed to fetch/parse .out binary, falling back to .rpt:', outErr);
@@ -444,6 +447,7 @@ export function createLocalEngine(): SwmmEngine {
           parsed = parseSwmmOut(bytes.buffer, project);
           parsed.reportContent = result.reportContent;
           parsed.outRaw = bytes;
+          parsed.fidelity = 'native-binary';
           applyRptContinuity(parsed, result.reportContent);
         } catch (outErr) {
           console.warn('Failed to parse .out binary, falling back to .rpt:', outErr);
@@ -578,188 +582,30 @@ export function createRemoteEngine(): SwmmEngine {
   };
 }
 
+/**
+ * Build results from a .rpt text report ONLY (used when a binary .out file is
+ * unavailable — remote runs, or local runs where binary parsing failed).
+ *
+ * The .rpt report contains summary maxima and continuity errors but NO
+ * per-time-step results. Earlier versions fabricated 96 artificial reporting
+ * periods with exponential/sinusoidal hydrograph shapes scaled to the summary
+ * maxima, which made shape guesses look like genuine engine time series.
+ * We now return NO time steps: summary tables and continuity errors are real,
+ * and time-series features are gated in the UI via the 'report-summary'
+ * fidelity flag.
+ */
 function parseRptToResults(rptText: string, project: SwmmProject): SimulationResults {
-  const lines = rptText.split('\n');
-
-  const nodeDepthSummary: Record<string, { maxDepth: number; maxHGL: number; hoursFlooded: number }> = {};
-  const linkFlowSummary: Record<string, { maxFlow: number; maxVelocity: number; maxDepth: number; maxCapacity: number }> = {};
-  const subcatchSummary: Record<string, { totalPrecip: number; totalRunoff: number; peakRunoff: number; runoffCoeff: number }> = {};
-
-  let section = '';
-  let headerPassed = false;
-  let dashCount = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (trimmed.includes('Node Depth Summary')) { section = 'nodeDepth'; headerPassed = false; dashCount = 0; continue; }
-    if (trimmed.includes('Node Flooding Summary')) { section = 'nodeFlood'; headerPassed = false; dashCount = 0; continue; }
-    if (trimmed.includes('Link Flow Summary')) { section = 'linkFlow'; headerPassed = false; dashCount = 0; continue; }
-    if (trimmed.includes('Subcatchment Runoff Summary')) { section = 'subcatchRunoff'; headerPassed = false; dashCount = 0; continue; }
-    if (trimmed.includes('Node Inflow Summary')) { section = 'nodeInflow'; headerPassed = false; dashCount = 0; continue; }
-    if (trimmed.includes('Node Surcharge Summary')) { section = 'nodeSurcharge'; headerPassed = false; dashCount = 0; continue; }
-    if (trimmed.includes('Outfall Loading Summary')) { section = 'outfall'; headerPassed = false; dashCount = 0; continue; }
-    if (trimmed.includes('Link Surcharge Summary')) { section = 'linkSurcharge'; headerPassed = false; dashCount = 0; continue; }
-
-    if (trimmed.startsWith('---') || trimmed.startsWith('===')) {
-      dashCount++;
-      if (dashCount >= 2) headerPassed = true;
-      continue;
-    }
-
-    if (!headerPassed || !trimmed) continue;
-
-    if (trimmed.startsWith('*') || trimmed.startsWith('Analysis') || trimmed.startsWith('Routing')) {
-      section = '';
-      continue;
-    }
-
-    const fields = trimmed.split(/\s+/);
-
-    if (section === 'nodeDepth' && fields.length >= 5) {
-      const id = fields[0];
-      nodeDepthSummary[id] = {
-        maxDepth: parseFloat(fields[2]) || 0,
-        maxHGL: parseFloat(fields[3]) || 0,
-        hoursFlooded: 0,
-      };
-    }
-
-    if (section === 'nodeFlood' && fields.length >= 5) {
-      const id = fields[0];
-      if (nodeDepthSummary[id]) {
-        nodeDepthSummary[id].hoursFlooded = parseFloat(fields[1]) || 0;
-      }
-    }
-
-    if (section === 'linkFlow' && fields.length >= 5) {
-      const id = fields[0];
-      linkFlowSummary[id] = {
-        maxFlow: parseFloat(fields[2]) || 0,
-        maxVelocity: parseFloat(fields[3]) || 0,
-        maxDepth: parseFloat(fields[4]) || 0,
-        maxCapacity: fields.length >= 6 ? parseFloat(fields[5]) || 0 : 0,
-      };
-    }
-
-    if (section === 'subcatchRunoff' && fields.length >= 6) {
-      const id = fields[0];
-      subcatchSummary[id] = {
-        totalPrecip: parseFloat(fields[1]) || 0,
-        totalRunoff: parseFloat(fields[3]) || 0,
-        peakRunoff: parseFloat(fields[4]) || 0,
-        runoffCoeff: parseFloat(fields[5]) || 0,
-      };
-    }
-  }
-
   let runoffCE = 0;
   let flowCE = 0;
   const ce = extractContinuityErrors(rptText);
   if (ce.runoff != null) runoffCE = ce.runoff;
   if (ce.flow != null) flowCE = ce.flow;
 
-  let reportStep = 300;
-  const reportMatch = rptText.match(/Report Time Step\s*\.+\s*(\d+):(\d+):(\d+)/);
-  if (reportMatch) {
-    reportStep = parseInt(reportMatch[1]) * 3600 + parseInt(reportMatch[2]) * 60 + parseInt(reportMatch[3]);
-  }
-
-  const numSteps = 96;
-  const peakTime = numSteps * 0.25;
-  const decayRate = 0.04;
-  const timeSteps: TimeStepResults[] = [];
-  const simStartMs = getSimStartMs(project);
-
-  for (let step = 0; step < numSteps; step++) {
-    const t = step;
-    const stormFraction = Math.max(0, Math.exp(-decayRate * Math.abs(t - peakTime)) * Math.sin(Math.PI * Math.min(t / peakTime, 1)));
-
-    const nodes: Record<string, NodeResult> = {};
-    const allNodes = [
-      ...project.junctions.map(j => ({ id: j.id, elev: j.elevation })),
-      ...project.outfalls.map(o => ({ id: o.id, elev: o.elevation })),
-      ...project.storageUnits.map(s => ({ id: s.id, elev: s.elevation })),
-    ];
-
-    for (let ni = 0; ni < allNodes.length; ni++) {
-      const n = allNodes[ni];
-      const summary = nodeDepthSummary[n.id];
-      const lag = ni * 0.5;
-      const intensity = Math.max(0, Math.exp(-decayRate * Math.abs(t - peakTime - lag)) * Math.sin(Math.PI * Math.min(Math.max(0, t - lag) / peakTime, 1)));
-      const maxD = summary ? summary.maxDepth : 0;
-      const depth = intensity * maxD;
-      nodes[n.id] = {
-        depth,
-        head: n.elev + depth,
-        volume: depth * 100,
-        lateralInflow: intensity * 5,
-        totalInflow: intensity * 8,
-        flooding: summary && summary.hoursFlooded > 0 ? Math.max(0, depth - maxD * 0.95) : 0,
-      };
-    }
-
-    const links: Record<string, LinkResult> = {};
-    const allLinks = [
-      ...project.conduits.map(c => ({ id: c.id })),
-      ...project.pumps.map(p => ({ id: p.id })),
-      ...project.weirs.map(w => ({ id: w.id })),
-      ...project.orifices.map(o => ({ id: o.id })),
-      ...project.outlets.map(o => ({ id: o.id })),
-    ];
-
-    for (let li = 0; li < allLinks.length; li++) {
-      const l = allLinks[li];
-      const summary = linkFlowSummary[l.id];
-      const lag = li * 0.3;
-      const intensity = Math.max(0, Math.exp(-decayRate * Math.abs(t - peakTime - lag)) * Math.sin(Math.PI * Math.min(Math.max(0, t - lag) / peakTime, 1)));
-      const maxFlow = summary ? summary.maxFlow : 0;
-      const maxVel = summary ? summary.maxVelocity : 0;
-      const maxDep = summary ? summary.maxDepth : 0;
-      const maxCap = summary ? summary.maxCapacity : 0;
-      links[l.id] = {
-        flow: intensity * maxFlow,
-        depth: intensity * maxDep,
-        velocity: intensity * maxVel,
-        volume: intensity * maxFlow * 30,
-        capacity: intensity * maxCap,
-      };
-    }
-
-    const subcatchments: Record<string, SubcatchResult> = {};
-    for (let si = 0; si < project.subcatchments.length; si++) {
-      const sc = project.subcatchments[si];
-      const summary = subcatchSummary[sc.id];
-      const lag = si * 1;
-      const rainIntensity = Math.max(0, Math.exp(-decayRate * Math.abs(t - peakTime + 2) * 1.5));
-      const runoffIntensity = Math.max(0, Math.exp(-decayRate * Math.abs(t - peakTime - lag)) * Math.sin(Math.PI * Math.min(Math.max(0, t - lag) / peakTime, 1)));
-      subcatchments[sc.id] = {
-        rainfall: rainIntensity * (summary ? summary.totalPrecip : 2.5),
-        snowDepth: 0,
-        evap: 0.01,
-        infiltration: rainIntensity * (1 - sc.pctImperv / 100) * 1.5,
-        runoff: runoffIntensity * (summary ? summary.peakRunoff : sc.area * 0.5),
-        gwOutflow: 0,
-        gwElev: 0,
-        moisture: 0.3 + rainIntensity * 0.2,
-      };
-    }
-
-    timeSteps.push({
-      time: step * reportStep,
-      dateTime: formatSimDateTime(simStartMs, step * reportStep),
-      nodes,
-      links,
-      subcatchments,
-    });
-  }
-
   return {
-    timeSteps,
+    timeSteps: [],
     summary: {
-      totalDuration: numSteps * reportStep,
-      reportingSteps: numSteps,
+      totalDuration: 0,
+      reportingSteps: 0,
       routingModel: project.options['FLOW_ROUTING'] || 'DYNWAVE',
       continuityErrors: {
         runoff: runoffCE,
@@ -768,6 +614,7 @@ function parseRptToResults(rptText: string, project: SwmmProject): SimulationRes
       },
     },
     reportContent: rptText,
+    fidelity: 'report-summary',
   };
 }
 
@@ -1493,6 +1340,7 @@ export function createMockEngine(): SwmmEngine {
       const results = generateMockResults(project);
       computeExtendedVariables(project, results);
       results.engineUsed = 'mock';
+      results.fidelity = 'synthetic-mock';
       return results;
     },
     getStatus() {

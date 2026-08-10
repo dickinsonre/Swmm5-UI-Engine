@@ -43,7 +43,7 @@ import DiffToolDialog from '@/components/swmm/DiffToolDialog';
 import BatchRunnerDialog from '@/components/swmm/BatchRunnerDialog';
 import type { BatchEngineId } from '@/lib/batch-compare';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
-import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark } from '@/components/swmm/SyntheticWarning';
+import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark, ReportSummaryBanner, ReportSummaryLabel, ReportSummaryNotice, REPORT_SUMMARY_MESSAGE } from '@/components/swmm/SyntheticWarning';
 import { computeIntegrityInfo, IntegrityChip, IntegrityReportDialog, RecoveryDialog } from '@/components/swmm/IntegrityStatus';
 import { buildModelHealthReport } from '@/lib/model-health';
 import { saveSnapshot, getRecoverableSnapshot, setRecoveryBaseline, clearSnapshots, type AutosaveSnapshot } from '@/lib/autosave';
@@ -503,7 +503,14 @@ export default function SwmmUI() {
       .catch(() => {});
   }, [initialLoadDone]);
 
-  const maxTimeStep = results ? results.timeSteps.length - 1 : 0;
+  const maxTimeStep = results && results.timeSteps.length > 0 ? results.timeSteps.length - 1 : 0;
+
+  // Report-summary results (rpt-only, no binary .out) have NO time series;
+  // all time-series analysis tools are gated off with an explanatory toast.
+  const reportSummaryOnly = results?.fidelity === 'report-summary';
+  const blockReportSummaryTool = useCallback((feature: string) => {
+    toast({ title: `${feature} Unavailable`, description: REPORT_SUMMARY_MESSAGE });
+  }, [toast]);
 
   const queryMatchIds = useMemo(() => {
     if (!mapQuery.active) return null;
@@ -897,7 +904,14 @@ export default function SwmmUI() {
       // Label by the engine that ACTUALLY ran (local can silently fall back).
       const usedEngine = res.engineUsed || engine.mode;
       const engineLabel = usedEngine === 'local' ? 'EPA SWMM 5.2.4 (Local)' : usedEngine === 'wasm' ? 'EPA SWMM 5.2.4 (WASM)' : usedEngine === 'wasm6' ? 'OpenSWMM 6.0.0-alpha.3 (WASM)' : usedEngine === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine';
-      toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed (${engineLabel})` });
+      if (res.fidelity === 'report-summary') {
+        toast({
+          title: 'Simulation Complete — Report Summary Only',
+          description: `${REPORT_SUMMARY_MESSAGE} Summary tables and continuity errors are available; time-series animation and graphs are not (${engineLabel}).`,
+        });
+      } else {
+        toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed (${engineLabel})` });
+      }
     } catch (e: any) {
       if (progressInterval) clearInterval(progressInterval);
       if (e.reportContent != null && e.reportContent !== '') {
@@ -1278,7 +1292,7 @@ export default function SwmmUI() {
   }, [project, discretizationSettings, toast, cflAnalysis]);
 
   useEffect(() => {
-    if (!isAnimating || !results) {
+    if (!isAnimating || !results || results.timeSteps.length === 0) {
       if (animRef.current) cancelAnimationFrame(animRef.current);
       return;
     }
@@ -2105,7 +2119,17 @@ export default function SwmmUI() {
               groups={getSystemCategories().map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-system" />}
             <div className="flex-1 min-w-0" />
-            {results && (
+            {results && results.timeSteps.length === 0 && (
+              <span
+                className="text-[9px] sm:text-[10px] font-medium shrink-0 px-2 py-0.5 rounded-sm"
+                style={{ background: '#fdf6e8', border: '1px solid #e0c88a', color: '#7a5c14' }}
+                title={REPORT_SUMMARY_MESSAGE}
+                data-testid="text-no-timeseries"
+              >
+                No time series — report summary only
+              </span>
+            )}
+            {results && results.timeSteps.length > 0 && (
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <input
                   type="range"
@@ -2176,6 +2200,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<HeartPulse className="w-4 h-4" />} label="Health" onClick={() => setOpenDialog('modelHealth')} testId="btn-model-health" />
             <ToolbarButton icon={<ShieldCheck className="w-4 h-4" />} label="Audit" onClick={() => setOpenDialog('roundtripAudit')} testId="btn-roundtrip-audit" />
             {expertMode && <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Phase" onClick={() => {
+              if (reportSummaryOnly) { blockReportSummaryTool('Phase Space Plot'); return; }
               const et = selectedObj ? objTypeToElementType(selectedObj.objType) : null;
               setPhaseSpaceTarget(selectedObj && et ? { id: selectedObj.id, elementType: et } : null);
               setOpenDialog('phaseSpace');
@@ -2194,14 +2219,14 @@ export default function SwmmUI() {
               testId="btn-run"
             />
             <ToolbarButton icon={<BarChart3 className="w-4 h-4" />} label="Report" onClick={() => { if (reportContent) setShowReportDialog(true); else toast({ title: 'No Report', description: 'Run a simulation first to generate a report' }); }} testId="btn-report" />
-            <ToolbarButton icon={<Calculator className="w-4 h-4" />} label="Stats" onClick={() => { if (results) setOpenDialog('statisticsReport'); else toast({ title: 'No Results', description: 'Run a simulation first to view statistics' }); }} testId="btn-statistics" />
-            <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Profile" onClick={() => setOpenDialog('profilePlot')} testId="btn-profile-plot" />
-            <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (results) setOpenDialog('timeSeries'); else toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); }} testId="btn-graph" />
-            {expertMode && <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => setOpenDialog('calibration')} testId="btn-calibration" />}
-            <ToolbarButton icon={<Table2 className="w-4 h-4" />} label="Table" onClick={() => setOpenDialog('tableView')} testId="btn-table-view" />
-            {expertMode && <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Scatter" onClick={() => { if (results) setOpenDialog('scatterPlot'); else toast({ title: 'No Results', description: 'Run a simulation first' }); }} testId="btn-scatter-plot" />}
+            <ToolbarButton icon={<Calculator className="w-4 h-4" />} label="Stats" onClick={() => { if (!results) toast({ title: 'No Results', description: 'Run a simulation first to view statistics' }); else if (reportSummaryOnly) blockReportSummaryTool('Statistics Report'); else setOpenDialog('statisticsReport'); }} testId="btn-statistics" />
+            <ToolbarButton icon={<ArrowLeftRight className="w-4 h-4" />} label="Profile" onClick={() => { if (reportSummaryOnly) blockReportSummaryTool('Profile Plot'); else setOpenDialog('profilePlot'); }} testId="btn-profile-plot" />
+            <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (!results) toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); else if (reportSummaryOnly) blockReportSummaryTool('Time Series Graph'); else setOpenDialog('timeSeries'); }} testId="btn-graph" />
+            {expertMode && <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => { if (reportSummaryOnly) blockReportSummaryTool('Calibration Analysis'); else setOpenDialog('calibration'); }} testId="btn-calibration" />}
+            <ToolbarButton icon={<Table2 className="w-4 h-4" />} label="Table" onClick={() => { if (reportSummaryOnly) blockReportSummaryTool('Results Table'); else setOpenDialog('tableView'); }} testId="btn-table-view" />
+            {expertMode && <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Scatter" onClick={() => { if (!results) toast({ title: 'No Results', description: 'Run a simulation first' }); else if (reportSummaryOnly) blockReportSummaryTool('Scatter Plot'); else setOpenDialog('scatterPlot'); }} testId="btn-scatter-plot" />}
             {expertMode && <ToolbarButton icon={<Droplets className="w-4 h-4" />} label="Transect" onClick={() => setOpenDialog('transectEditor')} testId="btn-transect-editor" />}
-            {expertMode && <ToolbarButton icon={<PanelLeftOpen className="w-4 h-4" />} label="Compare" onClick={() => setOpenDialog('splitScreen')} testId="btn-split-screen" />}
+            {expertMode && <ToolbarButton icon={<PanelLeftOpen className="w-4 h-4" />} label="Compare" onClick={() => { if (reportSummaryOnly) blockReportSummaryTool('Split-Screen Comparison'); else setOpenDialog('splitScreen'); }} testId="btn-split-screen" />}
             <ToolbarButton icon={<Layers className="w-4 h-4" />} label="Batch" onClick={() => setOpenDialog('batchRunner')} testId="btn-batch-runner" />
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Find" onClick={() => { setFindSearchTerm(''); setOpenDialog('findObject'); }} testId="btn-find" />
             <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about" />
@@ -2381,6 +2406,7 @@ export default function SwmmUI() {
       )}
 
       {results?.engineUsed === 'mock' && <SyntheticResultsBanner />}
+      {results?.fidelity === 'report-summary' && <ReportSummaryBanner />}
 
       <div className="flex-1 flex overflow-hidden relative">
         {isMobile && mobilePanel !== 'none' && (
@@ -3652,6 +3678,7 @@ export default function SwmmUI() {
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <BarChart3 className="w-4 h-4" /> SWMM Report
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
+              {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
             </DialogTitle>
             <DialogDescription className="text-xs text-[#6b6b7b]">
               Full simulation report output (.rpt file contents). Use the search bar to find sections.
@@ -3772,10 +3799,13 @@ export default function SwmmUI() {
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <ArrowLeftRight className="w-4 h-4" /> Profile Plot
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
+              {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
             </DialogTitle>
             <DialogDescription>Select conduits to define a longitudinal path and view the profile.</DialogDescription>
           </DialogHeader>
-          <ProfilePlotContent project={project} results={results} timeStep={timeStep} />
+          {reportSummaryOnly
+            ? <ReportSummaryNotice feature="Profile animation" />
+            : <ProfilePlotContent project={project} results={results} timeStep={timeStep} />}
         </DialogContent>
       </Dialog>
 
@@ -3785,10 +3815,11 @@ export default function SwmmUI() {
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <TrendingUp className="w-4 h-4" /> Time Series Graph
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
+              {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
             </DialogTitle>
             <DialogDescription>View simulation results over time for any node, link, or subcatchment.</DialogDescription>
           </DialogHeader>
-          {results && (
+          {results && !reportSummaryOnly && (
             <Button
               size="sm"
               variant="outline"
@@ -3799,7 +3830,9 @@ export default function SwmmUI() {
               <Table2 className="w-3.5 h-3.5 mr-1" /> View as Data Table
             </Button>
           )}
-          {results && <TimeSeriesPlotContent project={project} results={results} selectedObj={selectedObj} timeStep={timeStep} calibrationData={calibrationData} />}
+          {results && (reportSummaryOnly
+            ? <ReportSummaryNotice feature="Time series graphing" />
+            : <TimeSeriesPlotContent project={project} results={results} selectedObj={selectedObj} timeStep={timeStep} calibrationData={calibrationData} />)}
         </DialogContent>
       </Dialog>
 
@@ -3809,17 +3842,19 @@ export default function SwmmUI() {
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <Target className="w-4 h-4" /> Calibration Analysis
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
+              {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
             </DialogTitle>
             <DialogDescription>Compare observed measurements against simulation results at calibration locations.</DialogDescription>
           </DialogHeader>
-          <CalibrationContent
+          {reportSummaryOnly && <ReportSummaryNotice feature="Calibration analysis" />}
+          {!reportSummaryOnly && <CalibrationContent
             project={project}
             results={results}
             calibrationData={calibrationData}
             onLoadData={(ds) => setCalibrationData(prev => [...prev, ds])}
             onRemoveData={(idx) => setCalibrationData(prev => prev.filter((_, i) => i !== idx))}
             onUpdateData={(idx, patch) => setCalibrationData(prev => prev.map((d, i) => i === idx ? { ...d, ...patch } : d))}
-          />
+          />}
         </DialogContent>
       </Dialog>
 
@@ -3829,10 +3864,13 @@ export default function SwmmUI() {
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <Calculator className="w-4 h-4" /> Statistics Report
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
+              {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
             </DialogTitle>
             <DialogDescription>Define statistical analysis parameters for simulation results.</DialogDescription>
           </DialogHeader>
-          {results && <StatisticsReportContent project={project} results={results} selectedObj={selectedObj} />}
+          {results && (reportSummaryOnly
+            ? <ReportSummaryNotice feature="Statistics reporting" />
+            : <StatisticsReportContent project={project} results={results} selectedObj={selectedObj} />)}
         </DialogContent>
       </Dialog>
 
@@ -3842,10 +3880,13 @@ export default function SwmmUI() {
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
               <Activity className="w-4 h-4" /> Scatter Plot
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
+              {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
             </DialogTitle>
             <DialogDescription>Plot any two variables against each other. Select X and Y axes, overlay multiple objects.</DialogDescription>
           </DialogHeader>
-          {results && <ScatterPlotContent project={project} results={results} selectedObj={selectedObj} />}
+          {results && (reportSummaryOnly
+            ? <ReportSummaryNotice feature="Scatter plotting" />
+            : <ScatterPlotContent project={project} results={results} selectedObj={selectedObj} />)}
         </DialogContent>
       </Dialog>
 
@@ -4133,7 +4174,7 @@ export default function SwmmUI() {
       </Dialog>
 
       <PhaseSpaceDialog
-        open={expertMode && openDialog === 'phaseSpace'}
+        open={expertMode && openDialog === 'phaseSpace' && !reportSummaryOnly}
         onOpenChange={v => !v && setOpenDialog(null)}
         project={project}
         results={results}
@@ -4212,7 +4253,7 @@ export default function SwmmUI() {
       />
 
       <TableViewDialog
-        open={openDialog === 'tableView'}
+        open={openDialog === 'tableView' && !reportSummaryOnly}
         onOpenChange={v => !v && setOpenDialog(null)}
         project={project}
         results={results}
@@ -4259,10 +4300,11 @@ export default function SwmmUI() {
               <ContextMenuItem icon={<ArrowLeftRight className="w-3 h-3" />} label="Find Connected" onClick={handleFindConnected} testId="ctx-find-connected" />
               {expertMode && ctxObj && objTypeToElementType(ctxObj.objType) && (
                 <ContextMenuItem icon={<Activity className="w-3 h-3" />} label="Phase-Space Diagnostics" onClick={() => {
+                  closeContextMenu();
+                  if (reportSummaryOnly) { blockReportSummaryTool('Phase Space Plot'); return; }
                   const et = objTypeToElementType(ctxObj.objType)!;
                   setPhaseSpaceTarget({ id: ctxObj.id, elementType: et });
                   setOpenDialog('phaseSpace');
-                  closeContextMenu();
                 }} testId="ctx-phase-space" />
               )}
               <div className="h-px my-0.5" style={{ backgroundColor: '#d0d0d8' }} />

@@ -879,6 +879,15 @@ export default function DiagramGalleryDialog({ open, onClose, project, results }
   const ce = results?.summary.continuityErrors;
   const shapeCount = new Set(Object.values(project.xsections).map(x => x.shape)).size;
   const pumpFams = pumpCurveFamilies(project);
+  // Report-summary (rpt-only) results have NO time series — time-series-derived
+  // Group B diagrams must not render empty/zero charts as if they were output.
+  const reportSummaryOnly = !!results && results.fidelity === 'report-summary';
+  const tsResults = results && !reportSummaryOnly && results.timeSteps.length > 0 ? results : null;
+  const noTimeSeries = reportSummaryOnly ? (
+    <div className="rounded border px-4 py-6 text-center" style={{ background: '#fdf6e8', borderColor: '#e0c88a', color: '#7a5c14', fontSize: 11 }} data-testid="gallery-report-summary-notice">
+      Unavailable — summary values from SWMM report; binary time-series results were unavailable.
+    </div>
+  ) : <NeedsRun />;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(20,24,32,0.55)' }} data-testid="dialog-diagram-gallery">
       <div className="flex flex-col" style={{ background: C.page, width: 'min(1180px, 96vw)', height: '92vh', borderRadius: 8, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
@@ -893,6 +902,7 @@ export default function DiagramGalleryDialog({ open, onClose, project, results }
           <div style={{ fontSize: 11, color: C.muted }}>
             Group A visualizes the input deck for pre-run error detection; Group B builds composite diagnostics from simulation results.
             {!results && ' Run a simulation to populate Group B.'}
+            {reportSummaryOnly && ' This run produced a report summary only (no binary time series) — time-series diagrams are unavailable; continuity (D13) is genuine report output.'}
           </div>
 
           <Card id="D1" group="A" title="Cross-Section Shape Gallery" tags={['[XSECTIONS]', '[TRANSECTS]']} testId="card-d1"
@@ -936,23 +946,23 @@ export default function DiagramGalleryDialog({ open, onClose, project, results }
           </Card>
 
           <Card id="D9" group="B" title="System Hydrograph" tags={['.OUT system series']} testId="card-d9"
-            note={results ? `${results.timeSteps.length} report steps over ${fmt((results.timeSteps[results.timeSteps.length - 1]?.time || 0) / 3600)} hr` : 'Awaiting results'}>
-            {results ? <D9SystemHydrograph results={results} flowUnits={flowUnits} /> : <NeedsRun />}
+            note={tsResults ? `${tsResults.timeSteps.length} report steps over ${fmt((tsResults.timeSteps[tsResults.timeSteps.length - 1]?.time || 0) / 3600)} hr` : 'Awaiting results'}>
+            {tsResults ? <D9SystemHydrograph results={tsResults} flowUnits={flowUnits} /> : noTimeSeries}
           </Card>
 
           <Card id="D10" group="B" title="Longitudinal Profile with HGL Snapshots" tags={['.OUT node:depth', '[CONDUITS]', '[XSECTIONS]']} testId="card-d10"
             note="Auto-traced trunk path (longest conduit run to an outfall); toggle Max HGL vs instantaneous snapshots">
-            {results ? <D10HglProfile project={project} results={results} /> : <NeedsRun />}
+            {tsResults ? <D10HglProfile project={project} results={tsResults} /> : noTimeSeries}
           </Card>
 
           <Card id="D11" group="B" title="Flow-Duration (Exceedance) Curve" tags={['.OUT link:flow']} testId="card-d11"
             note="Rank-ordered flow record; a long low tail indicates a dry-weather-dominated link, a steep head indicates wet-weather conveyance">
-            {results ? <D11FlowDuration results={results} flowUnits={flowUnits} /> : <NeedsRun />}
+            {tsResults ? <D11FlowDuration results={tsResults} flowUnits={flowUnits} /> : noTimeSeries}
           </Card>
 
           <Card id="D12" group="B" title="Depth-vs-Flow Scatter" tags={['.OUT link:flow,depth,capacity']} testId="card-d12"
             note="Point hue = capacity fraction (blue → amber → red), rescaled to the observed max so within-regime variation stays visible">
-            {results ? <D12DepthFlowScatter results={results} flowUnits={flowUnits} lenUnits={lenUnits} /> : <NeedsRun />}
+            {tsResults ? <D12DepthFlowScatter results={tsResults} flowUnits={flowUnits} lenUnits={lenUnits} /> : noTimeSeries}
           </Card>
 
           <Card id="D13" group="B" title="Continuity & Mass Balance" tags={['.OUT continuity']} testId="card-d13"
@@ -962,17 +972,17 @@ export default function DiagramGalleryDialog({ open, onClose, project, results }
 
           <Card id="D14" group="B" title="Conduit Capacity Heatmap" tags={['.OUT link:capacity']} testId="card-d14"
             note="Scale deliberately fixed at 0 → ≥1 (surcharge): a uniform blue field means no conduit approaches surcharge">
-            {results ? <D14CapacityHeatmap results={results} /> : <NeedsRun />}
+            {tsResults ? <D14CapacityHeatmap results={tsResults} /> : noTimeSeries}
           </Card>
 
           <Card id="D15" group="B" title="Storage Unit Performance" tags={['.OUT node:depth', '[STORAGE]']} testId="card-d15"
             note="Utilization = max depth / design max depth; teal <50 %, amber ≥50 %, red ≥100 % (dashed line)">
-            {results ? <D15StoragePerformance project={project} results={results} lenUnits={lenUnits} /> : <NeedsRun />}
+            {tsResults ? <D15StoragePerformance project={project} results={tsResults} lenUnits={lenUnits} /> : noTimeSeries}
           </Card>
 
           <Card id="D16" group="B" title="Network Thematic Mini-Map" tags={['[MAP]', '[SUBCATCHMENTS]', '.OUT link summary']} testId="card-d16"
             note="Subcatchments on the 5-class imperviousness green ramp; top-20 links by MaxQ on the severity ramp with width scaling; node glyphs by type">
-            <D16MiniMap project={project} results={results} />
+            <D16MiniMap project={project} results={tsResults} />
           </Card>
         </div>
       </div>

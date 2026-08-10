@@ -42,6 +42,56 @@ export function SyntheticResultsBanner() {
   );
 }
 
+export const REPORT_SUMMARY_MESSAGE =
+  'Summary values from SWMM report; binary time-series results were unavailable.';
+
+export function ReportSummaryBanner() {
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-1.5 shrink-0"
+      style={{ background: '#fdf6e8', borderBottom: '1px solid #e0c88a', color: '#7a5c14' }}
+      data-testid="banner-report-summary"
+    >
+      <AlertTriangle className="w-4 h-4 shrink-0" />
+      <span className="text-[11px] font-semibold tracking-wide">
+        REPORT SUMMARY ONLY — {REPORT_SUMMARY_MESSAGE} Summary tables and continuity errors are genuine; time-series animation, graphs, and time-dependent maps are unavailable for this run.
+      </span>
+    </div>
+  );
+}
+
+export function ReportSummaryLabel({ compact = false }: { compact?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-sm font-bold tracking-wide ${compact ? 'px-1.5 py-0 text-[8px]' : 'px-2 py-0.5 text-[10px]'}`}
+      style={{ background: '#fdf6e8', border: '1px solid #e0c88a', color: '#7a5c14' }}
+      title={REPORT_SUMMARY_MESSAGE}
+      data-testid="label-report-summary"
+    >
+      <AlertTriangle className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
+      REPORT SUMMARY ONLY — NO TIME SERIES
+    </span>
+  );
+}
+
+/** Full-size empty state shown inside analysis dialogs when only report-summary results exist. */
+export function ReportSummaryNotice({ feature = 'This view' }: { feature?: string }) {
+  return (
+    <div
+      className="flex flex-col items-center gap-2 rounded border px-6 py-10 text-center"
+      style={{ background: '#fdf6e8', borderColor: '#e0c88a', color: '#7a5c14' }}
+      data-testid="notice-report-summary"
+    >
+      <AlertTriangle className="w-6 h-6" />
+      <div className="text-sm font-semibold">{feature} is unavailable for this run</div>
+      <div className="text-xs max-w-md">
+        {REPORT_SUMMARY_MESSAGE} Only the report's summary tables and continuity errors are genuine engine
+        output — open the SWMM Report (Project &gt; Report) to view them.
+      </div>
+    </div>
+  );
+}
+
 export function SyntheticResultsLabel({ compact = false }: { compact?: boolean }) {
   return (
     <span
