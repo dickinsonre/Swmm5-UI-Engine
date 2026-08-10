@@ -40,6 +40,8 @@ import { REGRESSION_METRICS, extractRunSnapshot, compareSnapshots, comparisonToC
 import SpeedBar from '@/components/swmm/SpeedBar';
 import SectionGridView from '@/components/swmm/SectionGridView';
 import DiffToolDialog from '@/components/swmm/DiffToolDialog';
+import BatchRunnerDialog from '@/components/swmm/BatchRunnerDialog';
+import type { BatchEngineId } from '@/lib/batch-compare';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
 import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark } from '@/components/swmm/SyntheticWarning';
 import { computeIntegrityInfo, IntegrityChip, IntegrityReportDialog, RecoveryDialog } from '@/components/swmm/IntegrityStatus';
@@ -55,6 +57,7 @@ import {
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
   Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity, HeartPulse, Box, ShieldCheck,
   Moon, Sun, GitCompareArrows, LogOut,
+  Layers,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
@@ -172,7 +175,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'roundtripAudit' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | 'diagramGallery' | 'diffTool' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'roundtripAudit' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | 'diagramGallery' | 'diffTool' | 'batchRunner' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
   const [detailsView, setDetailsView] = useState<'grid' | 'inp'>('grid');
   const [findSearchTerm, setFindSearchTerm] = useState('');
@@ -2199,6 +2202,7 @@ export default function SwmmUI() {
             {expertMode && <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Scatter" onClick={() => { if (results) setOpenDialog('scatterPlot'); else toast({ title: 'No Results', description: 'Run a simulation first' }); }} testId="btn-scatter-plot" />}
             {expertMode && <ToolbarButton icon={<Droplets className="w-4 h-4" />} label="Transect" onClick={() => setOpenDialog('transectEditor')} testId="btn-transect-editor" />}
             {expertMode && <ToolbarButton icon={<PanelLeftOpen className="w-4 h-4" />} label="Compare" onClick={() => setOpenDialog('splitScreen')} testId="btn-split-screen" />}
+            <ToolbarButton icon={<Layers className="w-4 h-4" />} label="Batch" onClick={() => setOpenDialog('batchRunner')} testId="btn-batch-runner" />
             <ToolbarButton icon={<Search className="w-4 h-4" />} label="Find" onClick={() => { setFindSearchTerm(''); setOpenDialog('findObject'); }} testId="btn-find" />
             <ToolbarButton icon={<Info className="w-4 h-4" />} label="About" onClick={() => setOpenDialog('about')} testId="btn-about" />
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
@@ -4148,6 +4152,17 @@ export default function SwmmUI() {
         open={openDialog === 'diffTool'}
         onOpenChange={v => !v && setOpenDialog(null)}
         getCurrentInp={getCurrentInpForDiff}
+      />
+
+      <BatchRunnerDialog
+        open={openDialog === 'batchRunner'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        availableEngines={([
+          localAvailable && 'local',
+          wasmAvailable && 'wasm',
+          wasm6Available && 'wasm6',
+          remoteAvailable && 'remote',
+        ].filter(Boolean)) as BatchEngineId[]}
       />
 
       <DiagramGalleryDialog
