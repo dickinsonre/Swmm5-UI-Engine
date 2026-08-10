@@ -16,7 +16,7 @@ interface Props {
   initialTab?: string;
 }
 
-const TABS = ['General', 'Dates', 'Time Steps', 'Dynamic Wave', 'Interface Files'] as const;
+const TABS = ['General', 'Dates', 'Time Steps', 'Dynamic Wave', 'Interface Files', 'SWMM 6'] as const;
 
 type Tab = typeof TABS[number];
 
@@ -37,6 +37,15 @@ export default function AnalysisOptionsDialog({ open, onOpenChange, project, onU
       ...prev,
       options: { ...prev.options, [key]: value }
     }));
+  }, [onUpdateProject]);
+
+  const setSwmm6 = useCallback((key: string, value: string) => {
+    onUpdateProject(prev => {
+      const next = { ...(prev.swmm6Options || {}) };
+      if (value === '') delete next[key];
+      else next[key] = value;
+      return { ...prev, swmm6Options: next };
+    });
   }, [onUpdateProject]);
 
   const setReport = useCallback((key: string, value: string) => {
@@ -74,6 +83,7 @@ export default function AnalysisOptionsDialog({ open, onOpenChange, project, onU
         {tab === 'Time Steps' && <TimeStepsTab opts={opts} setOpt={setOpt} />}
         {tab === 'Dynamic Wave' && <DynamicWaveTab opts={opts} setOpt={setOpt} />}
         {tab === 'Interface Files' && <InterfaceFilesTab opts={opts} setOpt={setOpt} report={project.reportOptions} setReport={setReport} />}
+        {tab === 'SWMM 6' && <Swmm6Tab s6={project.swmm6Options || {}} setSwmm6={setSwmm6} flowRouting={getOpt(opts, 'FLOW_ROUTING', 'KINWAVE')} />}
       </DialogContent>
     </Dialog>
   );
@@ -254,6 +264,70 @@ function InterfaceFilesTab({ opts, setOpt, report, setReport }: { opts: Record<s
       <OptRow label="Report Links">
         <OptSelect opts={opts} field="LINKS" setOpt={(k, v) => setReport(k, v)} options={['ALL', 'NONE']} />
       </OptRow>
+    </div>
+  );
+}
+
+function Swmm6Tab({ s6, setSwmm6, flowRouting }: { s6: Record<string, string>; setSwmm6: (k: string, v: string) => void; flowRouting: string }) {
+  const dynSlot = getOpt(s6, 'SURCHARGE_METHOD').toUpperCase() === 'DYNAMIC_SLOT';
+  const notDynwave = !/^DYNWAVE$/i.test(flowRouting.trim());
+  return (
+    <div className="space-y-1" data-testid="tab-content-swmm6">
+      <div className="text-[11px] text-[#6b6b7b] mb-2 p-2 rounded bg-[#eef4fb] border border-[#c9dcf0]">
+        These options only apply to <b>OpenSWMM 6</b> runs (SWMM 6 and Compare 5+6 modes). They are
+        never written into the SWMM 5 input file, so the SWMM 5 run and saved .inp files stay fully
+        compatible with EPA SWMM 5.2. Use the report dialog's <b>Input (.inp)</b> view to verify
+        what each engine received.
+      </div>
+
+      <div className="text-xs font-semibold text-[#3a5070] mb-2">Surcharge Method</div>
+      <OptRow label="Dynamic Preissmann Slot">
+        <Switch
+          checked={dynSlot}
+          onCheckedChange={v => {
+            setSwmm6('SURCHARGE_METHOD', v ? 'DYNAMIC_SLOT' : '');
+            if (!v) { setSwmm6('DPS_CELERITY', ''); setSwmm6('DPS_ALPHA', ''); setSwmm6('DPS_DECAY_TIME', ''); }
+          }}
+          data-testid="opt-s6-dynamic-slot"
+        />
+      </OptRow>
+      {dynSlot && notDynwave && (
+        <div className="text-[11px] text-[#a05a00] px-1" data-testid="warn-s6-routing">
+          Note: Flow Routing is {flowRouting || 'not set'} — the engine only honors DYNAMIC_SLOT under
+          Dynamic Wave routing (it is silently ignored otherwise).
+        </div>
+      )}
+      {dynSlot && (
+        <>
+          <OptRow label="DPS Celerity (m/s)"><OptInput opts={s6} field="DPS_CELERITY" setOpt={setSwmm6} placeholder="25 (default)" /></OptRow>
+          <OptRow label="DPS Alpha (≥ 2)"><OptInput opts={s6} field="DPS_ALPHA" setOpt={setSwmm6} placeholder="3 (default)" /></OptRow>
+          <OptRow label="DPS Decay Time (s)"><OptInput opts={s6} field="DPS_DECAY_TIME" setOpt={setSwmm6} placeholder="0.5 (default)" /></OptRow>
+        </>
+      )}
+
+      <div className="text-xs font-semibold text-[#3a5070] mt-3 mb-2">Solver</div>
+      <OptRow label="Node Continuity">
+        <Select value={getOpt(s6, 'NODE_CONTINUITY', 'EXPLICIT')} onValueChange={v => setSwmm6('NODE_CONTINUITY', v === 'EXPLICIT' ? '' : v)}>
+          <SelectTrigger className="h-7 text-xs bg-white border-[#d0d0d8] text-[#2a2a3e]" data-testid="opt-s6-node-continuity">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-white border-[#d0d0d8]">
+            <SelectItem value="EXPLICIT" className="text-xs">EXPLICIT (default)</SelectItem>
+            <SelectItem value="SEMI_IMPLICIT" className="text-xs">SEMI_IMPLICIT (Crank–Nicolson)</SelectItem>
+          </SelectContent>
+        </Select>
+      </OptRow>
+      <OptRow label="Anderson Acceleration">
+        <Switch
+          checked={getOpt(s6, 'ANDERSON_ACCEL', 'NO').toUpperCase() === 'YES'}
+          onCheckedChange={v => setSwmm6('ANDERSON_ACCEL', v ? 'YES' : '')}
+          data-testid="opt-s6-anderson"
+        />
+      </OptRow>
+      <div className="text-[11px] text-[#6b6b7b] px-1 mt-1">
+        Anderson acceleration speeds solver convergence without changing the physics — identical
+        results with it on are expected on a well-converging model.
+      </div>
     </div>
   );
 }

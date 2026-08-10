@@ -3,4 +3,5 @@
 - [Deployment proxy response limits](deployment-response-limits.md) — responses over ~32MiB die silently in production; serve large binaries via separate gzip endpoint, never base64-in-JSON.
 - [Radix Dialog Escape vs nested custom menus](radix-dialog-escape.md) — Radix captures Escape on document before React handlers; use DialogContent onEscapeKeyDown + preventDefault to close only a nested menu.
 - [Typed-array offsets vs binary parsers](typed-array-offset-parsing.md) — never pass view.buffer to parseSwmmOut; normalize with toExactArrayBuffer (worker/Emscripten views may have non-zero byteOffset).
+- [SWMM6-only .inp options gating](swmm6-only-options.md) — never write SWMM6-only lines into SWMM5-target .inp (ERROR 205); carried as `;;SWMM6` comments, which must not be re-preserved as comments.
 - [SWMM6 WASM engine](swmm6-wasm-engine.md) — how client/public/wasm6 was built (3 patches, -fexceptions, EM_CACHE) and run rules: fresh instance per run, noInitialRun, never trust exit code.

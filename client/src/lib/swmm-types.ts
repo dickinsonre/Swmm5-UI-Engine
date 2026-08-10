@@ -309,6 +309,14 @@ export interface InletUsage {
 export interface SwmmProject {
   title: string[];
   options: Record<string, string>;
+  /**
+   * SWMM6-only [OPTIONS] keywords (SURCHARGE_METHOD DYNAMIC_SLOT, DPS_*,
+   * NODE_CONTINUITY, ANDERSON_ACCEL, ...). Kept separate from `options` so a
+   * SWMM5-target .inp can never contain them: projectToInp only emits them as
+   * real data lines when target is 'swmm6'; SWMM5 output carries them as
+   * `;;SWMM6 KEY value` comments purely for round-tripping.
+   */
+  swmm6Options: Record<string, string>;
   reportOptions: Record<string, string>;
   raingages: RainGage[];
   subcatchments: Subcatchment[];
@@ -454,6 +462,7 @@ export function createEmptyProject(): SwmmProject {
   return {
     title: [],
     options: {},
+    swmm6Options: {},
     reportOptions: {},
     raingages: [],
     subcatchments: [],

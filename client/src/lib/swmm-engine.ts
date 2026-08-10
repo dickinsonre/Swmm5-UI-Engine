@@ -285,7 +285,7 @@ export function createWasm6Engine(): SwmmEngine {
     isLoaded: true,
     mode: 'wasm6' as const,
     async run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults> {
-      const inpText = projectToInp(project);
+      const inpText = projectToInp(project, 'swmm6');
 
       // Fresh instance per run — no stale MEMFS files, trap recovery for free.
       const mod = await createWasm6Instance(onProgress);
@@ -452,7 +452,7 @@ export async function runWasmEngineInWorker(
   project: SwmmProject,
   opts: WorkerRunOptions = {}
 ): Promise<SimulationResults> {
-  const inpText = projectToInp(project);
+  const inpText = projectToInp(project, engineId === 'wasm6' ? 'swmm6' : 'swmm5');
   const { errCode, rptText, outData } = await runInWorker(engineId, inpText, opts);
 
   if (engineId === 'wasm6') {

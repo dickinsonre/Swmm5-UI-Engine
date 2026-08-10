@@ -88,6 +88,11 @@ function extractSections(text: string): { sections: Record<string, string[]>; co
     }
     const trimmed = line.trim();
     if (trimmed.startsWith(';')) {
+      // `;;SWMM6 KEY value` carrier comments are structured data (recovered
+      // into project.swmm6Options by parseInpFile), not user comments. Keeping
+      // them here would re-inject them on export while projectToInp also emits
+      // fresh ones — duplicating a marker per save/load cycle.
+      if (/^;;SWMM6[ \t]+\S+[ \t]+\S/.test(trimmed)) continue;
       pendingComments.push(line);
       continue;
     }
@@ -959,16 +964,45 @@ export function parseInpFile(text: string): SwmmProject {
     parseWarningContext = '';
   }
 
+  // Recover SWMM6-only options carried as `;;SWMM6 KEY value` comments in
+  // SWMM5-format files (they are stripped with other comments above), and
+  // accept real SWMM6-only keywords if the file was a SWMM6-target .inp.
+  const swmm6Opts: Record<string, string> = {};
+  for (const m of text.matchAll(/^[ \t]*;;SWMM6[ \t]+(\S+)[ \t]+(.+?)[ \t]*$/gm)) {
+    swmm6Opts[m[1].toUpperCase()] = m[2].trim();
+  }
+  for (const key of Object.keys(project.options)) {
+    const ku = key.toUpperCase();
+    if (SWMM6_ONLY_OPTION_KEYS.has(ku) ||
+        // SURCHARGE_METHOD is a valid SWMM5 keyword, but DYNAMIC_SLOT is a
+        // SWMM6-only value — stock 5.2.4 dies with ERROR 205 on it.
+        (ku === 'SURCHARGE_METHOD' && project.options[key].trim().toUpperCase() === 'DYNAMIC_SLOT')) {
+      swmm6Opts[ku] = project.options[key];
+      delete project.options[key];
+    }
+  }
+  project.swmm6Options = swmm6Opts;
+
   project.parseWarnings = warnings;
   return project;
 }
+
+/**
+ * [OPTIONS] keywords that only OpenSWMM 6 understands. Stock EPA SWMM 5.2.4
+ * fails with ERROR 205 on every one of these, so they must never appear as
+ * data lines in a SWMM5-target .inp.
+ */
+export const SWMM6_ONLY_OPTION_KEYS = new Set([
+  'DPS_CELERITY', 'DPS_ALPHA', 'DPS_DECAY_TIME',
+  'NODE_CONTINUITY', 'ANDERSON_ACCEL', 'VIRTUAL_JUNCTION_MOMENTUM',
+]);
 
 function padField(value: string | number, width: number): string {
   const s = String(value);
   return s.length >= width ? s + ' ' : s.padEnd(width);
 }
 
-export function projectToInp(project: SwmmProject): string {
+export function projectToInp(project: SwmmProject, target: 'swmm5' | 'swmm6' = 'swmm5'): string {
   const lines: string[] = [];
 
   const allNodeIds = new Set([
@@ -1002,6 +1036,14 @@ export function projectToInp(project: SwmmProject): string {
       else if (u === 'NO' || u === 'OFF' || u === 'FALSE') out = '0';
     }
     lines.push(`${key.padEnd(20)} ${out}`);
+  }
+  // SWMM6-only options: real data lines only in a SWMM6-target file. In
+  // SWMM5 output they are carried as `;;SWMM6 KEY value` comments (ignored
+  // by every SWMM5 engine) purely so they round-trip through save/autosave.
+  for (const [key, val] of Object.entries(project.swmm6Options || {})) {
+    if (val === '' || val == null) continue;
+    if (target === 'swmm6') lines.push(`${key.padEnd(20)} ${val}`);
+    else lines.push(`;;SWMM6 ${key.padEnd(20)} ${val}`);
   }
   lines.push('');
 
