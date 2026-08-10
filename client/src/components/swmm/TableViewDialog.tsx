@@ -16,6 +16,8 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   project: SwmmProject;
   results: SimulationResults | null;
+  /** Secondary result set (SWMM6) from a "Compare 5+6" run — shown as paired columns. */
+  compareResults?: SimulationResults | null;
   mode: 'byObject' | 'byVariable';
   onModeChange: (m: 'byObject' | 'byVariable') => void;
   timeStep: number;
@@ -102,7 +104,7 @@ function categoryToScope(cat: ObjCategory): VarScope {
   return cat === 'subcatchment' ? 'subcatch' : cat;
 }
 
-export default function TableViewDialog({ open, onOpenChange, project, results, mode, onModeChange, timeStep }: Props) {
+export default function TableViewDialog({ open, onOpenChange, project, results, compareResults = null, mode, onModeChange, timeStep }: Props) {
   const [category, setCategory] = useState<ObjCategory>('node');
   const [selectedObj, setSelectedObj] = useState('');
   const [selectedVar, setSelectedVar] = useState('');
@@ -129,6 +131,30 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
     if (!results?.timeSteps) return [];
     return results.timeSteps.map(ts => ts.dateTime || `t=${ts.time}`);
   }, [results]);
+
+  // Compare-run (SWMM6) overlay: map each primary time step index to the
+  // matching compare step (by dateTime, falling back to same index).
+  const cmpActive = !!(compareResults && compareResults.timeSteps && compareResults.timeSteps.length > 0);
+  const cmpStepFor = useMemo(() => {
+    if (!cmpActive || !results?.timeSteps || !compareResults) return null;
+    const byTime = new Map<string, number>();
+    compareResults.timeSteps.forEach((ts, i) => byTime.set(ts.dateTime, i));
+    // Same-index fallback is only safe when both runs have identical step
+    // counts; with different reporting timelines, unmatched steps show "—".
+    const sameLength = compareResults.timeSteps.length === results.timeSteps.length;
+    return results.timeSteps.map((ts, i) => {
+      const m = byTime.get(ts.dateTime);
+      if (m !== undefined) return m;
+      return sameLength ? i : -1;
+    });
+  }, [cmpActive, results, compareResults]);
+
+  const getCmpValue = useCallback((category2: ObjCategory, id: string, variable: string, primaryStep: number): string => {
+    if (!compareResults || !cmpStepFor) return '\u2014';
+    const cs = cmpStepFor[primaryStep];
+    if (cs === undefined || cs < 0) return '\u2014';
+    return getResultValue(compareResults, category2, id, variable, cs);
+  }, [compareResults, cmpStepFor]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, colKey?: string) => {
     e.preventDefault();
@@ -447,10 +473,16 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
                         onContextMenu={e => handleContextMenu(e, v)}
                         data-testid={`th-${v}`}>
                         <span className="inline-flex items-center gap-1">
-                          {varLabels[v] || v}
+                          {varLabels[v] || v}{cmpActive ? ' (5)' : ''}
                           <ProvenanceBadge varKey={v} scope={categoryToScope(category)} />
                         </span>
                         {sortCol === v && <span className="ml-1 text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                      </th>
+                    ))}
+                    {cmpActive && vars.map(v => (
+                      <th key={`cmp-${v}`} className="text-right px-2 py-1.5 border-b border-[#d0d0d8] font-semibold text-[#1a7a6a] select-none"
+                        data-testid={`th-cmp-${v}`}>
+                        {varLabels[v] || v} (6)
                       </th>
                     ))}
                   </tr>
@@ -461,6 +493,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
                       onContextMenu={e => handleContextMenu(e)}>
                       <td className="px-2 py-1 border-b border-[#f0f0f4] font-mono">{timestamps[idx]}</td>
                       {vars.map(v => <td key={v} className="text-right px-2 py-1 border-b border-[#f0f0f4] font-mono">{getResultValue(results, category, selectedObj, v, idx)}</td>)}
+                      {cmpActive && vars.map(v => <td key={`cmp-${v}`} className="text-right px-2 py-1 border-b border-[#f0f0f4] font-mono text-[#1a7a6a]">{getCmpValue(category, selectedObj, v, idx)}</td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -477,11 +510,16 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
                       onContextMenu={e => handleContextMenu(e, selectedVar)}
                       data-testid={`th-${selectedVar}`}>
                       <span className="inline-flex items-center gap-1">
-                        {varLabels[selectedVar] || selectedVar}
+                        {varLabels[selectedVar] || selectedVar}{cmpActive ? ' (SWMM5)' : ''}
                         <ProvenanceBadge varKey={selectedVar} scope={categoryToScope(category)} />
                       </span>
                       {sortCol === selectedVar && <span className="ml-1 text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
                     </th>
+                    {cmpActive && (
+                      <th className="text-right px-2 py-1.5 border-b border-[#d0d0d8] font-semibold text-[#1a7a6a]" data-testid={`th-cmp-${selectedVar}`}>
+                        {varLabels[selectedVar] || selectedVar} (SWMM6)
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -490,6 +528,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
                       onContextMenu={e => handleContextMenu(e)}>
                       <td className="px-2 py-1 border-b border-[#f0f0f4] font-mono">{id}</td>
                       <td className="text-right px-2 py-1 border-b border-[#f0f0f4] font-mono">{getResultValue(results, category, id, selectedVar, timeStep)}</td>
+                      {cmpActive && <td className="text-right px-2 py-1 border-b border-[#f0f0f4] font-mono text-[#1a7a6a]">{getCmpValue(category, id, selectedVar, timeStep)}</td>}
                     </tr>
                   ))}
                 </tbody>

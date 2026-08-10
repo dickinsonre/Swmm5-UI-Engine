@@ -166,12 +166,14 @@ export default function SwmmUI() {
   const [simStatus, setSimStatus] = useState<'none' | 'running' | 'current' | 'outdated'>('none');
   const [simProgress, setSimProgress] = useState(0);
   const [simProgressMsg, setSimProgressMsg] = useState('');
-  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6'>('mock');
+  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'both56'>('mock');
   const [localAvailable, setLocalAvailable] = useState(false);
   const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [wasmAvailable, setWasmAvailable] = useState(false);
   const [wasm6Available, setWasm6Available] = useState(false);
   const [results, setResults] = useState<SimulationResults | null>(null);
+  // Secondary result set from a "Run 5+6" comparison run (SWMM6), overlaid on graphs/tables.
+  const [compareResults, setCompareResults] = useState<SimulationResults | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
@@ -412,6 +414,7 @@ export default function SwmmUI() {
       setProject(parsed);
       setFileName(snap.fileName);
       setResults(null);
+      setCompareResults(null);
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -527,6 +530,7 @@ export default function SwmmUI() {
       setFileName(file.name);
       setIsModified(false);
       setResults(null);
+      setCompareResults(null);
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -591,6 +595,7 @@ export default function SwmmUI() {
       setFileName(name);
       setIsModified(false);
       setResults(null);
+      setCompareResults(null);
       setSimStatus('none');
       setTimeStep(0);
       setSelectedObj(null);
@@ -630,6 +635,7 @@ export default function SwmmUI() {
       setProject(parsed);
       setFileName(item.name);
       setResults(null);
+      setCompareResults(null);
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -655,6 +661,7 @@ export default function SwmmUI() {
     setFileName('Untitled.inp');
     setIsModified(false);
     setResults(null);
+    setCompareResults(null);
     setReportContent(null);
     setSimStatus('none');
     setTimeStep(0);
@@ -674,6 +681,7 @@ export default function SwmmUI() {
       setFileName(sampleName);
       setIsModified(false);
       setResults(null);
+      setCompareResults(null);
       setReportContent(null);
       setSimStatus('none');
       setTimeStep(0);
@@ -851,7 +859,7 @@ export default function SwmmUI() {
     // Revalidate SWMM6 artifact availability just before running — a stale
     // engineMode (artifacts removed after page load) should fail loudly with
     // guidance rather than a confusing engine error mid-run.
-    if (engineMode === 'wasm6') {
+    if (engineMode === 'wasm6' || engineMode === 'both56') {
       const stillAvailable = await checkWasm6Engine();
       if (!stillAvailable) {
         setWasm6Available(false);
@@ -868,10 +876,72 @@ export default function SwmmUI() {
     setSimStatus('running');
     setSimProgress(0);
     setSimProgressMsg('Initializing...');
+    // Any new run invalidates a previous comparison overlay immediately —
+    // otherwise stale SWMM6 data from an older (possibly edited) model would
+    // remain paired with whatever results end up on screen.
+    setCompareResults(null);
     const runStartedAt = Date.now();
 
     const abortCtrl = new AbortController();
     simAbortRef.current = abortCtrl;
+
+    // "Run 5+6" comparison: run SWMM5 (WASM) then SWMM6 (WASM) back-to-back,
+    // keep both result sets so graphs/tables can overlay them.
+    if (engineMode === 'both56') {
+      try {
+        const engine5 = createWasmEngine();
+        const res5 = await engine5.run(project, (pct, msg) => {
+          if (abortCtrl.signal.aborted) return;
+          setSimProgress(Math.round(pct / 2));
+          setSimProgressMsg(`SWMM5: ${msg}`);
+        });
+        if (abortCtrl.signal.aborted) return;
+        const engine6 = createWasm6Engine();
+        const res6 = await engine6.run(project, (pct, msg) => {
+          if (abortCtrl.signal.aborted) return;
+          setSimProgress(50 + Math.round(pct / 2));
+          setSimProgressMsg(`SWMM6: ${msg}`);
+        });
+        if (abortCtrl.signal.aborted) return;
+        setSimProgress(100);
+        setSimProgressMsg('Complete');
+        setRunProvenance(buildProvenance(res5, 'wasm', runStartedAt, Date.now()));
+        setResults(res5);
+        // Only enable the overlay when BOTH runs produced real time series —
+        // a summary-only run has no time steps to overlay and would render
+        // misleading zero/blank SWMM6 values next to real SWMM5 numbers.
+        const bothNative = res5.timeSteps.length > 0 && res6.timeSteps.length > 0
+          && res5.fidelity !== 'report-summary' && res6.fidelity !== 'report-summary';
+        setCompareResults(bothNative ? res6 : null);
+        setReportContent(res5.reportContent || null);
+        setSimStatus('current');
+        setTimeStep(0);
+        toast({
+          title: 'Comparison Run Complete',
+          description: bothNative
+            ? `SWMM5: ${res5.timeSteps.length} steps · SWMM6: ${res6.timeSteps.length} steps. Graphs and tables now overlay both engines.`
+            : 'At least one engine produced summary-only results, so the time-series overlay is unavailable. SWMM5 results are shown; check each engine\u2019s report for summary comparison.',
+          variant: bothNative ? undefined : 'destructive',
+        });
+      } catch (e: any) {
+        if (e.reportContent != null && e.reportContent !== '') {
+          setReportContent(e.reportContent);
+          setShowReportDialog(true);
+        }
+        if (abortCtrl.signal.aborted) {
+          setSimStatus('none');
+          setSimProgressMsg('');
+          toast({ title: 'Simulation Stopped', description: 'Simulation was cancelled by user' });
+          return;
+        }
+        setSimStatus('none');
+        setSimProgressMsg('');
+        toast({ title: 'Comparison Run Error', description: e.message, variant: 'destructive' });
+      } finally {
+        simAbortRef.current = null;
+      }
+      return;
+    }
 
     const engine: SwmmEngine = engineMode === 'local' ? createLocalEngine() : engineMode === 'wasm' ? createWasmEngine() : engineMode === 'wasm6' ? createWasm6Engine() : engineMode === 'remote' ? createRemoteEngine() : createMockEngine();
 
@@ -895,6 +965,7 @@ export default function SwmmUI() {
       setSimProgressMsg('Complete');
       setRunProvenance(buildProvenance(res, engine.mode, runStartedAt, Date.now()));
       setResults(res);
+      setCompareResults(null);
       setReportContent(res.reportContent || null);
       if (res.reportContent) {
         setShowReportDialog(true);
@@ -1282,6 +1353,7 @@ export default function SwmmUI() {
     setProject(result.project);
     setDiscretizationResult(result);
     setResults(null);
+    setCompareResults(null);
     setReportContent(null);
     setSimStatus('none');
     setTimeStep(0);
@@ -2252,25 +2324,26 @@ export default function SwmmUI() {
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <button
               onClick={() => {
-                const modes: Array<'local' | 'wasm' | 'wasm6' | 'remote' | 'mock'> = [];
+                const modes: Array<'local' | 'wasm' | 'wasm6' | 'both56' | 'remote' | 'mock'> = [];
                 if (localAvailable) modes.push('local');
                 if (wasmAvailable) modes.push('wasm');
                 if (wasm6Available) modes.push('wasm6');
+                if (wasmAvailable && wasm6Available) modes.push('both56');
                 if (remoteAvailable) modes.push('remote');
                 modes.push('mock');
                 const idx = modes.indexOf(engineMode);
                 setEngineMode(modes[(idx + 1) % modes.length]);
               }}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors border ${
-                engineMode === 'local' || engineMode === 'remote' || engineMode === 'wasm' || engineMode === 'wasm6'
+                engineMode === 'local' || engineMode === 'remote' || engineMode === 'wasm' || engineMode === 'wasm6' || engineMode === 'both56'
                   ? 'bg-[rgba(44,110,181,0.12)] border-[#2c6eb5] text-[#2c6eb5]'
                   : 'bg-transparent border-[#d0d0d8] text-[#6b6b7b] hover:text-[#2a2a3e]'
               } cursor-pointer`}
-              title="Cycle engine mode: Local → WASM 5 → WASM 6 → Remote → Mock"
+              title="Cycle engine mode: Local → WASM 5 → WASM 6 → Compare 5+6 → Remote → Mock"
               data-testid="btn-engine-toggle"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
-              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6.0-a3' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
+              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
+              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6.0-a3' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
             </button>
           </div>
         )}
@@ -2931,9 +3004,9 @@ export default function SwmmUI() {
           />
         )}
         <StatusItem
-          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6.0-a3' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
-          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
-          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
+          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6.0-a3' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
+          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'both56' ? '#1a9e8a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
+          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
         />
         <div className="flex-1" />
         <span className="text-[8px] sm:text-[9px] font-mono text-[#6b6b7b] flex items-center gap-1 sm:gap-1.5" data-testid="status-counts">
@@ -3832,7 +3905,7 @@ export default function SwmmUI() {
           )}
           {results && (reportSummaryOnly
             ? <ReportSummaryNotice feature="Time series graphing" />
-            : <TimeSeriesPlotContent project={project} results={results} selectedObj={selectedObj} timeStep={timeStep} calibrationData={calibrationData} />)}
+            : <TimeSeriesPlotContent project={project} results={results} compareResults={compareResults} selectedObj={selectedObj} timeStep={timeStep} calibrationData={calibrationData} />)}
         </DialogContent>
       </Dialog>
 
@@ -4257,6 +4330,7 @@ export default function SwmmUI() {
         onOpenChange={v => !v && setOpenDialog(null)}
         project={project}
         results={results}
+        compareResults={compareResults}
         mode={tableViewMode}
         onModeChange={setTableViewMode}
         timeStep={timeStep}
@@ -5179,13 +5253,16 @@ function StatisticsReportContent({ project, results, selectedObj }: {
   );
 }
 
-function TimeSeriesPlotContent({ project, results, selectedObj, timeStep, calibrationData = [] }: {
+function TimeSeriesPlotContent({ project, results, compareResults = null, selectedObj, timeStep, calibrationData = [] }: {
   project: SwmmProject;
   results: SimulationResults;
+  compareResults?: SimulationResults | null;
   selectedObj: SelectedObject;
   timeStep: number;
   calibrationData?: CalibrationDataSet[];
 }) {
+  // Overlay is only meaningful when the compare run has real time steps.
+  const overlayActive = !!(compareResults && compareResults.timeSteps && compareResults.timeSteps.length > 0);
   const nodeIds = useMemo(() => [
     ...project.junctions.map(j => j.id),
     ...project.outfalls.map(o => o.id),
@@ -5303,26 +5380,42 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep, calibr
   const chartData = useMemo(() => {
     if (activeVars.length === 0) return [];
     if (!isSystem && elementIds.length === 0) return [];
+    // Align the SWMM6 compare run to the primary run's timeline: match by
+    // dateTime string first. Same-index fallback is only safe when both runs
+    // have identical step counts (same reporting interval/start); otherwise a
+    // missing timestamp yields a gap rather than a silently misaligned value.
+    const cmpByTime = new Map<string, (typeof results.timeSteps)[number]>();
+    const sameLength = overlayActive && compareResults ? compareResults.timeSteps.length === results.timeSteps.length : false;
+    if (overlayActive && compareResults) {
+      for (const cts of compareResults.timeSteps) cmpByTime.set(cts.dateTime, cts);
+    }
+    const readVal = (ts: (typeof results.timeSteps)[number], elId: string, v: string): number => {
+      if (category === 'node') {
+        const nr = ts.nodes[elId];
+        return nr ? ((nr as unknown as Record<string, number>)[v] ?? nr.extended?.[v] ?? 0) : 0;
+      } else if (category === 'link') {
+        const lr = ts.links[elId];
+        return lr ? ((lr as unknown as Record<string, number>)[v] ?? lr.extended?.[v] ?? 0) : 0;
+      }
+      const sr = ts.subcatchments[elId];
+      return sr ? ((sr as unknown as Record<string, number>)[v] ?? sr.extended?.[v] ?? 0) : 0;
+    };
     return results.timeSteps.map((ts, i) => {
       const row: Record<string, number | string> = { time: ts.dateTime, idx: i };
+      const cts = overlayActive && compareResults
+        ? (cmpByTime.get(ts.dateTime) ?? (sameLength ? compareResults.timeSteps[i] : undefined))
+        : undefined;
       if (isSystem) {
         for (const v of activeVars) {
           row[v] = ts.system?.extended?.[v] ?? 0;
+          if (cts) row[`${v}__cmp`] = cts.system?.extended?.[v] ?? 0;
         }
       } else {
         for (const elId of elementIds) {
           for (const v of activeVars) {
             const key = elementIds.length > 1 ? `${elId}_${v}` : v;
-            if (category === 'node') {
-              const nr = ts.nodes[elId];
-              row[key] = nr ? ((nr as unknown as Record<string, number>)[v] ?? nr.extended?.[v] ?? 0) : 0;
-            } else if (category === 'link') {
-              const lr = ts.links[elId];
-              row[key] = lr ? ((lr as unknown as Record<string, number>)[v] ?? lr.extended?.[v] ?? 0) : 0;
-            } else {
-              const sr = ts.subcatchments[elId];
-              row[key] = sr ? ((sr as unknown as Record<string, number>)[v] ?? sr.extended?.[v] ?? 0) : 0;
-            }
+            row[key] = readVal(ts, elId, v);
+            if (cts) row[`${key}__cmp`] = readVal(cts, elId, v);
           }
         }
       }
@@ -5330,16 +5423,25 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep, calibr
       if (obs) Object.assign(row, obs);
       return row;
     });
-  }, [results, elementIds, activeVars, category, isSystem, obsOverlay]);
+  }, [results, compareResults, overlayActive, elementIds, activeVars, category, isSystem, obsOverlay]);
 
   const lineKeys = useMemo(() => {
-    const keys: { key: string; label: string; color: string }[] = [];
+    const keys: { key: string; label: string; color: string; dashed?: boolean }[] = [];
     let ci = 0;
+    const push = (key: string, label: string) => {
+      const color = TS_COLORS[ci % TS_COLORS.length];
+      if (overlayActive) {
+        keys.push({ key, label: `${label} (SWMM5)`, color });
+        keys.push({ key: `${key}__cmp`, label: `${label} (SWMM6)`, color, dashed: true });
+      } else {
+        keys.push({ key, label, color });
+      }
+      ci++;
+    };
     if (isSystem) {
       for (const v of activeVars) {
         const varDef = allVarDefs.find(vd => vd.key === v);
-        keys.push({ key: v, label: varDef?.label || v, color: TS_COLORS[ci % TS_COLORS.length] });
-        ci++;
+        push(v, varDef?.label || v);
       }
     } else {
       for (const elId of elementIds) {
@@ -5347,13 +5449,12 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep, calibr
           const varDef = allVarDefs.find(vd => vd.key === v);
           const key = elementIds.length > 1 ? `${elId}_${v}` : v;
           const label = elementIds.length > 1 ? `${elId} — ${varDef?.label || v}` : (varDef?.label || v);
-          keys.push({ key, label, color: TS_COLORS[ci % TS_COLORS.length] });
-          ci++;
+          push(key, label);
         }
       }
     }
     return keys;
-  }, [elementIds, activeVars, allVarDefs, isSystem]);
+  }, [elementIds, activeVars, allVarDefs, isSystem, overlayActive]);
 
   const peakValues = useMemo(() => {
     if (chartData.length === 0 || lineKeys.length === 0) return {};
@@ -5530,6 +5631,8 @@ function TimeSeriesPlotContent({ project, results, selectedObj, timeStep, calibr
                       name={lk.label}
                       stroke={lk.color}
                       strokeWidth={1.5}
+                      strokeDasharray={lk.dashed ? '6 3' : undefined}
+                      strokeOpacity={lk.dashed ? 0.85 : 1}
                       dot={false}
                       activeDot={{ r: 3, strokeWidth: 0 }}
                     />
