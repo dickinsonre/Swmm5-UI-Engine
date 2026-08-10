@@ -422,6 +422,7 @@ export default function SwmmUI() {
     try {
       const parsed = parseInpFile(snap.inp);
       justLoadedRef.current = true;
+      auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(snap.fileName);
       setResults(null);
@@ -538,6 +539,7 @@ export default function SwmmUI() {
       const parsed = parseInpFile(text);
       notifyParseWarnings(parsed);
       justLoadedRef.current = true;
+      auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(file.name);
       setIsModified(false);
@@ -604,6 +606,7 @@ export default function SwmmUI() {
       notifyParseWarnings(parsed);
       const name = fetchUrl.split('/').pop() || 'github_file.inp';
       justLoadedRef.current = true;
+      auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(name);
       setIsModified(false);
@@ -646,6 +649,8 @@ export default function SwmmUI() {
       const text = await resp.text();
       const parsed = parseInpFile(text);
       notifyParseWarnings(parsed);
+      justLoadedRef.current = true;
+      auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(item.name);
       setResults(null);
@@ -671,6 +676,7 @@ export default function SwmmUI() {
 
   const handleNewProject = useCallback(() => {
     justLoadedRef.current = true;
+    auditWarnSuppressedRef.current = false;
     setProject(createEmptyProject());
     setFileName('Untitled.inp');
     setIsModified(false);
@@ -692,6 +698,7 @@ export default function SwmmUI() {
       const parsed = parseInpFile(text);
       notifyParseWarnings(parsed);
       justLoadedRef.current = true;
+      auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(sampleName);
       setIsModified(false);
