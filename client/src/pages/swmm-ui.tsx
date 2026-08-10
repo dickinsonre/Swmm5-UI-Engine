@@ -4748,6 +4748,10 @@ const CALIB_COLORS = [
 ];
 
 const TS_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
+// Contrasting palette for the SWMM6 overlay line paired with each TS_COLORS entry
+// (blue→orange, red→teal, green→magenta, ...), so the two engines are
+// distinguishable by color as well as by dash pattern.
+const TS_COLORS_CMP = ['#f59e0b', '#0d9488', '#c026d3', '#2563eb', '#16a34a', '#e11d48', '#65a30d', '#7c3aed'];
 const CHART_NODE_VARS: { key: string; label: string; unit: string }[] = [
   { key: 'depth', label: 'Depth', unit: 'ft' },
   { key: 'head', label: 'Head', unit: 'ft' },
@@ -5491,7 +5495,7 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
       const color = TS_COLORS[ci % TS_COLORS.length];
       if (overlayActive) {
         keys.push({ key, label: `${label} (SWMM5)`, color });
-        keys.push({ key: `${key}__cmp`, label: `${label} (SWMM6)`, color, dashed: true });
+        keys.push({ key: `${key}__cmp`, label: `${label} (SWMM6)`, color: TS_COLORS_CMP[ci % TS_COLORS_CMP.length], dashed: true });
       } else {
         keys.push({ key, label, color });
       }
