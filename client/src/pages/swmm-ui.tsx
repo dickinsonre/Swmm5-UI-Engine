@@ -3863,11 +3863,24 @@ export default function SwmmUI() {
                 key={section}
                 className="px-2 py-0.5 text-[9px] rounded border border-[#d0d0d8] hover:bg-[#e8f0fb] text-[#4a4a5a]"
                 onClick={() => {
+                  // Section names exist in the .rpt, not the generated .inp — flip back to the report text view.
+                  if (reportViewMode === 'inp') setReportViewMode('text');
                   setReportSearchTerm(section);
                   setTimeout(() => {
-                    const mark = document.querySelector('[data-testid="report-content"] mark');
-                    if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }, 50);
+                    // Single view: scroll the report pane. Split view: scroll each engine pane to its own first match.
+                    const scrollToMark = (container: Element) => {
+                      const mark = container.querySelector('mark');
+                      if (!mark) return;
+                      const c = container as HTMLElement;
+                      const cRect = c.getBoundingClientRect();
+                      const mRect = mark.getBoundingClientRect();
+                      c.scrollTop += mRect.top - cRect.top - c.clientHeight / 2;
+                    };
+                    // In the single view the scrollable element is the wrapper div, so use scrollIntoView.
+                    const singleMark = document.querySelector('[data-testid="report-content"] mark');
+                    if (singleMark) singleMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    document.querySelectorAll('[data-testid^="report-split-pre-"]').forEach(scrollToMark);
+                  }, 80);
                 }}
                 data-testid={`report-jump-${section.toLowerCase().replace(/\s/g, '-')}`}
               >
@@ -3883,7 +3896,7 @@ export default function SwmmUI() {
               ] as const).map(([label, content, color]) => (
                 <div key={label} className="flex flex-col min-h-0 overflow-hidden">
                   <div className="text-[10px] font-bold px-2 py-1 rounded-t border border-b-0" style={{ color: '#ffffff', backgroundColor: color, borderColor: color }}>{label}</div>
-                  <pre className="flex-1 text-[10px] leading-[1.4] p-2 rounded-b border bg-[#f8f8fa] whitespace-pre overflow-auto font-mono" style={{ borderColor: color }}>
+                  <pre className="flex-1 text-[10px] leading-[1.4] p-2 rounded-b border bg-[#f8f8fa] whitespace-pre overflow-auto font-mono" style={{ borderColor: color }} data-testid={`report-split-pre-${label === 'SWMM 5.2.4' ? '5' : '6'}`}>
                     {(() => {
                       const text = content || 'No report available.';
                       if (!reportSearchTerm) return text;
