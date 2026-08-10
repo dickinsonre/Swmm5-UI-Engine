@@ -11,6 +11,7 @@ import {
   BATCH_ENGINE_LABELS,
 } from '@/lib/batch-compare';
 import type { BatchEngineId, BatchFileResult, EngineRun, ComparisonSummary, FileComparison } from '@/lib/batch-compare';
+import EngineScatterCompare from '@/components/swmm/EngineScatterCompare';
 
 interface Props {
   open: boolean;
@@ -372,6 +373,12 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
                   </div>
                 ))}
               </div>
+              {showVerdicts && (
+                <EngineScatterCompare
+                  comparison={comparison}
+                  getReport={key => reportCacheRef.current.get(key)}
+                />
+              )}
             </div>
           )}
         </div>
