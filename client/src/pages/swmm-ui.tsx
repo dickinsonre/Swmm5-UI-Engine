@@ -60,7 +60,8 @@ import {
   Layers,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, BarChart, Bar } from 'recharts';
+import { createPortal } from 'react-dom';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ScatterChart, Scatter, ReferenceLine, ReferenceArea, BarChart, Bar } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -5410,6 +5411,10 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
   const [searchText, setSearchText] = useState('');
   const [showCompare, setShowCompare] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState(false);
+  // Zoom: [startIdx, endIdx] into chartData; null = full extent.
+  const [zoomRange, setZoomRange] = useState<[number, number] | null>(null);
+  const [dragSel, setDragSel] = useState<{ start: number; end: number } | null>(null);
 
   const toggleGroup = (label: string) => {
     setCollapsedGroups(prev => {
@@ -5620,6 +5625,66 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
     return stats;
   }, [chartData, lineKeys]);
 
+  // Clamp/reset zoom when the underlying data shrinks (element/var change).
+  useEffect(() => { setZoomRange(null); setDragSel(null); }, [elementIds, activeVars, category]);
+
+  const displayData = useMemo(() => {
+    if (!zoomRange) return chartData;
+    const [a, b] = zoomRange;
+    return chartData.slice(Math.max(0, a), Math.min(chartData.length, b + 1));
+  }, [chartData, zoomRange]);
+
+  // Goodness-of-fit indices for SWMM6 vs the SWMM5 baseline (per series pair).
+  const fitStats = useMemo(() => {
+    if (!overlayActive) return {};
+    const out: Record<string, { nse: number; r2: number; pbias: number; n: number }> = {};
+    for (const lk of lineKeys) {
+      if (lk.key.endsWith('__cmp')) continue;
+      const cmpKey = `${lk.key}__cmp`;
+      if (!lineKeys.some(k => k.key === cmpKey)) continue;
+      const obs: number[] = [], sim: number[] = [];
+      for (const row of chartData) {
+        const o = row[lk.key], s = row[cmpKey];
+        if (typeof o === 'number' && isFinite(o) && typeof s === 'number' && isFinite(s)) { obs.push(o); sim.push(s); }
+      }
+      const n = obs.length;
+      if (n < 1) continue;
+      const meanO = obs.reduce((a, b) => a + b, 0) / n;
+      const meanS = sim.reduce((a, b) => a + b, 0) / n;
+      let ssErr = 0, ssTot = 0, sumO = 0, sumDiff = 0, covOS = 0, varO = 0, varS = 0;
+      for (let i = 0; i < n; i++) {
+        const dO = obs[i] - meanO, dS = sim[i] - meanS;
+        ssErr += (sim[i] - obs[i]) ** 2;
+        ssTot += dO * dO;
+        sumO += obs[i];
+        sumDiff += sim[i] - obs[i];
+        covOS += dO * dS; varO += dO * dO; varS += dS * dS;
+      }
+      // n = 1 or constant series leave the variance denominators at 0 → '—'.
+      const nse = ssTot > 0 ? 1 - ssErr / ssTot : NaN;
+      const r2 = varO > 0 && varS > 0 ? (covOS * covOS) / (varO * varS) : NaN;
+      const pbias = sumO !== 0 ? (sumDiff / sumO) * 100 : NaN;
+      out[lk.key] = { nse, r2, pbias, n };
+    }
+    return out;
+  }, [chartData, lineKeys, overlayActive]);
+
+  // Drag-to-zoom: recharts mouse events carry activeTooltipIndex into displayData.
+  const zoomOffset = zoomRange ? Math.max(0, zoomRange[0]) : 0;
+  const handleChartMouseDown = (e: any) => {
+    if (e && typeof e.activeTooltipIndex === 'number') setDragSel({ start: e.activeTooltipIndex, end: e.activeTooltipIndex });
+  };
+  const handleChartMouseMove = (e: any) => {
+    if (dragSel && e && typeof e.activeTooltipIndex === 'number') setDragSel({ start: dragSel.start, end: e.activeTooltipIndex });
+  };
+  const handleChartMouseUp = () => {
+    if (dragSel) {
+      const a = Math.min(dragSel.start, dragSel.end), b = Math.max(dragSel.start, dragSel.end);
+      if (b - a >= 2) setZoomRange([zoomOffset + a, zoomOffset + b]);
+      setDragSel(null);
+    }
+  };
+
   const handleCategoryChange = (cat: TsCat) => {
     setCategory(cat);
     setElementIds([]);
@@ -5648,8 +5713,17 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
     ? 'System'
     : (elementIds.length === 1 ? elementIds[0] : `${elementIds.length} elements`);
 
-  return (
-    <div className="flex gap-3" style={{ minHeight: 420 }} data-testid="time-series-content">
+  // The graph dialog's CSS transform traps position:fixed descendants, so the
+  // expanded view must portal to document.body to actually cover the screen.
+  const content = (
+    <div
+      className={expanded ? 'flex gap-3 fixed inset-0 z-[100] bg-white p-4 overflow-auto' : 'flex gap-3'}
+      // Radix modal dialogs set pointer-events:none on <body>; the portaled
+      // fullscreen view must re-enable them or every click falls through to
+      // the dialog overlay underneath.
+      style={expanded ? { pointerEvents: 'auto' } : { minHeight: 420 }}
+      data-testid="time-series-content"
+    >
       <div className="w-48 shrink-0 flex flex-col gap-2 border-r border-[#d0d0d8] pr-3">
         <div className="flex gap-1">
           {(['node', 'link', 'subcatch', 'system'] as const).map(cat => (
@@ -5742,23 +5816,53 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
                 {chartTitle}
                 {activeVars.length === 1 && ` — ${allVarDefs.find(v => v.key === activeVars[0])?.label}`}
               </div>
-              {Object.keys(peakValues).length > 0 && (
-                <div className="flex gap-3">
-                  {lineKeys.map(lk => {
-                    const p = peakValues[lk.key];
-                    return p ? (
-                      <span key={lk.key} className="text-[9px] text-[#6b6b7b]">
-                        <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: lk.color }} />
-                        Peak: <span className="font-mono font-medium text-[#2a2a3e]">{p.max.toFixed(2)}</span> at {p.time}
-                      </span>
-                    ) : null;
-                  })}
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {Object.keys(peakValues).length > 0 && (
+                  <div className="flex gap-3">
+                    {lineKeys.map(lk => {
+                      const p = peakValues[lk.key];
+                      return p ? (
+                        <span key={lk.key} className="text-[9px] text-[#6b6b7b]">
+                          <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: lk.color }} />
+                          Peak: <span className="font-mono font-medium text-[#2a2a3e]">{p.max.toFixed(2)}</span> at {p.time}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+                {zoomRange && (
+                  <button
+                    onClick={() => setZoomRange(null)}
+                    className="text-[9px] px-2 py-0.5 rounded bg-[#e8edf2] text-[#2c6eb5] font-medium hover:bg-[#d0d8e4]"
+                    data-testid="btn-ts-reset-zoom"
+                  >
+                    Reset Zoom ({displayData.length} of {chartData.length} steps)
+                  </button>
+                )}
+                <button
+                  onClick={() => setExpanded(!expanded)}
+                  className="text-[9px] px-2 py-0.5 rounded bg-[#e8edf2] text-[#4a4a5a] font-medium hover:bg-[#d0d8e4]"
+                  data-testid="btn-ts-expand"
+                  title={expanded ? 'Return to dialog view' : 'Expand chart to full screen'}
+                >
+                  {expanded ? '✕ Close Full Screen' : '⛶ Expand'}
+                </button>
+              </div>
             </div>
-            <div className="flex-1" style={{ minHeight: 300 }}>
+            {!zoomRange && (
+              <div className="text-[8px] text-[#9090a0] mb-1">Drag across the chart to zoom into a time window</div>
+            )}
+            <div className="flex-1" style={{ minHeight: expanded ? 450 : 300 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                <LineChart
+                  data={displayData}
+                  margin={{ top: 5, right: 20, bottom: 5, left: 10 }}
+                  onMouseDown={handleChartMouseDown}
+                  onMouseMove={handleChartMouseMove}
+                  onMouseUp={handleChartMouseUp}
+                  onMouseLeave={() => setDragSel(null)}
+                  style={{ userSelect: 'none', cursor: 'crosshair' }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e8" />
                   <XAxis
                     dataKey="time"
@@ -5806,6 +5910,15 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
                       stroke="transparent"
                     />
                   )}
+                  {dragSel && dragSel.start !== dragSel.end && displayData[dragSel.start] && displayData[dragSel.end] && (
+                    <ReferenceArea
+                      x1={displayData[Math.min(dragSel.start, dragSel.end)].time as string}
+                      x2={displayData[Math.max(dragSel.start, dragSel.end)].time as string}
+                      fill="#2c6eb5"
+                      fillOpacity={0.15}
+                      strokeOpacity={0}
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -5819,11 +5932,11 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
                 <table className="w-full text-[9px] text-[#4a4a5a]">
                   <thead>
                     <tr className="bg-[#f5f5f8] text-[#6b6b7b]">
-                      <th className="text-left px-2 py-1 font-semibold">Series</th>
+                      <th className="text-left px-2 py-1 font-semibold">Series{zoomRange ? ' (stats over full period)' : ''}</th>
                       <th className="text-right px-2 py-1 font-semibold">Peak</th>
                       <th className="text-left px-2 py-1 font-semibold">Peak Time</th>
                       <th className="text-right px-2 py-1 font-semibold">Min</th>
-                      <th className="text-right px-2 py-1 font-semibold">Volume (∫·dt)</th>
+                      <th className="text-right px-2 py-1 font-semibold">Volume (∫·dt){zoomRange ? ' · full period' : ''}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5851,11 +5964,45 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
                 </table>
               </div>
             )}
+            {Object.keys(fitStats).length > 0 && (
+              <div className="mt-1 border border-[#e0e0e8] rounded overflow-hidden" data-testid="ts-fit-table">
+                <table className="w-full text-[9px] text-[#4a4a5a]">
+                  <thead>
+                    <tr className="bg-[#f5f5f8] text-[#6b6b7b]">
+                      <th className="text-left px-2 py-1 font-semibold">SWMM6 vs SWMM5 fit</th>
+                      <th className="text-right px-2 py-1 font-semibold" title="Nash–Sutcliffe Efficiency: 1 = identical, 0 = no better than the SWMM5 mean">NSE</th>
+                      <th className="text-right px-2 py-1 font-semibold" title="Coefficient of determination">R²</th>
+                      <th className="text-right px-2 py-1 font-semibold" title="Percent bias of SWMM6 relative to SWMM5 (+ = SWMM6 higher)">PBIAS %</th>
+                      <th className="text-right px-2 py-1 font-semibold" title="Number of paired time steps compared">n</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineKeys.filter(lk => fitStats[lk.key]).map(lk => {
+                      const f = fitStats[lk.key];
+                      const fmtIdx = (v: number, digits = 4) => isFinite(v) ? v.toFixed(digits) : '—';
+                      return (
+                        <tr key={lk.key} className="border-t border-[#ececf2]" data-testid={`ts-fit-row-${lk.key}`}>
+                          <td className="px-2 py-1">
+                            <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ backgroundColor: lk.color }} />
+                            {lk.label.replace(/ \(SWMM5\)$/, '')}
+                          </td>
+                          <td className={`px-2 py-1 text-right font-mono font-medium ${f.nse >= 0.99 ? 'text-[#1a7f37]' : f.nse >= 0.5 ? 'text-[#2a2a3e]' : 'text-[#b04a00]'}`}>{fmtIdx(f.nse)}</td>
+                          <td className="px-2 py-1 text-right font-mono">{fmtIdx(f.r2)}</td>
+                          <td className="px-2 py-1 text-right font-mono">{isFinite(f.pbias) ? `${f.pbias >= 0 ? '+' : ''}${f.pbias.toFixed(2)}` : '—'}</td>
+                          <td className="px-2 py-1 text-right font-mono">{f.n}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </div>
     </div>
   );
+  return expanded ? createPortal(content, document.body) : content;
 }
 
 function CalibrationContent({ project, results, calibrationData, onLoadData, onRemoveData, onUpdateData }: {
