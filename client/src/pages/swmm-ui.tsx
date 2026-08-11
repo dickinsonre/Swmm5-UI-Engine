@@ -47,6 +47,8 @@ import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, d
 import { computeIntegrityInfo, IntegrityChip, IntegrityReportDialog, RecoveryDialog } from '@/components/swmm/IntegrityStatus';
 import { buildModelHealthReport } from '@/lib/model-health';
 import { saveSnapshot, getRecoverableSnapshot, setRecoveryBaseline, clearSnapshots, type AutosaveSnapshot } from '@/lib/autosave';
+import { EngineHealthStrip, type HealthHighlight } from '@/components/swmm/EngineHealthPanel';
+import EngineInspectorDialog from '@/components/swmm/EngineInspectorDialog';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -191,6 +193,11 @@ export default function SwmmUI() {
   const [animSpeed, setAnimSpeed] = useState(150);
   const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'roundtripAudit' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | 'diagramGallery' | 'diffTool' | 'batchRunner' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
+  // Engine Health dashboard: map highlight driven by clicking a metric card,
+  // plus the Engine Inspector (calculation microscope) dialog.
+  const [healthHighlight, setHealthHighlight] = useState<HealthHighlight | null>(null);
+  const [healthHighlightKey, setHealthHighlightKey] = useState<string | null>(null);
+  const [showEngineInspector, setShowEngineInspector] = useState(false);
   const [detailsView, setDetailsView] = useState<'grid' | 'inp'>('grid');
   const [findSearchTerm, setFindSearchTerm] = useState('');
   const [dataEditorSection, setDataEditorSection] = useState<string>('');
@@ -539,6 +546,12 @@ export default function SwmmUI() {
   const blockReportSummaryTool = useCallback((feature: string) => {
     toast({ title: `${feature} Unavailable`, description: REPORT_SUMMARY_MESSAGE });
   }, [toast]);
+
+  // Drop any Engine Health map highlight when a new result set arrives.
+  useEffect(() => {
+    setHealthHighlight(null);
+    setHealthHighlightKey(null);
+  }, [results]);
 
   const queryMatchIds = useMemo(() => {
     if (!mapQuery.active) return null;
@@ -2223,7 +2236,7 @@ export default function SwmmUI() {
               groups={getNodeCategories().filter(g => expertMode || g.label === 'Standard (EPA)').map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-nodes" />
             <ThemeCombo label="Links" value={linkTheme} onChange={setLinkTheme}
-              options={[['cfl', 'CFL (Courant #)'] as [string, string], ...LINK_INPUT_VARS.map(v => [v.key, v.name] as [string, string])]}
+              options={[['cfl', 'CFL (Courant #)'] as [string, string], ['flowClass', 'Flow Regime'] as [string, string], ...LINK_INPUT_VARS.map(v => [v.key, v.name] as [string, string])]}
               groups={getLinkCategories().filter(g => expertMode || g.label === 'Standard (EPA)').map(g => ({ label: g.label, items: g.vars.map(v => [v.key, v.name] as [string, string]) }))}
               testId="combo-links" />
             <button
@@ -2408,6 +2421,21 @@ export default function SwmmUI() {
         )}
       </div>
 
+      {results?.reportContent && !isMobile && (
+        <EngineHealthStrip
+          project={project}
+          results={results}
+          onHighlight={setHealthHighlight}
+          activeHighlightKey={healthHighlightKey}
+          setActiveHighlightKey={setHealthHighlightKey}
+          onShowRegime={() => {
+            setLinkTheme('flowClass');
+            toast({ title: 'Flow Regime Theme', description: 'Links are now colored by flow regime (Dry / Subcritical / Supercritical / Critical / Full). Use Animate to step through time.' });
+          }}
+          onOpenInspector={() => setShowEngineInspector(true)}
+        />
+      )}
+
       {showSamplesMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowSamplesMenu(false)} />
@@ -2590,8 +2618,8 @@ export default function SwmmUI() {
             layerVisibility={layerVisibility}
             interactionMode={interactionMode}
             preferences={preferences}
-            queryMatchIds={queryMatchIds}
-            queryObjectType={queryObjectType}
+            queryMatchIds={queryMatchIds ?? healthHighlight?.ids ?? null}
+            queryObjectType={queryObjectType ?? healthHighlight?.type ?? null}
             cflFlaggedIds={cflFlaggedIds}
             cflValues={cflValues}
             discretizedJunctionIds={discretizationResult?.newJunctionIds || null}
@@ -4456,6 +4484,18 @@ export default function SwmmUI() {
         onClose={() => setActiveSubDialog(null)}
         onProjectChange={(p) => { handleUpdateProject(() => p); setActiveSubDialog(null); }}
       />
+
+      {results && results.timeSteps.length > 0 && (
+        <EngineInspectorDialog
+          open={showEngineInspector}
+          onClose={() => setShowEngineInspector(false)}
+          project={project}
+          results={results}
+          timeStep={timeStep}
+          setTimeStep={setTimeStep}
+          initialLinkId={selectedObj && selectedObj.objType === 'conduit' ? selectedObj.id : null}
+        />
+      )}
 
       {contextMenu && (
         <div

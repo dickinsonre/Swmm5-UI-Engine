@@ -197,6 +197,23 @@ export function analyzeHydraulicConfig(project: SwmmProject): HealthFinding[] {
   const longLen = metric ? 600 : 2000;
   const nodes = collectNodes(project);
 
+  // Routing timestep (seconds) from [OPTIONS] — accepts "10", "10.0", or "H:MM:SS"
+  const parseRoutingStep = (): number | null => {
+    const raw = (project.options['ROUTING_STEP'] || '').trim();
+    if (!raw) return null;
+    if (raw.includes(':')) {
+      const parts = raw.split(':').map(Number);
+      if (parts.some(isNaN)) return null;
+      while (parts.length < 3) parts.unshift(0);
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    const v = parseFloat(raw);
+    return isFinite(v) && v > 0 ? v : null;
+  };
+  const routingStep = parseRoutingStep();
+  const isDynwave = (project.options['FLOW_ROUTING'] || project.options['ROUTING'] || '').toUpperCase().includes('DYN');
+  const refVel = metric ? 3 : 10; // typical wave speed used for the travel-time screen
+
   // Per-conduit checks
   const inflowsByNode = new Map<string, Conduit[]>();
   const outflowsByNode = new Map<string, Conduit[]>();
@@ -236,6 +253,16 @@ export function analyzeHydraulicConfig(project: SwmmProject): HealthFinding[] {
     }
     if (c.length > longLen) {
       add('info', `Conduit "${c.id}" is very long (${c.length.toFixed(0)} ${lu}) — consider subdividing for accuracy`, c.id, 'conduit', `${c.length.toFixed(0)} ${lu}`);
+    }
+
+    // Possible hydraulic instability: routing step longer than the conduit travel time
+    if (isDynwave && routingStep != null && c.length > 0) {
+      const travelTime = c.length / refVel;
+      if (routingStep > travelTime * 1.5 && c.length < (metric ? 60 : 200)) {
+        add('warning',
+          `Possible hydraulic instability: conduit "${c.id}" is ${c.length.toFixed(1)} ${lu} long (travel time ≈ ${travelTime.toFixed(1)} s at ${refVel} ${lu}/s) but the routing timestep is ${routingStep.toFixed(1)} s — the Courant condition will force sub-stepping or oscillation`,
+          c.id, 'conduit', `Δt ${routingStep.toFixed(1)} s vs ~${travelTime.toFixed(1)} s`);
+      }
     }
   }
 

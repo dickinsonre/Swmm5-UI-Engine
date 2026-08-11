@@ -174,7 +174,7 @@ export const LINK_VARS: SwmmVariable[] = [
   { key: 'targetSetting', name: 'Target Setting', units: '0\u20131', cat: 'LINK_PROPS', scope: 'link', maxVal: 1, labels: ['Off', '', '', '', 'Full'] },
   { key: 'timeOpen', name: 'Time Open', units: 'sec', cat: 'LINK_PROPS', scope: 'link', maxVal: 3600, labels: ['< 300', '300-900', '900-1800', '1800-3000', '> 3000'] },
 
-  { key: 'flowClass', name: 'Flow Classification', units: 'flag', cat: 'FLOW_CLASS', scope: 'link', maxVal: 10, labels: ['Dry', 'SubCrit', 'SupCrit', 'Critical', 'Full'] },
+  { key: 'flowClass', name: 'Flow Classification', units: 'flag', cat: 'FLOW_CLASS', scope: 'link', maxVal: 5, labels: ['Dry', 'SubCrit', 'SupCrit', 'Critical', 'Full'] },
 ];
 
 export const SUB_VARS: SwmmVariable[] = [
