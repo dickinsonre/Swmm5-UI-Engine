@@ -190,6 +190,35 @@ console.log('\n=== Discretization Tests ===\n');
   expectTrue('no exception thrown', !threw);
 }
 
+// 9. Regression: weir/orifice xsections and losses survive discretization
+{
+  console.log('\n9. Weir xsection + losses preserved through a split');
+  const project = makeProject([{
+    id: 'C1', fromNode: 'J1', toNode: 'J2', length: 300, diameter: 1.0,
+    fromCoord: [0, 0], toCoord: [300, 0],
+  }]);
+  // A weir with its own [XSECTIONS] entry (regulators dropped here => ERROR 143)
+  project.junctions.push({ id: 'J3', elevation: 0, maxDepth: 3, initDepth: 0, surDepth: 0, aponded: 0 });
+  project.weirs.push({ id: 'W1', fromNode: 'J2', toNode: 'J3', type: 'TRANSVERSE', crestHeight: 1, cd: 3.33, gated: 'NO', ec: 0, cd2: 0, surcharge: 'YES' });
+  project.xsections['W1'] = { linkId: 'W1', shape: 'RECT_OPEN', geom1: 2, geom2: 4, geom3: 0, geom4: 0, barrels: 1 };
+  // An orifice with its own [XSECTIONS] entry too
+  project.orifices.push({ id: 'O1', fromNode: 'J2', toNode: 'J3', type: 'SIDE', offset: 0.5, cd: 0.65, gated: 'NO', closeTime: 0 });
+  project.xsections['O1'] = { linkId: 'O1', shape: 'CIRCULAR', geom1: 0.5, geom2: 0, geom3: 0, geom4: 0, barrels: 1 };
+  // Losses on both the weir and the split conduit
+  project.losses['W1'] = { linkId: 'W1', entryLoss: 0.1, exitLoss: 0.2, avgLoss: 0, flapGate: 'NO', seepageRate: 0 };
+  project.losses['C1'] = { linkId: 'C1', entryLoss: 0.3, exitLoss: 0.4, avgLoss: 0, flapGate: 'NO', seepageRate: 0 };
+  const settings: DiscretizationSettings = { ...getDefaultSettings(), fixedMaxLength: 100, fixedMinLength: 50, lengtheningEnabled: false };
+  const result = discretizeProject(project, settings);
+  expectTrue('weir W1 xsection preserved', !!result.project.xsections['W1']);
+  expect('weir W1 xsection shape', result.project.xsections['W1']?.shape, 'RECT_OPEN');
+  expectTrue('weir W1 losses preserved', !!result.project.losses['W1']);
+  expectTrue('orifice O1 xsection preserved', !!result.project.xsections['O1']);
+  expect('orifice O1 xsection geom1', result.project.xsections['O1']?.geom1, 0.5);
+  expectTrue('split original C1 xsection removed', !result.project.xsections['C1']);
+  expectTrue('split original C1 losses removed', !result.project.losses['C1']);
+  expectTrue('segment C1_1 has an xsection', !!result.project.xsections['C1_1']);
+}
+
 // ---- Summary ----
 console.log(`\n${'─'.repeat(40)}`);
 console.log(`CFL tests: ${passed} passed, ${failed} failed\n`);

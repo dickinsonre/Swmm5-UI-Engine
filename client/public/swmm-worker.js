@@ -49,7 +49,7 @@ function loadSwmm5Module() {
   });
 }
 
-async function loadSwmm6Module(variant) {
+async function loadSwmm6Module(variant, stderrLog) {
   var v = SWMM6_VARIANTS[variant] || SWMM6_VARIANTS.wasm6;
   if (typeof self[v.factory] !== 'function') {
     importScripts(v.dir + '/' + v.js);
@@ -62,7 +62,9 @@ async function loadSwmm6Module(variant) {
   var mod = await self[v.factory]({
     noInitialRun: true,
     print: function () {},
-    printErr: function () {},
+    // Capture stderr — init failures (e.g. FV meshing rejections) report the
+    // actual reason only here, never in the .rpt file.
+    printErr: function (t) { if (stderrLog) stderrLog.push(String(t)); },
     locateFile: function (path) { return v.dir + '/' + path; },
   });
   if (typeof mod._swmm_engine_run !== 'function') {
@@ -73,6 +75,28 @@ async function loadSwmm6Module(variant) {
 
 function readFileSafe(mod, path) {
   try { return mod.FS.readFile(path); } catch (e) { return null; }
+}
+
+// swmm_engine_run destroys its handle before returning, losing the engine's
+// error message. When it fails without writing a report, replay open+initialize
+// on a fresh handle (failure happens at init, so this is cheap) and read
+// swmm_get_last_error_msg from that handle.
+function probeSwmm6InitError(mod) {
+  try {
+    var h = mod.ccall('swmm_engine_create', 'number', [], []);
+    if (!h) return '';
+    var msg = '';
+    try {
+      var rc = mod.ccall('swmm_engine_open', 'number', ['number', 'string', 'string', 'string'], [h, '/model.inp', '/probe.rpt', '/probe.out']);
+      if (rc === 0) rc = mod.ccall('swmm_engine_initialize', 'number', ['number'], [h]);
+      if (rc !== 0) msg = mod.ccall('swmm_get_last_error_msg', 'string', ['number'], [h]) || '';
+    } finally {
+      try { mod.ccall('swmm_engine_destroy', 'number', ['number'], [h]); } catch (e2) {}
+    }
+    return msg;
+  } catch (e) {
+    return '';
+  }
 }
 
 async function runSwmm5(inpText) {
@@ -93,7 +117,8 @@ async function runSwmm5(inpText) {
 
 async function runSwmm6(inpText, variant) {
   post('progress', { pct: 10, msg: 'Initializing OpenSWMM 6 (worker)...' });
-  var mod = await loadSwmm6Module(variant);
+  var stderrLog = [];
+  var mod = await loadSwmm6Module(variant, stderrLog);
   post('progress', { pct: 30, msg: 'Writing model to WASM filesystem...' });
   mod.FS.writeFile('/model.inp', inpText);
   post('progress', { pct: 35, msg: variant === 'wasm6dev' ? 'Running OpenSWMM 6 develop (WASM)...' : 'Running OpenSWMM 6 release (WASM)...' });
@@ -116,7 +141,13 @@ async function runSwmm6(inpText, variant) {
   var rptData = readFileSafe(mod, '/model.rpt');
   var rptText = rptData ? new TextDecoder().decode(rptData) : '';
   var outData = readFileSafe(mod, '/model.out');
-  return { errCode: errCode, rptText: rptText, outData: outData };
+  var stderrText = stderrLog.filter(Boolean).slice(-5).join('; ');
+  // SWMM6 has exited 0 on fatal failures — probe whenever the report is
+  // empty and stderr gave us nothing, regardless of exit code.
+  if (!rptText && !stderrText) {
+    stderrText = probeSwmm6InitError(mod);
+  }
+  return { errCode: errCode, rptText: rptText, outData: outData, stderrText: stderrText };
 }
 
 self.onmessage = async function (e) {
@@ -131,7 +162,7 @@ self.onmessage = async function (e) {
       : null;
     var transfer = outBytes ? [outBytes.buffer] : [];
     self.postMessage(
-      { type: 'done', errCode: result.errCode, rptText: result.rptText, outData: outBytes },
+      { type: 'done', errCode: result.errCode, rptText: result.rptText, outData: outBytes, stderrText: result.stderrText || '' },
       transfer
     );
   } catch (err) {

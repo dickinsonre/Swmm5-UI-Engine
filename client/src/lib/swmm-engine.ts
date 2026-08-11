@@ -221,6 +221,16 @@ export function createWasmEngine(): SwmmEngine {
 
 export type Wasm6Variant = 'wasm6' | 'wasm6dev';
 
+/** Short display name for an engine id, for compare overlays/tables. */
+export function engineShortName(engineUsed?: string): string {
+  switch (engineUsed) {
+    case 'wasm6': return 'SWMM6 rel';
+    case 'wasm6dev': return 'SWMM6 dev';
+    case 'mock': return 'Mock';
+    default: return 'SWMM5';
+  }
+}
+
 /**
  * Two OpenSWMM 6 builds ship side by side: `wasm6` from the `swmm6_rel`
  * release branch, `wasm6dev` from `develop`. Same handle-based API and build
@@ -279,17 +289,45 @@ async function createWasm6Instance(variant: Wasm6Variant, onProgress?: (pct: num
   if (onProgress) onProgress(20, 'Initializing OpenSWMM 6 module...');
   const factory = (window as any)[v.factory];
   if (typeof factory !== 'function') throw new Error(`${v.factory} factory not found after script load`);
+  const stderrLog: string[] = [];
   const mod = await factory({
     wasmBinary: binary,
     noInitialRun: true,
     print: (t: string) => console.log('[SWMM6 WASM]', t),
-    printErr: (t: string) => console.warn('[SWMM6 WASM]', t),
+    // Keep the tail of stderr — init failures (e.g. FV meshing rejections)
+    // report the actual reason only here, never in the .rpt file.
+    printErr: (t: string) => { console.warn('[SWMM6 WASM]', t); stderrLog.push(String(t)); },
     locateFile: (path: string) => `${v.dir}/` + path,
   });
+  (mod as any).__stderrLog = stderrLog;
   if (typeof mod._swmm_engine_run !== 'function') {
     throw new Error(`${v.wasm} loaded but swmm_engine_run is not exported`);
   }
   return mod;
+}
+
+/**
+ * swmm_engine_run destroys its handle before returning, losing the engine's
+ * error message. When it fails without writing a report, replay
+ * open+initialize on a fresh handle (failure happens at init, so this is
+ * cheap) and read swmm_get_last_error_msg from that handle.
+ */
+function probeSwmm6InitError(mod: any): string {
+  try {
+    const h = mod.ccall('swmm_engine_create', 'number', [], []);
+    if (!h) return '';
+    let msg = '';
+    try {
+      let rc = mod.ccall('swmm_engine_open', 'number', ['number', 'string', 'string', 'string'], [h, '/model.inp', '/probe.rpt', '/probe.out']);
+      if (rc === 0) rc = mod.ccall('swmm_engine_initialize', 'number', ['number'], [h]);
+      if (rc !== 0) msg = mod.ccall('swmm_get_last_error_msg', 'string', ['number'], [h]) || '';
+    } finally {
+      try { mod.ccall('swmm_engine_destroy', 'number', ['number'], [h]); } catch { /* ignore */ }
+    }
+    return msg;
+  } catch {
+    return '';
+  }
 }
 
 export async function checkWasm6Engine(variant: Wasm6Variant = 'wasm6'): Promise<boolean> {
@@ -352,8 +390,14 @@ export function createWasm6Engine(variant: Wasm6Variant = 'wasm6'): SwmmEngine {
       const rptHasErrors = /^\s*ERROR\s+\d+/m.test(rptText);
       if (errCode !== 0 || rptHasErrors || !rptText) {
         const errLines = rptText.split('\n').filter((l: string) => /ERROR/i.test(l)).slice(0, 5).join('; ');
+        let stderrTail = ((mod as any).__stderrLog || []).filter(Boolean).slice(-5).join('; ');
+        // Probe whenever we've decided the run failed and have no diagnostic
+        // yet — SWMM6 has exited 0 on fatal failures, so don't gate on errCode.
+        if (!rptText && !stderrTail) {
+          stderrTail = probeSwmm6InitError(mod);
+        }
         const err = new Error(
-          `OpenSWMM 6 error${errCode ? ` code ${errCode}` : ''}. ${errLines || 'Empty or invalid report.'}`
+          `OpenSWMM 6 error${errCode ? ` code ${errCode}` : ''}. ${errLines || stderrTail || 'Empty or invalid report.'}`
         ) as any;
         err.reportContent = rptText;
         throw err;
@@ -418,6 +462,8 @@ interface WorkerDone {
   errCode: number;
   rptText: string;
   outData: Uint8Array | null;
+  /** Last engine stderr lines — init failures explain themselves only here. */
+  stderrText?: string;
 }
 
 function runInWorker(
@@ -446,7 +492,7 @@ function runInWorker(
       if (msg.type === 'progress') {
         opts.onProgress?.(msg.pct, msg.msg);
       } else if (msg.type === 'done') {
-        finish(() => resolve({ errCode: msg.errCode, rptText: msg.rptText || '', outData: msg.outData || null }));
+        finish(() => resolve({ errCode: msg.errCode, rptText: msg.rptText || '', outData: msg.outData || null, stderrText: msg.stderrText || '' }));
       } else if (msg.type === 'error') {
         finish(() => reject(new Error(msg.message || 'WASM worker error')));
       }
@@ -484,7 +530,7 @@ export async function runWasmEngineInWorker(
 ): Promise<SimulationResults> {
   const isSwmm6 = engineId === 'wasm6' || engineId === 'wasm6dev';
   const inpText = projectToInp(project, isSwmm6 ? 'swmm6' : 'swmm5');
-  const { errCode, rptText, outData } = await runInWorker(engineId, inpText, opts);
+  const { errCode, rptText, outData, stderrText } = await runInWorker(engineId, inpText, opts);
 
   if (isSwmm6) {
     // SWMM6 engines have exited 0 on fatal parses — verify results exist in
@@ -493,7 +539,7 @@ export async function runWasmEngineInWorker(
     if (errCode !== 0 || rptHasErrors || !rptText) {
       const errLines = rptText.split('\n').filter((l: string) => /ERROR/i.test(l)).slice(0, 5).join('; ');
       const err = new Error(
-        `OpenSWMM 6 error${errCode ? ` code ${errCode}` : ''}. ${errLines || 'Empty or invalid report.'}`
+        `OpenSWMM 6 error${errCode ? ` code ${errCode}` : ''}. ${errLines || stderrText || 'Empty or invalid report.'}`
       ) as any;
       err.reportContent = rptText;
       throw err;

@@ -145,7 +145,7 @@ function GeneralTab({ opts, setOpt }: { opts: Record<string, string>; setOpt: (k
         <OptSelect opts={opts} field="INFILTRATION" setOpt={setOpt} options={['HORTON', 'MODIFIED_HORTON', 'GREEN_AMPT', 'MODIFIED_GREEN_AMPT', 'CURVE_NUMBER']} />
       </OptRow>
       <OptRow label="Routing Method">
-        <OptSelect opts={opts} field="FLOW_ROUTING" setOpt={setOpt} options={['STEADY', 'KINWAVE', 'DYNWAVE']} />
+        <OptSelect opts={opts} field="FLOW_ROUTING" setOpt={setOpt} options={['STEADY', 'KINWAVE', 'DYNWAVE', 'FV']} />
       </OptRow>
       <OptRow label="Link Offsets">
         <OptSelect opts={opts} field="LINK_OFFSETS" setOpt={setOpt} options={['DEPTH', 'ELEVATION']} />
@@ -271,6 +271,8 @@ function InterfaceFilesTab({ opts, setOpt, report, setReport }: { opts: Record<s
 function Swmm6Tab({ s6, setSwmm6, flowRouting }: { s6: Record<string, string>; setSwmm6: (k: string, v: string) => void; flowRouting: string }) {
   const dynSlot = getOpt(s6, 'SURCHARGE_METHOD').toUpperCase() === 'DYNAMIC_SLOT';
   const notDynwave = !/^DYNWAVE$/i.test(flowRouting.trim());
+  const isFv = /^FV$/i.test(flowRouting.trim());
+  const [showFvAdvanced, setShowFvAdvanced] = useState(false);
   return (
     <div className="space-y-1" data-testid="tab-content-swmm6">
       <div className="text-[11px] text-[#6b6b7b] mb-2 p-2 rounded bg-[#eef4fb] border border-[#c9dcf0]">
@@ -327,6 +329,59 @@ function Swmm6Tab({ s6, setSwmm6, flowRouting }: { s6: Record<string, string>; s
         Anderson acceleration speeds solver convergence without changing the physics — identical
         results with it on are expected on a well-converging model.
       </div>
+
+      <div className="text-xs font-semibold text-[#3a5070] mt-3 mb-2">Finite Volume Routing</div>
+      {!isFv && (
+        <div className="text-[11px] text-[#a05a00] px-1 mb-1" data-testid="warn-s6-fv-routing">
+          Flow Routing is {flowRouting || 'not set'} — set Routing Method to <b>FV</b> on the General
+          tab to use the finite-volume solver. FV_ keys below are inert under other routing models.
+        </div>
+      )}
+      <div className="text-[11px] text-[#6b6b7b] px-1 mb-1">
+        Blank fields use engine defaults. FV_CELL_LENGTH and FV_SLOT_CELERITY are in project display
+        units. FV_CELL_LENGTH 0 means no Δx target (every conduit gets exactly FV_MIN_CELLS) — set a
+        real Δx whenever peak flows or in-conduit profiles matter.
+      </div>
+      <OptRow label="Cell Length Δx (FV_CELL_LENGTH)"><OptInput opts={s6} field="FV_CELL_LENGTH" setOpt={setSwmm6} placeholder="0 (default: min cells only)" /></OptRow>
+      <OptRow label="Min Cells / Conduit (FV_MIN_CELLS)"><OptInput opts={s6} field="FV_MIN_CELLS" setOpt={setSwmm6} placeholder="4 (default)" /></OptRow>
+      <OptRow label="Slot Celerity (FV_SLOT_CELERITY)"><OptInput opts={s6} field="FV_SLOT_CELERITY" setOpt={setSwmm6} placeholder="100 (default)" /></OptRow>
+      <OptRow label="Courant Number (FV_CFL)"><OptInput opts={s6} field="FV_CFL" setOpt={setSwmm6} placeholder="0.5 (default)" /></OptRow>
+
+      <button
+        onClick={() => setShowFvAdvanced(v => !v)}
+        className="text-[11px] text-[#2c6eb5] font-medium px-1 py-1 hover:underline"
+        data-testid="btn-s6-fv-advanced"
+      >
+        {showFvAdvanced ? '▾ Hide' : '▸ Show'} advanced FV options
+      </button>
+      {showFvAdvanced && (
+        <>
+          <div className="text-xs font-semibold text-[#3a5070] mt-1 mb-1">Scheme</div>
+          <OptRow label="FV_ORDER"><OptInput opts={s6} field="FV_ORDER" setOpt={setSwmm6} placeholder="1 (default; 2 = MUSCL)" /></OptRow>
+          <OptRow label="FV_LIMITER"><OptInput opts={s6} field="FV_LIMITER" setOpt={setSwmm6} placeholder="MINMOD (default)" /></OptRow>
+          <OptRow label="FV_TIME_INTEGRATION"><OptInput opts={s6} field="FV_TIME_INTEGRATION" setOpt={setSwmm6} placeholder="EULER (default)" /></OptRow>
+          <OptRow label="FV_RIEMANN"><OptInput opts={s6} field="FV_RIEMANN" setOpt={setSwmm6} placeholder="HLLC (default)" /></OptRow>
+
+          <div className="text-xs font-semibold text-[#3a5070] mt-2 mb-1">Node Coupling</div>
+          <OptRow label="FV_NODE_COUPLING"><OptInput opts={s6} field="FV_NODE_COUPLING" setOpt={setSwmm6} placeholder="SEMI_IMPLICIT (default)" /></OptRow>
+          <OptRow label="FV_NODE_PICARD"><OptInput opts={s6} field="FV_NODE_PICARD" setOpt={setSwmm6} placeholder="1 (default)" /></OptRow>
+          <OptRow label="FV_NODE_CELL_COUPLING"><OptInput opts={s6} field="FV_NODE_CELL_COUPLING" setOpt={setSwmm6} placeholder="NO (default)" /></OptRow>
+          <OptRow label="FV_NODE_DT"><OptInput opts={s6} field="FV_NODE_DT" setOpt={setSwmm6} placeholder="STABILITY (default)" /></OptRow>
+
+          <div className="text-xs font-semibold text-[#3a5070] mt-2 mb-1">Performance</div>
+          <OptRow label="FV_LTS"><OptInput opts={s6} field="FV_LTS" setOpt={setSwmm6} placeholder="YES (default)" /></OptRow>
+          <OptRow label="FV_LTS_MAX_TIERS"><OptInput opts={s6} field="FV_LTS_MAX_TIERS" setOpt={setSwmm6} placeholder="6 (default)" /></OptRow>
+          <OptRow label="FV_COMPACTION"><OptInput opts={s6} field="FV_COMPACTION" setOpt={setSwmm6} placeholder="YES (default)" /></OptRow>
+          <OptRow label="FV_CFL_CENSUS_INTERVAL"><OptInput opts={s6} field="FV_CFL_CENSUS_INTERVAL" setOpt={setSwmm6} placeholder="1 (default)" /></OptRow>
+          <OptRow label="FV_BACKEND"><OptInput opts={s6} field="FV_BACKEND" setOpt={setSwmm6} placeholder="AUTO (default)" /></OptRow>
+          <OptRow label="FV_MIN_PARALLEL_CELLS"><OptInput opts={s6} field="FV_MIN_PARALLEL_CELLS" setOpt={setSwmm6} placeholder="20000 (default)" /></OptRow>
+          <OptRow label="FV_STRUCTURE_COUPLING"><OptInput opts={s6} field="FV_STRUCTURE_COUPLING" setOpt={setSwmm6} placeholder="SUBSTEP (default)" /></OptRow>
+
+          <div className="text-xs font-semibold text-[#3a5070] mt-2 mb-1">Transport</div>
+          <OptRow label="FV_SCALAR_SCHEME"><OptInput opts={s6} field="FV_SCALAR_SCHEME" setOpt={setSwmm6} placeholder="MUSCL (default)" /></OptRow>
+          <OptRow label="FV_DISPERSION"><OptInput opts={s6} field="FV_DISPERSION" setOpt={setSwmm6} placeholder="0 (accepted, inert for now)" /></OptRow>
+        </>
+      )}
     </div>
   );
 }

@@ -1,0 +1,39 @@
+Short answer: one line. FLOW_ROUTING FV in [OPTIONS] is the entire requirement — all twenty-one FV_ keys have defaults and the solver reads everything else from the model you already have.
+
+But four of them decide whether the run is any good.
+
+The ones that actually matter
+Key	Default	Why you'd touch it
+FV_CELL_LENGTH	0	The one to set. 0 means no Δx target, so every conduit gets exactly FV_MIN_CELLS. Set a real Δx whenever peak flows or in-conduit profiles matter.
+FV_MIN_CELLS	4	A floor, applied with or without a Δx target. At 4 cells the manual measures 15.3 % mean peak attenuation on Example1 against 37.1 % at one cell and 7.6 % at eight — cause is geometric, not diffusive, so FV_ORDER 2 won't rescue an unresolved mesh.
+FV_SLOT_CELERITY	100	Sets the slot width through T_slot = g·A_full/c², capped at 5 % of the section width. This is a direct accuracy/cost dial: a physical acoustic celerity of 1000+ ft/s would collapse your step, since Δt is bounded by Δx/(|v|+c).
+FV_CFL	0.5	Courant number. Rarely needs moving.
+
+FV_CELL_LENGTH and FV_SLOT_CELERITY are in project display units — the parser converts to internal feet, the same way HEAD_TOLERANCE is handled.
+
+The rest, grouped
+
+Scheme: FV_ORDER (1), FV_LIMITER (MINMOD), FV_TIME_INTEGRATION (EULER), FV_RIEMANN (HLLC). Order 2 is safe to leave on — it reconstructs (η, v) rather than (h, Q), so a flat surface has exactly zero slope and it degenerates to first order at rest. On Ritter I measured it nearly halving the error (3.30 % → 1.77 %) at no cost to still water. FV_RIEMANN only affects transport; hydraulics are bit-identical either way.
+
+Node coupling: FV_NODE_COUPLING (SEMI_IMPLICIT), FV_NODE_PICARD (1), FV_NODE_CELL_COUPLING (NO), FV_NODE_DT (STABILITY). Leave these alone unless you're chasing performance — and note the manual argues against doing so: FV_NODE_DT NONE is 24–134× faster and degrades L1 depth error by 3 to 49× on the frictional and transcritical cases.
+
+Performance: FV_LTS (YES), FV_LTS_MAX_TIERS (6), FV_COMPACTION (YES), FV_CFL_CENSUS_INTERVAL (1), FV_BACKEND (AUTO), FV_MIN_PARALLEL_CELLS (20000), FV_STRUCTURE_COUPLING (SUBSTEP).
+
+Transport: FV_SCALAR_SCHEME (MUSCL), FV_DISPERSION (0 — accepted but inert, and warns at open, until FV transport is connected).
+
+What the model itself has to supply
+
+This is the part that bites, and none of it is an option key:
+
+Every conduit needs real cross-section geometry. A conduit whose full depth or area is zero is rejected at initialization rather than silently routed.
+A conduit loop closed entirely by virtual junctions cannot be meshed — such a cycle has no boundary. An ordinary junction breaks it.
+Hot starts aren't interchangeable between routing models. A dynamic-wave hot start projects onto the mesh with a warning; the reverse discards in-conduit structure.
+What it inherits from your existing parameters
+
+LENGTHENING_STEP acts as a Δx floor exactly as it acts as a length floor for dynamic wave — the solver meshes the Courant-lengthened mod_length and uses the same adjusted slope and roughness. MIN_SURFAREA becomes the junction storage area, which is why it matters more here than you'd expect: as an effective length A_s/T it's a few feet against a conduit Δx of several hundred, so the manhole, not the pipe, sets the explicit substep. Manning's n, entrance/exit losses, SURCHARGE_DEPTH, ponded area, storage curves, outfall types, culvert codes in [XSECTIONS], flap gates, force-main friction and [VIRTUAL_JUNCTIONS] are all read and honoured. ROUTING_STEP becomes a reporting and forcing cadence rather than a stability constraint — the solver substeps internally to fill it.
+
+One portability warning: the keys are inert rather than rejected under KINWAVE/STEADY/DYNWAVE, so switching FLOW_ROUTING never invalidates the file within OpenSWMM. Handing that same file to stock EPA SWMM 5.2.4 is a different matter — I've verified 5.2.4 dies with a fatal ERROR 205 on the SWMM6 [OPTIONS] keywords, and I'd expect the same on FV_*, though I haven't run that specific case.
+
+The Options tab in the app builds an [OPTIONS] block from any subset of these and exports it as a .inp snippet, if it's easier to tick than to type.
+
+

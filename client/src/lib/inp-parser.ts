@@ -981,6 +981,14 @@ export function parseInpFile(text: string): SwmmProject {
       delete project.options[key];
     }
   }
+  // FLOW_ROUTING is a core SWMM5 key, but the value FV is SWMM6-only. A
+  // SWMM5-target file carries it as `;;SWMM6 FLOW_ROUTING FV` next to a
+  // DYNWAVE fallback data line — restore the FV intent into options here
+  // (projectToInp re-applies the downgrade on SWMM5-target writes).
+  if ((swmm6Opts['FLOW_ROUTING'] || '').trim().toUpperCase() === 'FV') {
+    project.options['FLOW_ROUTING'] = 'FV';
+  }
+  delete swmm6Opts['FLOW_ROUTING'];
   project.swmm6Options = swmm6Opts;
 
   normalizeCaseInsensitiveRefs(project);
@@ -1076,6 +1084,13 @@ function normalizeCaseInsensitiveRefs(project: SwmmProject): void {
 export const SWMM6_ONLY_OPTION_KEYS = new Set([
   'DPS_CELERITY', 'DPS_ALPHA', 'DPS_DECAY_TIME',
   'NODE_CONTINUITY', 'ANDERSON_ACCEL', 'VIRTUAL_JUNCTION_MOMENTUM',
+  // Finite-volume routing (FLOW_ROUTING FV) keys — all have engine defaults.
+  'FV_CELL_LENGTH', 'FV_MIN_CELLS', 'FV_SLOT_CELERITY', 'FV_CFL',
+  'FV_ORDER', 'FV_LIMITER', 'FV_TIME_INTEGRATION', 'FV_RIEMANN',
+  'FV_NODE_COUPLING', 'FV_NODE_PICARD', 'FV_NODE_CELL_COUPLING', 'FV_NODE_DT',
+  'FV_LTS', 'FV_LTS_MAX_TIERS', 'FV_COMPACTION', 'FV_CFL_CENSUS_INTERVAL',
+  'FV_BACKEND', 'FV_MIN_PARALLEL_CELLS', 'FV_STRUCTURE_COUPLING',
+  'FV_SCALAR_SCHEME', 'FV_DISPERSION',
 ]);
 
 function padField(value: string | number, width: number): string {
@@ -1109,6 +1124,18 @@ export function projectToInp(project: SwmmProject, target: 'swmm5' | 'swmm6' = '
   lines.push('[OPTIONS]');
   for (const [key, val] of Object.entries(project.options)) {
     let out = val;
+    // FLOW_ROUTING FV is SWMM6-only (stock 5.2.4: ERROR 173/205). SWMM5-target
+    // files get a DYNWAVE fallback plus a ;;SWMM6 carrier comment so the FV
+    // choice round-trips through save/load.
+    if (key.toUpperCase() === 'FLOW_ROUTING' && String(val).trim().toUpperCase() === 'FV') {
+      if (target === 'swmm6') {
+        lines.push(`${key.padEnd(20)} FV`);
+      } else {
+        lines.push(`${key.padEnd(20)} DYNWAVE`);
+        lines.push(`;;SWMM6 ${'FLOW_ROUTING'.padEnd(20)} FV`);
+      }
+      continue;
+    }
     // VARIABLE_STEP must be numeric (adjustment factor 0-2); repair YES/NO
     // values written by an earlier UI bug so the engine doesn't reject the file.
     if (key === 'VARIABLE_STEP') {

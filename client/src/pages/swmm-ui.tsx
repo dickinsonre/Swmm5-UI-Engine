@@ -7,7 +7,7 @@ import {
   getNodeVarByKey, getLinkVarByKey, getSubVarByKey, getSystemVarByKey,
 } from '@/lib/swmm-variables';
 import { parseInpFile, projectToInp } from '@/lib/inp-parser';
-import { createMockEngine, createRemoteEngine, createLocalEngine, createWasmEngine, createWasm6Engine, checkRemoteEngine, checkLocalEngine, checkWasmEngine, checkWasm6Engine } from '@/lib/swmm-engine';
+import { createMockEngine, createRemoteEngine, createLocalEngine, createWasmEngine, createWasm6Engine, checkRemoteEngine, checkLocalEngine, checkWasmEngine, checkWasm6Engine, engineShortName } from '@/lib/swmm-engine';
 import { computeCflAnalysis, discretizeProject, getDefaultSettings } from '@/lib/cfl-analysis';
 import type { CflAnalysisResult, DiscretizationSettings, DiscretizationResult } from '@/lib/cfl-analysis';
 import { importCsvNodes, importCsvLinks, parseDxfFile, importDxfEntities, importGeoJsonNodes, importGeoJsonLinks, parseGeoJsonToNetwork, exportNodesCsv, exportLinksCsv, exportDxf } from '@/lib/import-export';
@@ -206,7 +206,7 @@ export default function SwmmUI() {
   const [simStatus, setSimStatus] = useState<'none' | 'running' | 'current' | 'outdated'>('none');
   const [simProgress, setSimProgress] = useState(0);
   const [simProgressMsg, setSimProgressMsg] = useState('');
-  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'both56dev'>('mock');
+  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'both56dev' | 'both66'>('mock');
   const [localAvailable, setLocalAvailable] = useState(false);
   const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [wasmAvailable, setWasmAvailable] = useState(false);
@@ -356,6 +356,12 @@ export default function SwmmUI() {
   // SWMM6 .rpt from a "Compare 5+6" run — shown as a second tab in the report dialog.
   const [compareReportContent, setCompareReportContent] = useState<string | null>(null);
   const [reportEngineTab, setReportEngineTab] = useState<'5' | '6' | 'split'>('5');
+  // Labels/badge/download-suffixes for the active comparison pair. Only
+  // meaningful while compareReportContent is set (all render sites gate on it),
+  // so it doesn't need resetting alongside every setCompareReportContent(null).
+  const [compareInfo, setCompareInfo] = useState<{
+    badge: string; tabA: string; tabB: string; colorA: string; colorB: string; suffixA: string; suffixB: string;
+  }>({ badge: 'Compare 5+6', tabA: 'SWMM 5.2.4 Report', tabB: 'OpenSWMM 6 Report', colorA: '#2c6eb5', colorB: '#1a9e8a', suffixA: '_swmm5', suffixB: '_swmm6' });
   const [showReportDialog, setShowReportDialog] = useState(false);
   // Report shown in the report dialog: SWMM6 tab only exists after a Compare 5+6 run.
   // 'split' shows both panes; copy/download in split mode use the SWMM5 report.
@@ -939,11 +945,15 @@ export default function SwmmUI() {
     // Revalidate SWMM6 artifact availability just before running — a stale
     // engineMode (artifacts removed after page load) should fail loudly with
     // guidance rather than a confusing engine error mid-run.
-    if (engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56' || engineMode === 'both56dev') {
-      const variant = (engineMode === 'wasm6dev' || engineMode === 'both56dev') ? 'wasm6dev' as const : 'wasm6' as const;
-      const stillAvailable = await checkWasm6Engine(variant);
-      if (!stillAvailable) {
-        if (variant === 'wasm6dev') setWasm6DevAvailable(false); else setWasm6Available(false);
+    if (engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56' || engineMode === 'both56dev' || engineMode === 'both66') {
+      const neededVariants: Array<'wasm6' | 'wasm6dev'> = engineMode === 'both66'
+        ? ['wasm6', 'wasm6dev']
+        : [(engineMode === 'wasm6dev' || engineMode === 'both56dev') ? 'wasm6dev' : 'wasm6'];
+      const checks = await Promise.all(neededVariants.map(v => checkWasm6Engine(v)));
+      const missing = neededVariants.filter((_, i) => !checks[i]);
+      if (missing.length > 0) {
+        if (missing.includes('wasm6dev')) setWasm6DevAvailable(false);
+        if (missing.includes('wasm6')) setWasm6Available(false);
         setEngineMode(wasmAvailable ? 'wasm' : localAvailable ? 'local' : remoteAvailable ? 'remote' : 'mock');
         toast({
           title: 'SWMM6 Engine Unavailable',
@@ -969,15 +979,17 @@ export default function SwmmUI() {
 
     // "Run 5+6" comparison: run SWMM5 (WASM) then SWMM6 (WASM) back-to-back,
     // keep both result sets so graphs/tables can overlay them.
-    if (engineMode === 'both56' || engineMode === 'both56dev') {
-      const compareVariant = engineMode === 'both56dev' ? 'wasm6dev' as const : 'wasm6' as const;
+    if (engineMode === 'both56' || engineMode === 'both56dev' || engineMode === 'both66') {
+      const isB66 = engineMode === 'both66';
+      const compareVariant = engineMode === 'both56' ? 'wasm6' as const : 'wasm6dev' as const;
+      const primaryName = isB66 ? 'SWMM6 rel' : 'SWMM5';
       const six = compareVariant === 'wasm6dev' ? 'SWMM6 dev' : 'SWMM6';
       try {
-        const engine5 = createWasmEngine();
+        const engine5 = isB66 ? createWasm6Engine('wasm6') : createWasmEngine();
         const res5 = await engine5.run(project, (pct, msg) => {
           if (abortCtrl.signal.aborted) return;
           setSimProgress(Math.round(pct / 2));
-          setSimProgressMsg(`SWMM5: ${msg}`);
+          setSimProgressMsg(`${primaryName}: ${msg}`);
         });
         if (abortCtrl.signal.aborted) return;
         const engine6 = createWasm6Engine(compareVariant);
@@ -989,7 +1001,12 @@ export default function SwmmUI() {
         if (abortCtrl.signal.aborted) return;
         setSimProgress(100);
         setSimProgressMsg('Complete');
-        setRunProvenance(buildProvenance(res5, 'wasm', runStartedAt, Date.now()));
+        setRunProvenance(buildProvenance(res5, isB66 ? 'wasm6' : 'wasm', runStartedAt, Date.now()));
+        setCompareInfo(isB66
+          ? { badge: 'Compare 6rel+6dev', tabA: 'OpenSWMM 6 rel Report', tabB: 'OpenSWMM 6 dev Report', colorA: '#8a4ae2', colorB: '#c24ae2', suffixA: '_swmm6rel', suffixB: '_swmm6dev' }
+          : engineMode === 'both56dev'
+            ? { badge: 'Compare 5+6dev', tabA: 'SWMM 5.2.4 Report', tabB: 'OpenSWMM 6 dev Report', colorA: '#2c6eb5', colorB: '#c24ae2', suffixA: '_swmm5', suffixB: '_swmm6dev' }
+            : { badge: 'Compare 5+6', tabA: 'SWMM 5.2.4 Report', tabB: 'OpenSWMM 6 rel Report', colorA: '#2c6eb5', colorB: '#8a4ae2', suffixA: '_swmm5', suffixB: '_swmm6rel' });
         setResults(res5);
         // Only enable the overlay when BOTH runs produced real time series —
         // a summary-only run has no time steps to overlay and would render
@@ -1008,7 +1025,7 @@ export default function SwmmUI() {
         toast({
           title: 'Comparison Run Complete',
           description: bothNative
-            ? `SWMM5: ${res5.timeSteps.length} steps · ${six}: ${res6.timeSteps.length} steps. Graphs and tables now overlay both engines.`
+            ? `${primaryName}: ${res5.timeSteps.length} steps · ${six}: ${res6.timeSteps.length} steps. Graphs and tables now overlay both engines.`
             : 'At least one engine produced summary-only results, so the time-series overlay is unavailable. SWMM5 results are shown; check each engine\u2019s report for summary comparison.',
           variant: bothNative ? undefined : 'destructive',
         });
@@ -2418,28 +2435,29 @@ export default function SwmmUI() {
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <button
               onClick={() => {
-                const modes: Array<'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'both56dev' | 'remote' | 'mock'> = [];
+                const modes: Array<'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'both56dev' | 'both66' | 'remote' | 'mock'> = [];
                 if (localAvailable) modes.push('local');
                 if (wasmAvailable) modes.push('wasm');
                 if (wasm6Available) modes.push('wasm6');
                 if (wasm6DevAvailable) modes.push('wasm6dev');
                 if (wasmAvailable && wasm6Available) modes.push('both56');
                 if (wasmAvailable && wasm6DevAvailable) modes.push('both56dev');
+                if (wasm6Available && wasm6DevAvailable) modes.push('both66');
                 if (remoteAvailable) modes.push('remote');
                 modes.push('mock');
                 const idx = modes.indexOf(engineMode);
                 setEngineMode(modes[(idx + 1) % modes.length]);
               }}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors border ${
-                engineMode === 'local' || engineMode === 'remote' || engineMode === 'wasm' || engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56' || engineMode === 'both56dev'
+                engineMode !== 'mock'
                   ? 'bg-[rgba(44,110,181,0.12)] border-[#2c6eb5] text-[#2c6eb5]'
                   : 'bg-transparent border-[#d0d0d8] text-[#6b6b7b] hover:text-[#2a2a3e]'
               } cursor-pointer`}
-              title="Cycle engine mode: Local → WASM 5 → WASM 6 rel → WASM 6 dev → Compare 5+6 → Compare 5+6dev → Remote → Mock"
+              title="Cycle engine mode: Local → WASM 5 → WASM 6 rel → WASM 6 dev → Compare 5+6 → Compare 5+6dev → Compare 6rel+6dev → Remote → Mock"
               data-testid="btn-engine-toggle"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'both56dev' ? 'bg-[#0e7a9e]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
-              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'both56dev' ? 'Compare 5+6dev' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
+              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'both56dev' ? 'bg-[#0e7a9e]' : engineMode === 'both66' ? 'bg-[#9e0e7a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
+              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'both56dev' ? 'Compare 5+6dev' : engineMode === 'both66' ? 'Compare 6rel+6dev' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
             </button>
           </div>
         )}
@@ -2632,7 +2650,7 @@ export default function SwmmUI() {
                     {simProgressMsg || 'Running simulation...'}
                   </div>
                   <div className="text-[10px] text-[#6b6b7b]">
-                    {engineMode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engineMode === 'wasm' ? 'EPA SWMM 5.2.4 (WASM In-Browser)' : engineMode === 'wasm6' ? 'OpenSWMM 6 release (WASM In-Browser)' : engineMode === 'wasm6dev' ? 'OpenSWMM 6 develop (WASM In-Browser)' : engineMode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine'}
+                    {engineMode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engineMode === 'wasm' ? 'EPA SWMM 5.2.4 (WASM In-Browser)' : engineMode === 'wasm6' ? 'OpenSWMM 6 release (WASM In-Browser)' : engineMode === 'wasm6dev' ? 'OpenSWMM 6 develop (WASM In-Browser)' : engineMode === 'both56' ? 'Compare: SWMM5 vs SWMM6 rel (WASM)' : engineMode === 'both56dev' ? 'Compare: SWMM5 vs SWMM6 dev (WASM)' : engineMode === 'both66' ? 'Compare: SWMM6 rel vs SWMM6 dev (WASM)' : engineMode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine'}
                   </div>
                 </div>
                 <span className="text-xs text-[#2c6eb5] font-mono tabular-nums" data-testid="text-progress-pct">
@@ -3192,9 +3210,9 @@ export default function SwmmUI() {
           />
         )}
         <StatusItem
-          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'both56dev' ? 'Compare 5+6dev' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
-          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'wasm6dev' ? '#c24ae2' : engineMode === 'both56' ? '#1a9e8a' : engineMode === 'both56dev' ? '#0e7a9e' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
-          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'both56dev' ? 'bg-[#0e7a9e]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
+          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'both56dev' ? 'Compare 5+6dev' : engineMode === 'both66' ? 'Compare 6rel+6dev' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
+          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'wasm6dev' ? '#c24ae2' : engineMode === 'both56' ? '#1a9e8a' : engineMode === 'both56dev' ? '#0e7a9e' : engineMode === 'both66' ? '#9e0e7a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
+          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'both56dev' ? 'bg-[#0e7a9e]' : engineMode === 'both66' ? 'bg-[#9e0e7a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
         />
         <div className="flex-1" />
         <span className="text-[8px] sm:text-[9px] font-mono text-[#6b6b7b] flex items-center gap-1 sm:gap-1.5" data-testid="status-counts">
@@ -3939,7 +3957,7 @@ export default function SwmmUI() {
             <DialogTitle className="flex items-center gap-2 text-[#2a2a3e]">
               <BarChart3 className="w-4 h-4" /> SWMM Report
               {compareReportContent && (
-                <span className="text-[10px] font-normal text-[#1a7a6a] border border-[#1a9e8a] rounded px-1.5 py-0.5">Compare 5+6</span>
+                <span className="text-[10px] font-normal text-[#1a7a6a] border border-[#1a9e8a] rounded px-1.5 py-0.5">{compareInfo.badge}</span>
               )}
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
               {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
@@ -3951,7 +3969,7 @@ export default function SwmmUI() {
           {compareReportContent && (
             <div className="flex items-center gap-2 mb-1">
               <div className="flex rounded-md border-2 border-[#c0c0cc] overflow-hidden" data-testid="report-engine-tabs">
-                {([['5', 'SWMM 5.2.4 Report', '#2c6eb5'], ['6', 'OpenSWMM 6 Report', '#1a9e8a'], ['split', 'Side by Side', '#5a5a6e']] as const).map(([tab, label, color]) => (
+                {([['5', compareInfo.tabA, compareInfo.colorA], ['6', compareInfo.tabB, compareInfo.colorB], ['split', 'Side by Side', '#5a5a6e']] as const).map(([tab, label, color]) => (
                   <button
                     key={tab}
                     className="px-4 py-2 text-xs font-bold transition-colors"
@@ -4032,12 +4050,12 @@ export default function SwmmUI() {
           {reportSplitActive ? (
             <div className="flex-1 min-h-0 grid grid-cols-2 gap-2" style={{ maxHeight: 'calc(85vh - 200px)' }} data-testid="report-split-view">
               {([
-                ['SWMM 5.2.4', reportViewMode === 'inp' ? (results?.inpUsed ?? null) : reportContent, '#2c6eb5'],
-                ['OpenSWMM 6', reportViewMode === 'inp' ? (compareResults?.inpUsed ?? null) : compareReportContent, '#1a9e8a'],
-              ] as const).map(([label, content, color]) => (
-                <div key={label} className="flex flex-col min-h-0 overflow-hidden">
-                  <div className="text-[10px] font-bold px-2 py-1 rounded-t border border-b-0" style={{ color: '#ffffff', backgroundColor: color, borderColor: color }}>{label}</div>
-                  <pre className="flex-1 text-[10px] leading-[1.4] p-2 rounded-b border bg-[#f8f8fa] whitespace-pre overflow-auto font-mono" style={{ borderColor: color }} data-testid={`report-split-pre-${label === 'SWMM 5.2.4' ? '5' : '6'}`}>
+                ['5', compareInfo.tabA, reportViewMode === 'inp' ? (results?.inpUsed ?? null) : reportContent, compareInfo.colorA],
+                ['6', compareInfo.tabB, reportViewMode === 'inp' ? (compareResults?.inpUsed ?? null) : compareReportContent, compareInfo.colorB],
+              ] as const).map(([pane, label, content, color]) => (
+                <div key={pane} className="flex flex-col min-h-0 overflow-hidden">
+                  <div className="text-[10px] font-bold px-2 py-1 rounded-t border border-b-0" style={{ color: '#ffffff', backgroundColor: color, borderColor: color }}>{label.replace(/ Report$/, '')}</div>
+                  <pre className="flex-1 text-[10px] leading-[1.4] p-2 rounded-b border bg-[#f8f8fa] whitespace-pre overflow-auto font-mono" style={{ borderColor: color }} data-testid={`report-split-pre-${pane}`}>
                     {(() => {
                       const text = content || 'No report available.';
                       if (!reportSearchTerm) return text;
@@ -4105,7 +4123,7 @@ export default function SwmmUI() {
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  const engineSuffix = compareReportContent ? (reportEngineTab === '6' ? '_swmm6' : '_swmm5') : '';
+                  const engineSuffix = compareReportContent ? (reportEngineTab === '6' ? compareInfo.suffixB : compareInfo.suffixA) : '';
                   a.download = (fileName || 'model').replace(/\.inp$/i, '') + engineSuffix + (isInp ? '_generated.inp' : isMock ? '_SYNTHETIC.rpt' : '.rpt');
                   a.click();
                   URL.revokeObjectURL(url);
@@ -5534,6 +5552,10 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
 }) {
   // Overlay is only meaningful when the compare run has real time steps.
   const overlayActive = !!(compareResults && compareResults.timeSteps && compareResults.timeSteps.length > 0);
+  // Engine names for overlay labels — the pair isn't always SWMM5 vs SWMM6
+  // (e.g. a rel-vs-dev SWMM6 comparison).
+  const baseName = engineShortName(results?.engineUsed);
+  const cmpName = engineShortName(compareResults?.engineUsed);
   const nodeIds = useMemo(() => [
     ...project.junctions.map(j => j.id),
     ...project.outfalls.map(o => o.id),
@@ -5706,8 +5728,8 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
     const push = (key: string, label: string) => {
       const color = TS_COLORS[ci % TS_COLORS.length];
       if (overlayActive) {
-        keys.push({ key, label: `${label} (SWMM5)`, color });
-        keys.push({ key: `${key}__cmp`, label: `${label} (SWMM6)`, color: TS_COLORS_CMP[ci % TS_COLORS_CMP.length], dashed: true });
+        keys.push({ key, label: `${label} (${baseName})`, color });
+        keys.push({ key: `${key}__cmp`, label: `${label} (${cmpName})`, color: TS_COLORS_CMP[ci % TS_COLORS_CMP.length], dashed: true });
       } else {
         keys.push({ key, label, color });
       }
@@ -5974,7 +5996,7 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
                 <button
                   onClick={findWorstMatch}
                   className="w-full text-[9px] py-1 rounded bg-[#e8edf2] text-[#4a4a5a] font-medium hover:bg-[#d0d8e4]"
-                  title="Scan all elements in this category and select the one where SWMM6 diverges most from SWMM5 (lowest NSE) for the first checked variable"
+                  title={`Scan all elements in this category and select the one where ${cmpName} diverges most from ${baseName} (lowest NSE) for the first checked variable`}
                   data-testid="btn-ts-worst-match"
                 >
                   ⚠ Find Worst 5↔6 Match
@@ -6208,10 +6230,10 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
                 <table className="w-full text-[9px] text-[#4a4a5a]">
                   <thead>
                     <tr className="bg-[#f5f5f8] text-[#6b6b7b]">
-                      <th className="text-left px-2 py-1 font-semibold">SWMM6 vs SWMM5 fit</th>
-                      <th className="text-right px-2 py-1 font-semibold" title="Nash–Sutcliffe Efficiency: 1 = identical, 0 = no better than the SWMM5 mean">NSE</th>
+                      <th className="text-left px-2 py-1 font-semibold">{cmpName} vs {baseName} fit</th>
+                      <th className="text-right px-2 py-1 font-semibold" title={`Nash–Sutcliffe Efficiency: 1 = identical, 0 = no better than the ${baseName} mean`}>NSE</th>
                       <th className="text-right px-2 py-1 font-semibold" title="Coefficient of determination">R²</th>
-                      <th className="text-right px-2 py-1 font-semibold" title="Percent bias of SWMM6 relative to SWMM5 (+ = SWMM6 higher)">PBIAS %</th>
+                      <th className="text-right px-2 py-1 font-semibold" title={`Percent bias of ${cmpName} relative to ${baseName} (+ = ${cmpName} higher)`}>PBIAS %</th>
                       <th className="text-right px-2 py-1 font-semibold" title="Number of paired time steps compared">n</th>
                     </tr>
                   </thead>
@@ -6223,7 +6245,7 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
                         <tr key={lk.key} className="border-t border-[#ececf2]" data-testid={`ts-fit-row-${lk.key}`}>
                           <td className="px-2 py-1">
                             <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ backgroundColor: lk.color }} />
-                            {lk.label.replace(/ \(SWMM5\)$/, '')}
+                            {lk.label.endsWith(` (${baseName})`) ? lk.label.slice(0, -(baseName.length + 3)) : lk.label}
                           </td>
                           <td className={`px-2 py-1 text-right font-mono font-medium ${f.exact || f.nse >= 0.99 ? 'text-[#1a7f37]' : f.nse >= 0.5 ? 'text-[#2a2a3e]' : 'text-[#b04a00]'}`}>{fmtIdx(f.nse)}</td>
                           <td className="px-2 py-1 text-right font-mono">{fmtIdx(f.r2)}</td>

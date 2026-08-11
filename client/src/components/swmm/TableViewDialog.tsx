@@ -10,6 +10,7 @@ import { LineChart as RLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Re
 import ProvenanceBadge from './ProvenanceBadge';
 import { SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER } from './SyntheticWarning';
 import type { VarScope } from '@/lib/swmm-variables';
+import { engineShortName } from '@/lib/swmm-engine';
 
 interface Props {
   open: boolean;
@@ -510,14 +511,14 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
                       onContextMenu={e => handleContextMenu(e, selectedVar)}
                       data-testid={`th-${selectedVar}`}>
                       <span className="inline-flex items-center gap-1">
-                        {varLabels[selectedVar] || selectedVar}{cmpActive ? ' (SWMM5)' : ''}
+                        {varLabels[selectedVar] || selectedVar}{cmpActive ? ` (${engineShortName(results?.engineUsed)})` : ''}
                         <ProvenanceBadge varKey={selectedVar} scope={categoryToScope(category)} />
                       </span>
                       {sortCol === selectedVar && <span className="ml-1 text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
                     </th>
                     {cmpActive && (
                       <th className="text-right px-2 py-1.5 border-b border-[#d0d0d8] font-semibold text-[#1a7a6a]" data-testid={`th-cmp-${selectedVar}`}>
-                        {varLabels[selectedVar] || selectedVar} (SWMM6)
+                        {varLabels[selectedVar] || selectedVar} ({engineShortName(compareResults?.engineUsed)})
                       </th>
                     )}
                   </tr>
