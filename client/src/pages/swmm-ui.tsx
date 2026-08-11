@@ -5774,6 +5774,15 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
         )}
 
         <div className="overflow-y-auto" style={{ maxHeight: isSystem ? 360 : 180 }}>
+          {activeVars.length > 0 && (
+            <button
+              onClick={() => setActiveVars([])}
+              className="w-full text-left text-[9px] text-[#2c6eb5] hover:underline px-1 mt-0.5"
+              data-testid="btn-ts-clear-vars"
+            >
+              ✕ Uncheck all ({activeVars.length})
+            </button>
+          )}
           {varGroups.map(group => (
             <div key={group.groupLabel}>
               <button
