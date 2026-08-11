@@ -5637,7 +5637,7 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
   // Goodness-of-fit indices for SWMM6 vs the SWMM5 baseline (per series pair).
   const fitStats = useMemo(() => {
     if (!overlayActive) return {};
-    const out: Record<string, { nse: number; r2: number; pbias: number; n: number }> = {};
+    const out: Record<string, { nse: number; r2: number; pbias: number; n: number; exact: boolean }> = {};
     for (const lk of lineKeys) {
       if (lk.key.endsWith('__cmp')) continue;
       const cmpKey = `${lk.key}__cmp`;
@@ -5660,11 +5660,15 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
         sumDiff += sim[i] - obs[i];
         covOS += dO * dS; varO += dO * dO; varS += dS * dS;
       }
-      // n = 1 or constant series leave the variance denominators at 0 → '—'.
+      // Constant series (e.g. pipe pinned at full capacity) make NSE/R²
+      // mathematically undefined. If the two engines agree exactly, report
+      // "exact" instead of a confusing dash; only disagreeing-but-degenerate
+      // pairs keep '—'.
+      const exact = ssErr === 0;
       const nse = ssTot > 0 ? 1 - ssErr / ssTot : NaN;
       const r2 = varO > 0 && varS > 0 ? (covOS * covOS) / (varO * varS) : NaN;
-      const pbias = sumO !== 0 ? (sumDiff / sumO) * 100 : NaN;
-      out[lk.key] = { nse, r2, pbias, n };
+      const pbias = sumO !== 0 ? (sumDiff / sumO) * 100 : (sumDiff === 0 ? 0 : NaN);
+      out[lk.key] = { nse, r2, pbias, n, exact };
     }
     return out;
   }, [chartData, lineKeys, overlayActive]);
@@ -6061,14 +6065,14 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
                   <tbody>
                     {lineKeys.filter(lk => fitStats[lk.key]).map(lk => {
                       const f = fitStats[lk.key];
-                      const fmtIdx = (v: number, digits = 4) => isFinite(v) ? v.toFixed(digits) : '—';
+                      const fmtIdx = (v: number, digits = 4) => isFinite(v) ? v.toFixed(digits) : (f.exact ? 'exact' : '—');
                       return (
                         <tr key={lk.key} className="border-t border-[#ececf2]" data-testid={`ts-fit-row-${lk.key}`}>
                           <td className="px-2 py-1">
                             <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ backgroundColor: lk.color }} />
                             {lk.label.replace(/ \(SWMM5\)$/, '')}
                           </td>
-                          <td className={`px-2 py-1 text-right font-mono font-medium ${f.nse >= 0.99 ? 'text-[#1a7f37]' : f.nse >= 0.5 ? 'text-[#2a2a3e]' : 'text-[#b04a00]'}`}>{fmtIdx(f.nse)}</td>
+                          <td className={`px-2 py-1 text-right font-mono font-medium ${f.exact || f.nse >= 0.99 ? 'text-[#1a7f37]' : f.nse >= 0.5 ? 'text-[#2a2a3e]' : 'text-[#b04a00]'}`}>{fmtIdx(f.nse)}</td>
                           <td className="px-2 py-1 text-right font-mono">{fmtIdx(f.r2)}</td>
                           <td className="px-2 py-1 text-right font-mono">{isFinite(f.pbias) ? `${f.pbias >= 0 ? '+' : ''}${f.pbias.toFixed(2)}` : '—'}</td>
                           <td className="px-2 py-1 text-right font-mono">{f.n}</td>
