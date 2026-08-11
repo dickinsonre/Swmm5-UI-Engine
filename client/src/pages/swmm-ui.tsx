@@ -5708,6 +5708,63 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
     setActiveVars(prev => prev.includes(key) ? prev.filter(v => v !== key) : [...prev, key]);
   };
 
+  // Scan every element in the current category and select the one with the
+  // lowest NSE (SWMM6 vs SWMM5) for the first active variable.
+  const [worstInfo, setWorstInfo] = useState<string | null>(null);
+  const findWorstMatch = () => {
+    if (!overlayActive || !compareResults || isSystem || allIds.length === 0) return;
+    const v = activeVars[0] || (category === 'node' ? 'depth' : category === 'link' ? 'flow' : 'runoff');
+    const cmpByTime = new Map<string, (typeof results.timeSteps)[number]>();
+    for (const cts of compareResults.timeSteps) cmpByTime.set(cts.dateTime, cts);
+    const sameLength = compareResults.timeSteps.length === results.timeSteps.length;
+    const readVal = (ts: (typeof results.timeSteps)[number], elId: string): number => {
+      if (category === 'node') {
+        const nr = ts.nodes[elId];
+        return nr ? ((nr as unknown as Record<string, number>)[v] ?? nr.extended?.[v] ?? 0) : 0;
+      } else if (category === 'link') {
+        const lr = ts.links[elId];
+        return lr ? ((lr as unknown as Record<string, number>)[v] ?? lr.extended?.[v] ?? 0) : 0;
+      }
+      const sr = ts.subcatchments[elId];
+      return sr ? ((sr as unknown as Record<string, number>)[v] ?? sr.extended?.[v] ?? 0) : 0;
+    };
+    let worstId: string | null = null;
+    let worstNse = Infinity;
+    let skipped = 0;
+    for (const id of allIds) {
+      const obs: number[] = [];
+      const sim: number[] = [];
+      results.timeSteps.forEach((ts, i) => {
+        const cts = cmpByTime.get(ts.dateTime) ?? (sameLength ? compareResults.timeSteps[i] : undefined);
+        if (!cts) return;
+        const a = readVal(ts, id);
+        const b = readVal(cts, id);
+        if (isFinite(a) && isFinite(b)) { obs.push(a); sim.push(b); }
+      });
+      const n = obs.length;
+      if (n < 2) { skipped++; continue; }
+      const meanO = obs.reduce((x, y) => x + y, 0) / n;
+      let ssErr = 0, ssTot = 0;
+      for (let i = 0; i < n; i++) {
+        ssErr += (sim[i] - obs[i]) ** 2;
+        ssTot += (obs[i] - meanO) ** 2;
+      }
+      // Flat baseline (e.g. always-dry node): NSE undefined; skip unless the
+      // engines actually disagree, in which case treat it as maximally bad.
+      const nse = ssTot > 0 ? 1 - ssErr / ssTot : (ssErr > 0 ? -Infinity : NaN);
+      if (isNaN(nse)) { skipped++; continue; }
+      if (nse < worstNse) { worstNse = nse; worstId = id; }
+    }
+    if (!worstId) {
+      setWorstInfo('No comparable elements (all constant or unpaired)');
+      return;
+    }
+    setElementIds([worstId]);
+    setSearchText(worstId);
+    const varLabel = allVarDefs.find(d => d.key === v)?.label ?? v;
+    setWorstInfo(`Worst: ${worstId} — NSE ${isFinite(worstNse) ? worstNse.toFixed(4) : '−∞ (flat vs non-flat)'} · ${varLabel} · ${allIds.length - skipped} of ${allIds.length} compared`);
+  };
+
   const canChart = isSystem ? activeVars.length > 0 : (elementIds.length > 0 && activeVars.length > 0);
   const chartTitle = isSystem
     ? 'System'
@@ -5754,6 +5811,22 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
               <input type="checkbox" checked={showCompare} onChange={() => setShowCompare(!showCompare)} className="w-3 h-3 accent-[#2c6eb5]" />
               Compare (multi-select)
             </label>
+
+            {overlayActive && (
+              <>
+                <button
+                  onClick={findWorstMatch}
+                  className="w-full text-[9px] py-1 rounded bg-[#e8edf2] text-[#4a4a5a] font-medium hover:bg-[#d0d8e4]"
+                  title="Scan all elements in this category and select the one where SWMM6 diverges most from SWMM5 (lowest NSE) for the first checked variable"
+                  data-testid="btn-ts-worst-match"
+                >
+                  ⚠ Find Worst 5↔6 Match
+                </button>
+                {worstInfo && (
+                  <div className="text-[8px] text-[#b04a00] leading-tight px-0.5" data-testid="ts-worst-info">{worstInfo}</div>
+                )}
+              </>
+            )}
 
             <div className="flex-1 overflow-y-auto border border-[#d0d0d8] rounded" style={{ maxHeight: 180 }}>
               {filteredIds.map(id => (
