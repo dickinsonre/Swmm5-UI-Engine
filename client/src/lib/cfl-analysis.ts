@@ -191,9 +191,13 @@ export function discretizeProject(
 
   const newConduits: Conduit[] = [];
   const newJunctions: Junction[] = [];
-  const newXsections: Record<string, XSection> = {};
+  // Start from ALL existing cross-sections/losses: weirs, orifices and outlets
+  // also live in [XSECTIONS]/[LOSSES], and dropping them produces
+  // "ERROR 143: Regulator ... has invalid cross-section shape". Entries for
+  // split conduits are deleted below and replaced by per-segment entries.
+  const newXsections: Record<string, XSection> = { ...project.xsections };
   const newCoordinates: Record<string, [number, number]> = { ...project.coordinates };
-  const newLosses: Record<string, LossData> = {};
+  const newLosses: Record<string, LossData> = { ...project.losses };
   const newVertices: Record<string, [number, number][]> = { ...project.vertices };
 
   const newJunctionIds = new Set<string>();
@@ -248,6 +252,11 @@ export function discretizeProject(
 
     splitCount++;
     splitConduitOriginalIds.add(conduit.id);
+    // The original conduit is replaced by segments; drop its own entries so
+    // stale xsection/loss records don't linger under the removed link id.
+    delete newXsections[conduit.id];
+    delete newLosses[conduit.id];
+    delete newVertices[conduit.id];
 
     const startElev = fromElev.elevation;
     const endElev = toElev.elevation;
