@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { registerMcpRoutes } from "./mcp";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
@@ -14,6 +15,8 @@ declare module "http" {
 
 app.use(
   express.json({
+    // Large enough for full .inp models posted to the MCP endpoint.
+    limit: "25mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
@@ -67,6 +70,7 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+  registerMcpRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
