@@ -2498,6 +2498,45 @@ export default function SwmmUI() {
               User5 — Complex Watershed
               <span className="block text-[10px] text-[#6b6b7b] mt-0.5">96 subcatchments, CFS, Froude-limited, DynWave</span>
             </button>
+            <div className="border-t" style={{ borderColor: '#e8e8ee' }} />
+            {([
+              ['User2_Slot.inp', 'User2 Slot — Urban Collection', 'User2 variant with Preissmann slot surcharge'],
+              ['User5_Slot.inp', 'User5 Slot — Complex Watershed', 'User5 variant with Preissmann slot surcharge'],
+            ] as const).map(([file, name, desc]) => (
+              <button
+                key={file}
+                className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+                onClick={() => { setShowSamplesMenu(false); handleLoadSample(file); }}
+                data-testid={`btn-sample-${file.replace('.inp', '').toLowerCase()}`}
+              >
+                {name}
+                <span className="block text-[10px] text-[#6b6b7b] mt-0.5">{desc}</span>
+              </button>
+            ))}
+            <div className="px-3 py-2 border-t border-b font-medium text-xs text-[#2a2a3e]" style={{ borderColor: '#d0d0d8', backgroundColor: '#f8f8fa' }}>EXTRAN Manual Examples</div>
+            {([
+              ['Extran1.inp', 'Extran 1 — Basic Network', 'Classic 22-node dynamic wave test'],
+              ['Extran2.inp', 'Extran 2 — Tide Gate', 'Outfall with flap gate against tidal boundary'],
+              ['Extran3.inp', 'Extran 3 — Sump Orifice', 'Bottom orifice draining a sump'],
+              ['Extran4.inp', 'Extran 4 — Weir', 'Weir diversion hydraulics'],
+              ['Extran5.inp', 'Extran 5 — Storage + Side Orifice', 'Storage unit with side orifice outlet'],
+              ['Extran6.inp', 'Extran 6 — Type 1 Pump', 'Wet-well volume pump'],
+              ['Extran7.inp', 'Extran 7 — Type 2 Pump', 'Depth-controlled pump'],
+              ['Extran8a.inp', 'Extran 8a — Conduit Shapes', 'Various closed conduit cross-sections'],
+              ['Extran8b.inp', 'Extran 8b — Conduit Shapes', 'Variant of Example 8 conduit shapes'],
+              ['Extran9.inp', 'Extran 9 — Detention Pond', 'Detention pond storage routing'],
+              ['Extran10.inp', 'Extran 10 — Type 3 Pumps', 'Head-vs-flow curve pumps'],
+            ] as const).map(([file, name, desc]) => (
+              <button
+                key={file}
+                className="w-full text-left px-3 py-2.5 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors"
+                onClick={() => { setShowSamplesMenu(false); handleLoadSample(file); }}
+                data-testid={`btn-sample-${file.replace('.inp', '').toLowerCase()}`}
+              >
+                {name}
+                <span className="block text-[10px] text-[#6b6b7b] mt-0.5">{desc}</span>
+              </button>
+            ))}
           </div>
         </>
       )}
