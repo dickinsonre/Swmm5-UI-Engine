@@ -306,17 +306,16 @@ function Swmm6Tab({ s6, setSwmm6, flowRouting }: { s6: Record<string, string>; s
       )}
 
       <div className="text-xs font-semibold text-[#3a5070] mt-3 mb-2">Solver</div>
-      <OptRow label="Node Continuity">
-        <Select value={getOpt(s6, 'NODE_CONTINUITY', 'EXPLICIT')} onValueChange={v => setSwmm6('NODE_CONTINUITY', v === 'EXPLICIT' ? '' : v)}>
-          <SelectTrigger className="h-7 text-xs bg-white border-[#d0d0d8] text-[#2a2a3e]" data-testid="opt-s6-node-continuity">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-white border-[#d0d0d8]">
-            <SelectItem value="EXPLICIT" className="text-xs">EXPLICIT (default)</SelectItem>
-            <SelectItem value="SEMI_IMPLICIT" className="text-xs">SEMI_IMPLICIT (Crank–Nicolson)</SelectItem>
-          </SelectContent>
-        </Select>
+      <OptRow label="Semi-implicit node continuity (NODE_CONTINUITY SEMI_IMPLICIT)">
+        <Switch
+          checked={getOpt(s6, 'NODE_CONTINUITY', 'EXPLICIT').toUpperCase() === 'SEMI_IMPLICIT'}
+          onCheckedChange={v => setSwmm6('NODE_CONTINUITY', v ? 'SEMI_IMPLICIT' : '')}
+          data-testid="opt-s6-node-continuity"
+        />
       </OptRow>
+      <div className="text-[11px] text-[#6b6b7b] px-1 mt-0.5 mb-1">
+        Off = EXPLICIT (default). Semi-implicit uses Crank–Nicolson time weighting for node continuity.
+      </div>
       <OptRow label="Anderson Acceleration">
         <Switch
           checked={getOpt(s6, 'ANDERSON_ACCEL', 'NO').toUpperCase() === 'YES'}
