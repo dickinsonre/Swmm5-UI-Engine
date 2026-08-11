@@ -10,7 +10,7 @@ import {
   checkWasm6Engine,
 } from './swmm-engine';
 
-export type EngineId = 'local' | 'wasm' | 'wasm6' | 'remote' | 'mock';
+export type EngineId = 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'remote' | 'mock';
 
 export interface EngineStatus {
   engine: EngineId;
@@ -37,7 +37,8 @@ export interface RunProvenance {
 export const ENGINE_LABELS: Record<EngineId, string> = {
   local: 'Local (server binary)',
   wasm: 'SWMM 5.2.4 WASM (in-browser)',
-  wasm6: 'OpenSWMM 6 WASM (in-browser)',
+  wasm6: 'OpenSWMM 6 rel WASM (in-browser)',
+  wasm6dev: 'OpenSWMM 6 dev WASM (in-browser)',
   remote: 'Remote (BatchSWMM cloud)',
   mock: 'Mock (synthetic)',
 };
@@ -46,6 +47,7 @@ export const ENGINE_COLORS: Record<EngineId, string> = {
   local: '#2a8a4a',
   wasm: '#e88a1a',
   wasm6: '#8a4ae2',
+  wasm6dev: '#c24ae2',
   remote: '#2c6eb5',
   mock: '#6b6b7b',
 };
@@ -100,16 +102,17 @@ async function probeWasm(): Promise<EngineStatus> {
   }
 }
 
-async function probeWasm6(): Promise<EngineStatus> {
+async function probeWasm6(variant: 'wasm6' | 'wasm6dev'): Promise<EngineStatus> {
   const checkedAt = Date.now();
+  const version = variant === 'wasm6dev' ? '6.0 develop' : '6.0.0-alpha.3';
   try {
-    const ok = await checkWasm6Engine();
+    const ok = await checkWasm6Engine(variant);
     if (!ok) {
-      return { engine: 'wasm6', ready: false, version: '—', detail: 'openswmm6.js / openswmm6.wasm not served', checkedAt };
+      return { engine: variant, ready: false, version: '—', detail: 'OpenSWMM 6 WASM artifacts not served', checkedAt };
     }
-    return { engine: 'wasm6', ready: true, version: '6.0.0-alpha.3', detail: 'Engine artifacts served (fresh instance created per run)', checkedAt };
+    return { engine: variant, ready: true, version, detail: 'Engine artifacts served (fresh instance created per run)', checkedAt };
   } catch (e: any) {
-    return { engine: 'wasm6', ready: false, version: '—', detail: `Probe failed: ${e.message}`, checkedAt };
+    return { engine: variant, ready: false, version: '—', detail: `Probe failed: ${e.message}`, checkedAt };
   }
 }
 
@@ -148,8 +151,8 @@ function probeMock(): EngineStatus {
 
 export async function probeAllEngines(force = false): Promise<EngineStatus[]> {
   if (!force && statusCache) return statusCache;
-  const [local, wasm, wasm6, remote] = await Promise.all([probeLocal(), probeWasm(), probeWasm6(), probeRemote()]);
-  statusCache = [local, wasm, wasm6, remote, probeMock()];
+  const [local, wasm, wasm6, wasm6dev, remote] = await Promise.all([probeLocal(), probeWasm(), probeWasm6('wasm6'), probeWasm6('wasm6dev'), probeRemote()]);
+  statusCache = [local, wasm, wasm6, wasm6dev, remote, probeMock()];
   return statusCache;
 }
 
@@ -315,7 +318,8 @@ export async function runEngineSelfTest(
   const engines: Array<{ id: EngineId; make: () => { run: (p: SwmmProject) => Promise<SimulationResults> } }> = [
     { id: 'local', make: createLocalEngine },
     { id: 'wasm', make: createWasmEngine },
-    { id: 'wasm6', make: createWasm6Engine },
+    { id: 'wasm6', make: () => createWasm6Engine('wasm6') },
+    { id: 'wasm6dev', make: () => createWasm6Engine('wasm6dev') },
     { id: 'remote', make: createRemoteEngine },
     { id: 'mock', make: createMockEngine },
   ];

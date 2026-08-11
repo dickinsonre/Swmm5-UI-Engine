@@ -30,12 +30,13 @@ export interface BatchFileResult {
   parsedMetrics?: BatchParsedMetrics;
 }
 
-export type BatchEngineId = 'local' | 'wasm' | 'wasm6' | 'remote';
+export type BatchEngineId = 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'remote';
 
 export const BATCH_ENGINE_LABELS: Record<BatchEngineId, string> = {
   local: 'Local 5.2.4',
   wasm: 'WASM 5.2.4',
-  wasm6: 'SWMM6 WASM',
+  wasm6: 'SWMM6 rel WASM',
+  wasm6dev: 'SWMM6 dev WASM',
   remote: 'Remote 5.2.4',
 };
 

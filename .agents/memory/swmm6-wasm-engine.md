@@ -22,3 +22,8 @@ Run rules (client, `createWasm6Engine` in swmm-engine.ts):
 
 ## Running the engine in Node (fixture generation)
 `require()` of client/public/wasm6/openswmm6.js returns `{}` under Node CJS interop; instead read the file and eval via `new Function('module','exports',src+';return module.exports;')`. Pass `wasmBinary: fs.readFileSync(...wasm)` (locateFile paths fail — the loader fetch()es them). Then `FS.writeFile('/model.inp',...)`, `callMain([...])`, read the rpt from FS. Real SWMM5/SWMM6 .rpt fixtures live in tests/fixtures/ with the source .inp.
+
+## Dual variants
+- Release (swmm6_rel) and develop builds ship side by side under distinct dirs with distinct Emscripten EXPORT_NAMEs — factory names must differ or the second script silently overwrites the first's global.
+- All SWMM6-family behavior (worker, batch, scatter compare, diagnostics) must key off "is a SWMM6 variant", not `engine === 'wasm6'` — the scatter compare pairing regressed exactly this way.
+- develop builds with the same 3 patches/recipe as release; IOThread patch = run post() inline under __EMSCRIPTEN__ (no std::thread).

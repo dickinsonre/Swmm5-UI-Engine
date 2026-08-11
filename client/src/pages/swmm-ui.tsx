@@ -206,11 +206,12 @@ export default function SwmmUI() {
   const [simStatus, setSimStatus] = useState<'none' | 'running' | 'current' | 'outdated'>('none');
   const [simProgress, setSimProgress] = useState(0);
   const [simProgressMsg, setSimProgressMsg] = useState('');
-  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'both56'>('mock');
+  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56'>('mock');
   const [localAvailable, setLocalAvailable] = useState(false);
   const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [wasmAvailable, setWasmAvailable] = useState(false);
   const [wasm6Available, setWasm6Available] = useState(false);
+  const [wasm6DevAvailable, setWasm6DevAvailable] = useState(false);
   const [results, setResults] = useState<SimulationResults | null>(null);
   // Secondary result set from a "Run 5+6" comparison run (SWMM6), overlaid on graphs/tables.
   const [compareResults, setCompareResults] = useState<SimulationResults | null>(null);
@@ -938,10 +939,11 @@ export default function SwmmUI() {
     // Revalidate SWMM6 artifact availability just before running — a stale
     // engineMode (artifacts removed after page load) should fail loudly with
     // guidance rather than a confusing engine error mid-run.
-    if (engineMode === 'wasm6' || engineMode === 'both56') {
-      const stillAvailable = await checkWasm6Engine();
+    if (engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56') {
+      const variant = engineMode === 'wasm6dev' ? 'wasm6dev' as const : 'wasm6' as const;
+      const stillAvailable = await checkWasm6Engine(variant);
       if (!stillAvailable) {
-        setWasm6Available(false);
+        if (variant === 'wasm6dev') setWasm6DevAvailable(false); else setWasm6Available(false);
         setEngineMode(wasmAvailable ? 'wasm' : localAvailable ? 'local' : remoteAvailable ? 'remote' : 'mock');
         toast({
           title: 'SWMM6 Engine Unavailable',
@@ -1028,7 +1030,7 @@ export default function SwmmUI() {
       return;
     }
 
-    const engine: SwmmEngine = engineMode === 'local' ? createLocalEngine() : engineMode === 'wasm' ? createWasmEngine() : engineMode === 'wasm6' ? createWasm6Engine() : engineMode === 'remote' ? createRemoteEngine() : createMockEngine();
+    const engine: SwmmEngine = engineMode === 'local' ? createLocalEngine() : engineMode === 'wasm' ? createWasmEngine() : engineMode === 'wasm6' ? createWasm6Engine('wasm6') : engineMode === 'wasm6dev' ? createWasm6Engine('wasm6dev') : engineMode === 'remote' ? createRemoteEngine() : createMockEngine();
 
     let progressInterval: ReturnType<typeof setInterval> | null = null;
     if (engine.mode === 'mock') {
@@ -1060,7 +1062,7 @@ export default function SwmmUI() {
       setTimeStep(0);
       // Label by the engine that ACTUALLY ran (local can silently fall back).
       const usedEngine = res.engineUsed || engine.mode;
-      const engineLabel = usedEngine === 'local' ? 'EPA SWMM 5.2.4 (Local)' : usedEngine === 'wasm' ? 'EPA SWMM 5.2.4 (WASM)' : usedEngine === 'wasm6' ? 'OpenSWMM 6.0.0-alpha.3 (WASM)' : usedEngine === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine';
+      const engineLabel = usedEngine === 'local' ? 'EPA SWMM 5.2.4 (Local)' : usedEngine === 'wasm' ? 'EPA SWMM 5.2.4 (WASM)' : usedEngine === 'wasm6' ? 'OpenSWMM 6 release (WASM)' : usedEngine === 'wasm6dev' ? 'OpenSWMM 6 develop (WASM)' : usedEngine === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine';
       if (res.fidelity === 'report-summary') {
         toast({
           title: 'Simulation Complete — Report Summary Only',
@@ -1343,8 +1345,11 @@ export default function SwmmUI() {
       setWasmAvailable(available);
       if (available && !localOk) setEngineMode('wasm');
     });
-    checkWasm6Engine().then(available => {
+    checkWasm6Engine('wasm6').then(available => {
       setWasm6Available(available);
+    });
+    checkWasm6Engine('wasm6dev').then(available => {
+      setWasm6DevAvailable(available);
     });
     checkRemoteEngine().then(available => {
       setRemoteAvailable(available);
@@ -2411,10 +2416,11 @@ export default function SwmmUI() {
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <button
               onClick={() => {
-                const modes: Array<'local' | 'wasm' | 'wasm6' | 'both56' | 'remote' | 'mock'> = [];
+                const modes: Array<'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'remote' | 'mock'> = [];
                 if (localAvailable) modes.push('local');
                 if (wasmAvailable) modes.push('wasm');
                 if (wasm6Available) modes.push('wasm6');
+                if (wasm6DevAvailable) modes.push('wasm6dev');
                 if (wasmAvailable && wasm6Available) modes.push('both56');
                 if (remoteAvailable) modes.push('remote');
                 modes.push('mock');
@@ -2422,15 +2428,15 @@ export default function SwmmUI() {
                 setEngineMode(modes[(idx + 1) % modes.length]);
               }}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors border ${
-                engineMode === 'local' || engineMode === 'remote' || engineMode === 'wasm' || engineMode === 'wasm6' || engineMode === 'both56'
+                engineMode === 'local' || engineMode === 'remote' || engineMode === 'wasm' || engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56'
                   ? 'bg-[rgba(44,110,181,0.12)] border-[#2c6eb5] text-[#2c6eb5]'
                   : 'bg-transparent border-[#d0d0d8] text-[#6b6b7b] hover:text-[#2a2a3e]'
               } cursor-pointer`}
-              title="Cycle engine mode: Local → WASM 5 → WASM 6 → Compare 5+6 → Remote → Mock"
+              title="Cycle engine mode: Local → WASM 5 → WASM 6 rel → WASM 6 dev → Compare 5+6 → Remote → Mock"
               data-testid="btn-engine-toggle"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
-              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6.0-a3' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
+              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
+              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
             </button>
           </div>
         )}
@@ -2623,7 +2629,7 @@ export default function SwmmUI() {
                     {simProgressMsg || 'Running simulation...'}
                   </div>
                   <div className="text-[10px] text-[#6b6b7b]">
-                    {engineMode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engineMode === 'wasm' ? 'EPA SWMM 5.2.4 (WASM In-Browser)' : engineMode === 'wasm6' ? 'OpenSWMM 6.0.0-alpha.3 (WASM In-Browser)' : engineMode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine'}
+                    {engineMode === 'local' ? 'EPA SWMM 5.2.4 (Local)' : engineMode === 'wasm' ? 'EPA SWMM 5.2.4 (WASM In-Browser)' : engineMode === 'wasm6' ? 'OpenSWMM 6 release (WASM In-Browser)' : engineMode === 'wasm6dev' ? 'OpenSWMM 6 develop (WASM In-Browser)' : engineMode === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine'}
                   </div>
                 </div>
                 <span className="text-xs text-[#2c6eb5] font-mono tabular-nums" data-testid="text-progress-pct">
@@ -3183,9 +3189,9 @@ export default function SwmmUI() {
           />
         )}
         <StatusItem
-          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6.0-a3' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
-          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'both56' ? '#1a9e8a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
-          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
+          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
+          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'wasm6dev' ? '#c24ae2' : engineMode === 'both56' ? '#1a9e8a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
+          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
         />
         <div className="flex-1" />
         <span className="text-[8px] sm:text-[9px] font-mono text-[#6b6b7b] flex items-center gap-1 sm:gap-1.5" data-testid="status-counts">
@@ -4520,6 +4526,7 @@ export default function SwmmUI() {
           localAvailable && 'local',
           wasmAvailable && 'wasm',
           wasm6Available && 'wasm6',
+          wasm6DevAvailable && 'wasm6dev',
           remoteAvailable && 'remote',
         ].filter(Boolean)) as BatchEngineId[]}
       />

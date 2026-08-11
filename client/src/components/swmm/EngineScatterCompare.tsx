@@ -49,10 +49,11 @@ export default function EngineScatterCompare({ comparison, getReport }: Props) {
       }
     });
     if (withContent.length < 2) return null;
+    const isSwmm6 = (e: string) => e === 'wasm6' || e === 'wasm6dev';
     let a = withContent[0], b = withContent[1];
-    if (a.engine === 'wasm6' && b.engine !== 'wasm6') [a, b] = [b, a];
-    else if (b.engine !== 'wasm6') {
-      const six = withContent.find(e => e.engine === 'wasm6');
+    if (isSwmm6(a.engine) && !isSwmm6(b.engine)) [a, b] = [b, a];
+    else if (!isSwmm6(b.engine)) {
+      const six = withContent.find(e => isSwmm6(e.engine));
       if (six) b = six;
     }
     return [a, b] as const;

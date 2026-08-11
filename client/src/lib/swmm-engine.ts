@@ -19,7 +19,7 @@ function applyRptContinuity(parsed: SimulationResults, rptText: string | undefin
 
 export interface SwmmEngine {
   isLoaded: boolean;
-  mode: 'mock' | 'remote' | 'local' | 'wasm' | 'wasm6';
+  mode: 'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'wasm6dev';
   run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults>;
   getStatus(): string;
 }
@@ -219,56 +219,85 @@ export function createWasmEngine(): SwmmEngine {
 // MEMFS lives in the glue, so a new factory call gives clean state each time.
 // ---------------------------------------------------------------------------
 
-let wasm6Binary: ArrayBuffer | null = null;
-let wasm6ScriptLoaded: Promise<void> | null = null;
+export type Wasm6Variant = 'wasm6' | 'wasm6dev';
 
-function loadWasm6Script(): Promise<void> {
-  if (wasm6ScriptLoaded) return wasm6ScriptLoaded;
-  wasm6ScriptLoaded = new Promise<void>((resolve, reject) => {
-    if (typeof (window as any).createOswmm6Module === 'function') { resolve(); return; }
+/**
+ * Two OpenSWMM 6 builds ship side by side: `wasm6` from the `swmm6_rel`
+ * release branch, `wasm6dev` from `develop`. Same handle-based API and build
+ * recipe; only the artifact paths, Emscripten factory name and label differ.
+ */
+export const WASM6_VARIANTS: Record<Wasm6Variant, {
+  dir: string; js: string; wasm: string; factory: string; label: string; shortLabel: string;
+}> = {
+  wasm6: {
+    dir: '/wasm6', js: 'openswmm6.js', wasm: 'openswmm6.wasm',
+    factory: 'createOswmm6Module',
+    label: 'OpenSWMM 6.0.0-alpha.3 (release)', shortLabel: 'WASM 6 rel',
+  },
+  wasm6dev: {
+    dir: '/wasm6dev', js: 'openswmm6dev.js', wasm: 'openswmm6dev.wasm',
+    factory: 'createOswmm6DevModule',
+    label: 'OpenSWMM 6 develop (WASM)', shortLabel: 'WASM 6 dev',
+  },
+};
+
+const wasm6Binaries: Partial<Record<Wasm6Variant, ArrayBuffer>> = {};
+const wasm6ScriptsLoaded: Partial<Record<Wasm6Variant, Promise<void>>> = {};
+
+function loadWasm6Script(variant: Wasm6Variant): Promise<void> {
+  const existing = wasm6ScriptsLoaded[variant];
+  if (existing) return existing;
+  const v = WASM6_VARIANTS[variant];
+  const p = new Promise<void>((resolve, reject) => {
+    if (typeof (window as any)[v.factory] === 'function') { resolve(); return; }
     const script = document.createElement('script');
-    script.src = '/wasm6/openswmm6.js';
+    script.src = `${v.dir}/${v.js}`;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load openswmm6.js'));
+    script.onerror = () => reject(new Error(`Failed to load ${v.js}`));
     document.head.appendChild(script);
   });
-  wasm6ScriptLoaded.catch(() => { wasm6ScriptLoaded = null; });
-  return wasm6ScriptLoaded;
+  wasm6ScriptsLoaded[variant] = p;
+  p.catch(() => { delete wasm6ScriptsLoaded[variant]; });
+  return p;
 }
 
-async function createWasm6Instance(onProgress?: (pct: number, msg: string) => void): Promise<any> {
-  if (onProgress) onProgress(5, 'Downloading OpenSWMM 6 WASM engine...');
+async function createWasm6Instance(variant: Wasm6Variant, onProgress?: (pct: number, msg: string) => void): Promise<any> {
+  const v = WASM6_VARIANTS[variant];
+  if (onProgress) onProgress(5, `Downloading ${v.label} engine...`);
   const [, binary] = await Promise.all([
-    loadWasm6Script(),
+    loadWasm6Script(variant),
     (async () => {
-      if (wasm6Binary) return wasm6Binary;
-      const resp = await fetch('/wasm6/openswmm6.wasm');
-      if (!resp.ok) throw new Error('Failed to download openswmm6.wasm: HTTP ' + resp.status);
-      wasm6Binary = await resp.arrayBuffer();
-      return wasm6Binary;
+      const cached = wasm6Binaries[variant];
+      if (cached) return cached;
+      const resp = await fetch(`${v.dir}/${v.wasm}`);
+      if (!resp.ok) throw new Error(`Failed to download ${v.wasm}: HTTP ` + resp.status);
+      const buf = await resp.arrayBuffer();
+      wasm6Binaries[variant] = buf;
+      return buf;
     })(),
   ]);
   if (onProgress) onProgress(20, 'Initializing OpenSWMM 6 module...');
-  const factory = (window as any).createOswmm6Module;
-  if (typeof factory !== 'function') throw new Error('createOswmm6Module factory not found after script load');
+  const factory = (window as any)[v.factory];
+  if (typeof factory !== 'function') throw new Error(`${v.factory} factory not found after script load`);
   const mod = await factory({
     wasmBinary: binary,
     noInitialRun: true,
     print: (t: string) => console.log('[SWMM6 WASM]', t),
     printErr: (t: string) => console.warn('[SWMM6 WASM]', t),
-    locateFile: (path: string) => '/wasm6/' + path,
+    locateFile: (path: string) => `${v.dir}/` + path,
   });
   if (typeof mod._swmm_engine_run !== 'function') {
-    throw new Error('openswmm6.wasm loaded but swmm_engine_run is not exported');
+    throw new Error(`${v.wasm} loaded but swmm_engine_run is not exported`);
   }
   return mod;
 }
 
-export async function checkWasm6Engine(): Promise<boolean> {
+export async function checkWasm6Engine(variant: Wasm6Variant = 'wasm6'): Promise<boolean> {
+  const v = WASM6_VARIANTS[variant];
   try {
     const [jsResp, wasmResp] = await Promise.all([
-      fetch('/wasm6/openswmm6.js', { method: 'HEAD' }),
-      fetch('/wasm6/openswmm6.wasm', { method: 'HEAD' }),
+      fetch(`${v.dir}/${v.js}`, { method: 'HEAD' }),
+      fetch(`${v.dir}/${v.wasm}`, { method: 'HEAD' }),
     ]);
     if (!jsResp.ok || !wasmResp.ok) return false;
     const jsCt = jsResp.headers.get('content-type') || '';
@@ -280,20 +309,21 @@ export async function checkWasm6Engine(): Promise<boolean> {
   }
 }
 
-export function createWasm6Engine(): SwmmEngine {
+export function createWasm6Engine(variant: Wasm6Variant = 'wasm6'): SwmmEngine {
+  const v = WASM6_VARIANTS[variant];
   return {
     isLoaded: true,
-    mode: 'wasm6' as const,
+    mode: variant,
     async run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults> {
       const inpText = projectToInp(project, 'swmm6');
 
       // Fresh instance per run — no stale MEMFS files, trap recovery for free.
-      const mod = await createWasm6Instance(onProgress);
+      const mod = await createWasm6Instance(variant, onProgress);
 
       if (onProgress) onProgress(30, 'Writing model to WASM filesystem...');
       mod.FS.writeFile('/model.inp', inpText);
 
-      if (onProgress) onProgress(35, 'Running OpenSWMM 6.0.0-alpha.3 (WASM)...');
+      if (onProgress) onProgress(35, `Running ${v.label}...`);
 
       let errCode: number;
       try {
@@ -356,13 +386,13 @@ export function createWasm6Engine(): SwmmEngine {
       applyRptContinuity(parsed, rptText);
 
       computeExtendedVariables(project, parsed);
-      parsed.engineUsed = 'wasm6';
+      parsed.engineUsed = variant;
       parsed.inpUsed = inpText;
       if (onProgress) onProgress(100, 'Simulation complete');
       return parsed;
     },
     getStatus() {
-      return 'OpenSWMM 6.0.0-alpha.3 (WASM In-Browser)';
+      return `${v.label} (In-Browser)`;
     },
   };
 }
@@ -391,7 +421,7 @@ interface WorkerDone {
 }
 
 function runInWorker(
-  engineId: 'wasm' | 'wasm6',
+  engineId: 'wasm' | 'wasm6' | 'wasm6dev',
   inpText: string,
   opts: WorkerRunOptions
 ): Promise<WorkerDone> {
@@ -448,14 +478,15 @@ export function toExactArrayBuffer(view: Uint8Array): ArrayBuffer {
 }
 
 export async function runWasmEngineInWorker(
-  engineId: 'wasm' | 'wasm6',
+  engineId: 'wasm' | 'wasm6' | 'wasm6dev',
   project: SwmmProject,
   opts: WorkerRunOptions = {}
 ): Promise<SimulationResults> {
-  const inpText = projectToInp(project, engineId === 'wasm6' ? 'swmm6' : 'swmm5');
+  const isSwmm6 = engineId === 'wasm6' || engineId === 'wasm6dev';
+  const inpText = projectToInp(project, isSwmm6 ? 'swmm6' : 'swmm5');
   const { errCode, rptText, outData } = await runInWorker(engineId, inpText, opts);
 
-  if (engineId === 'wasm6') {
+  if (isSwmm6) {
     // SWMM6 engines have exited 0 on fatal parses — verify results exist in
     // the report rather than trusting the return code alone.
     const rptHasErrors = /^\s*ERROR\s+\d+/m.test(rptText);
@@ -487,7 +518,7 @@ export async function runWasmEngineInWorker(
     parsed.fidelity = 'native-binary';
     applyRptContinuity(parsed, rptText);
     computeExtendedVariables(project, parsed);
-    parsed.engineUsed = 'wasm6';
+    parsed.engineUsed = engineId;
     parsed.inpUsed = inpText;
     if (opts.onProgress) opts.onProgress(100, 'Simulation complete');
     return parsed;

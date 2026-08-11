@@ -31,12 +31,13 @@ type FileState = 'pending' | 'running' | 'success' | 'failed' | 'cancelled';
 const ENGINE_FACTORIES: Record<BatchEngineId, () => SwmmEngine> = {
   local: createLocalEngine,
   wasm: createWasmEngine,
-  wasm6: createWasm6Engine,
+  wasm6: () => createWasm6Engine('wasm6'),
+  wasm6dev: () => createWasm6Engine('wasm6dev'),
   remote: createRemoteEngine,
 };
 
 const ENGINE_DOT: Record<BatchEngineId, string> = {
-  local: '#2a8a4a', wasm: '#e88a1a', wasm6: '#8a4ae2', remote: '#2c6eb5',
+  local: '#2a8a4a', wasm: '#e88a1a', wasm6: '#8a4ae2', wasm6dev: '#c24ae2', remote: '#2c6eb5',
 };
 
 const VERDICT_STYLE: Record<FileComparison['verdict'], { label: string; cls: string }> = {
@@ -145,7 +146,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
         try {
           const project = parseInpFile(file.text);
           let res: SimulationResults;
-          if (engineId === 'wasm' || engineId === 'wasm6') {
+          if (engineId === 'wasm' || engineId === 'wasm6' || engineId === 'wasm6dev') {
             // In-browser engines run in a dedicated web worker: the UI stays
             // responsive and Cancel hard-terminates the in-flight run.
             res = await runWasmEngineInWorker(engineId, project, { signal: abortCtrl.signal });

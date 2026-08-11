@@ -449,7 +449,7 @@ export interface SimulationResults {
   outRaw?: Uint8Array;
   /** Exact .inp text that was fed to the engine for this run (for auditing options/sections). */
   inpUsed?: string;
-  engineUsed?: 'local' | 'wasm' | 'wasm6' | 'remote' | 'mock';
+  engineUsed?: 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'remote' | 'mock';
   fidelity?: ResultsFidelity;
 }
 

@@ -7,9 +7,15 @@
  * afterwards (or on cancel), which preserves the fresh-module-instance rule
  * for SWMM6 and gives hard cancellation via worker.terminate().
  *
- * engine: 'wasm'  -> EPA SWMM 5.2.4  (/swmm_engine.js, global Module, swmm_run)
- * engine: 'wasm6' -> OpenSWMM 6      (/wasm6/openswmm6.js, createOswmm6Module factory)
+ * engine: 'wasm'     -> EPA SWMM 5.2.4      (/swmm_engine.js, global Module, swmm_run)
+ * engine: 'wasm6'    -> OpenSWMM 6 release  (/wasm6/openswmm6.js, createOswmm6Module factory)
+ * engine: 'wasm6dev' -> OpenSWMM 6 develop  (/wasm6dev/openswmm6dev.js, createOswmm6DevModule factory)
  */
+
+var SWMM6_VARIANTS = {
+  wasm6:    { dir: '/wasm6',    js: 'openswmm6.js',    factory: 'createOswmm6Module' },
+  wasm6dev: { dir: '/wasm6dev', js: 'openswmm6dev.js', factory: 'createOswmm6DevModule' },
+};
 
 function post(type, data) {
   self.postMessage(Object.assign({ type: type }, data));
@@ -43,23 +49,24 @@ function loadSwmm5Module() {
   });
 }
 
-async function loadSwmm6Module() {
-  if (typeof self.createOswmm6Module !== 'function') {
-    importScripts('/wasm6/openswmm6.js');
+async function loadSwmm6Module(variant) {
+  var v = SWMM6_VARIANTS[variant] || SWMM6_VARIANTS.wasm6;
+  if (typeof self[v.factory] !== 'function') {
+    importScripts(v.dir + '/' + v.js);
   }
-  if (typeof self.createOswmm6Module !== 'function') {
-    throw new Error('createOswmm6Module factory not found after script load');
+  if (typeof self[v.factory] !== 'function') {
+    throw new Error(v.factory + ' factory not found after script load');
   }
   // Fresh instance per run — the engine traps are unrecoverable and MEMFS
   // lives in the glue, so a new factory call gives clean state each time.
-  var mod = await self.createOswmm6Module({
+  var mod = await self[v.factory]({
     noInitialRun: true,
     print: function () {},
     printErr: function () {},
-    locateFile: function (path) { return '/wasm6/' + path; },
+    locateFile: function (path) { return v.dir + '/' + path; },
   });
   if (typeof mod._swmm_engine_run !== 'function') {
-    throw new Error('openswmm6.wasm loaded but swmm_engine_run is not exported');
+    throw new Error(v.js + ' loaded but swmm_engine_run is not exported');
   }
   return mod;
 }
@@ -84,12 +91,12 @@ async function runSwmm5(inpText) {
   return { errCode: errCode, rptText: rptText, outData: outData };
 }
 
-async function runSwmm6(inpText) {
+async function runSwmm6(inpText, variant) {
   post('progress', { pct: 10, msg: 'Initializing OpenSWMM 6 (worker)...' });
-  var mod = await loadSwmm6Module();
+  var mod = await loadSwmm6Module(variant);
   post('progress', { pct: 30, msg: 'Writing model to WASM filesystem...' });
   mod.FS.writeFile('/model.inp', inpText);
-  post('progress', { pct: 35, msg: 'Running OpenSWMM 6.0.0-alpha.3 (WASM)...' });
+  post('progress', { pct: 35, msg: variant === 'wasm6dev' ? 'Running OpenSWMM 6 develop (WASM)...' : 'Running OpenSWMM 6 release (WASM)...' });
   var errCode;
   try {
     errCode = mod.ccall(
@@ -116,8 +123,8 @@ self.onmessage = async function (e) {
   var data = e.data || {};
   if (data.type !== 'run') return;
   try {
-    var result = data.engine === 'wasm6'
-      ? await runSwmm6(data.inpText)
+    var result = (data.engine === 'wasm6' || data.engine === 'wasm6dev')
+      ? await runSwmm6(data.inpText, data.engine)
       : await runSwmm5(data.inpText);
     var outBytes = result.outData && result.outData.length
       ? new Uint8Array(result.outData) // copy out of WASM heap before transfer
