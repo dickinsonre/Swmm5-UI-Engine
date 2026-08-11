@@ -5774,7 +5774,7 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
   // expanded view must portal to document.body to actually cover the screen.
   const content = (
     <div
-      className={expanded ? 'flex gap-3 fixed inset-0 z-[100] bg-white p-4 overflow-auto' : 'flex gap-3'}
+      className={expanded ? 'flex gap-3 fixed inset-0 z-[100] bg-white p-4 overflow-hidden' : 'flex gap-3'}
       // Radix modal dialogs set pointer-events:none on <body>; the portaled
       // fullscreen view must re-enable them or every click falls through to
       // the dialog overlay underneath.
@@ -5884,7 +5884,7 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={`flex-1 flex flex-col min-w-0 ${expanded ? 'overflow-y-auto min-h-0' : ''}`}>
         {!canChart ? (
           <div className="flex-1 flex items-center justify-center text-[#9090a0] text-sm">
             {isSystem ? 'Select a system variable to view its time series' : `Select a ${category === 'node' ? 'node' : category === 'link' ? 'link' : 'subcatchment'} to view its time series`}
@@ -5934,7 +5934,7 @@ function TimeSeriesPlotContent({ project, results, compareResults = null, select
             {!zoomRange && (
               <div className="text-[8px] text-[#9090a0] mb-1">Drag across the chart to zoom into a time window</div>
             )}
-            <div className="flex-1" style={{ minHeight: expanded ? 450 : 300 }}>
+            <div className={expanded ? 'shrink-0' : 'flex-1'} style={{ minHeight: expanded ? 'calc(100vh - 300px)' : 300 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
                   data={displayData}
