@@ -360,3 +360,13 @@
 .app-dark iframe {
   filter: invert(1) hue-rotate(180deg);
 }
+
+/* ===== Theme variants =====
+   Light tints filter the whole page subtly; dark variants override the
+   .app-dark inversion filter (media re-inversion above still applies). */
+body.theme-warm { filter: sepia(0.18) saturate(1.03); color-scheme: light; }
+body.theme-cool { filter: saturate(0.82) hue-rotate(-8deg) brightness(1.01); color-scheme: light; }
+body.theme-contrast { filter: contrast(1.09) saturate(1.05); color-scheme: light; }
+body.app-dark.theme-midnight { filter: invert(1) hue-rotate(212deg) saturate(1.12) brightness(0.94); }
+body.app-dark.theme-charcoal { filter: invert(0.92) hue-rotate(180deg) saturate(0.8); }
+body.app-dark.theme-amber { filter: invert(1) hue-rotate(180deg) sepia(0.32) brightness(0.96); }

@@ -88,6 +88,19 @@ export interface SwmmPreferences {
   backdropOpacity: number;
 }
 
+// UI color themes: filter-based variants applied as body classes (see index.css).
+const APP_THEMES = [
+  { key: 'light', label: 'Classic Light', dark: false, className: '', desc: 'Default light palette' },
+  { key: 'warm', label: 'Warm Paper', dark: false, className: 'theme-warm', desc: 'Sepia-tinted light' },
+  { key: 'cool', label: 'Cool Gray', dark: false, className: 'theme-cool', desc: 'Desaturated cool light' },
+  { key: 'contrast', label: 'High Contrast', dark: false, className: 'theme-contrast', desc: 'Punchier light palette' },
+  { key: 'dark', label: 'Dark', dark: true, className: '', desc: 'Standard inverted dark' },
+  { key: 'midnight', label: 'Midnight Blue', dark: true, className: 'theme-midnight', desc: 'Blue-shifted dark' },
+  { key: 'charcoal', label: 'Charcoal', dark: true, className: 'theme-charcoal', desc: 'Soft low-contrast dark' },
+  { key: 'amber', label: 'Amber Night', dark: true, className: 'theme-amber', desc: 'Warm-tinted dark' },
+] as const;
+type AppThemeKey = typeof APP_THEMES[number]['key'];
+
 const DEFAULT_PREFERENCES: SwmmPreferences = {
   flyoverHints: true,
   confirmDeletions: true,
@@ -157,19 +170,32 @@ export default function SwmmUI() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuTab>('Project');
   const [selectedObj, setSelectedObj] = useState<SelectedObject>(null);
-  const [darkMode, setDarkMode] = useState(() => {
-    try { return localStorage.getItem('swmm5-dark-mode') === 'true'; } catch { return false; }
+  const [appTheme, setAppTheme] = useState<AppThemeKey>(() => {
+    try {
+      const saved = localStorage.getItem('swmm5-app-theme');
+      if (saved && APP_THEMES.some(t => t.key === saved)) return saved as AppThemeKey;
+      // migrate old boolean dark-mode preference
+      return localStorage.getItem('swmm5-dark-mode') === 'true' ? 'dark' : 'light';
+    } catch { return 'light'; }
   });
-  const toggleDarkMode = () => {
-    setDarkMode(d => {
-      try { localStorage.setItem('swmm5-dark-mode', String(!d)); } catch {}
-      return !d;
-    });
+  const [showThemeMenu, setShowThemeMenu] = useState(false);
+  const darkMode = APP_THEMES.find(t => t.key === appTheme)?.dark ?? false;
+  const pickTheme = (key: AppThemeKey) => {
+    setAppTheme(key);
+    setShowThemeMenu(false);
+    try { localStorage.setItem('swmm5-app-theme', key); } catch {}
   };
   useEffect(() => {
-    document.body.classList.toggle('app-dark', darkMode);
-    return () => { document.body.classList.remove('app-dark'); };
-  }, [darkMode]);
+    const t = APP_THEMES.find(x => x.key === appTheme) ?? APP_THEMES[0];
+    document.body.classList.toggle('app-dark', t.dark);
+    for (const x of APP_THEMES) {
+      if (x.className) document.body.classList.toggle(x.className, x.key === t.key);
+    }
+    return () => {
+      document.body.classList.remove('app-dark');
+      for (const x of APP_THEMES) { if (x.className) document.body.classList.remove(x.className); }
+    };
+  }, [appTheme]);
   const [showSubcatch, setShowSubcatch] = useState(true);
   const [subcatchTheme, setSubcatchTheme] = useState('imperv');
   const [nodeTheme, setNodeTheme] = useState('depth');
@@ -2167,8 +2193,8 @@ export default function SwmmUI() {
         <div className="flex items-center gap-1 pr-2 sm:pr-3">
           <ToolbarIconButton
             icon={darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            onClick={toggleDarkMode}
-            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={() => setShowThemeMenu(v => !v)}
+            title="Choose theme"
             testId="btn-dark-mode"
           />
           <ToolbarIconButton icon={<Save className="w-3.5 h-3.5" />} onClick={handleSave} title="Save" testId="btn-save" />
@@ -2535,6 +2561,44 @@ export default function SwmmUI() {
               >
                 {name}
                 <span className="block text-[10px] text-[#6b6b7b] mt-0.5">{desc}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {showThemeMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowThemeMenu(false)} />
+          <div className="fixed right-2 sm:right-3 top-[34px] z-50 w-[230px] rounded-xl shadow-2xl border overflow-hidden" style={{ backgroundColor: '#ffffff', borderColor: '#d0d0d8' }} data-testid="theme-menu">
+            <div className="px-3 py-2 border-b font-medium text-xs text-[#2a2a3e]" style={{ borderColor: '#d0d0d8', backgroundColor: '#f8f8fa' }}>Light Themes</div>
+            {APP_THEMES.filter(t => !t.dark).map(t => (
+              <button
+                key={t.key}
+                className="w-full text-left px-3 py-2 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors flex items-center justify-between"
+                onClick={() => pickTheme(t.key)}
+                data-testid={`btn-theme-${t.key}`}
+              >
+                <span>
+                  {t.label}
+                  <span className="block text-[10px] text-[#6b6b7b] mt-0.5">{t.desc}</span>
+                </span>
+                {appTheme === t.key && <span className="text-[#2e7d32] font-bold">✓</span>}
+              </button>
+            ))}
+            <div className="px-3 py-2 border-t border-b font-medium text-xs text-[#2a2a3e]" style={{ borderColor: '#d0d0d8', backgroundColor: '#f8f8fa' }}>Dark Themes</div>
+            {APP_THEMES.filter(t => t.dark).map(t => (
+              <button
+                key={t.key}
+                className="w-full text-left px-3 py-2 text-xs hover:bg-[#f0f0f4] text-[#2a2a3e] active:bg-[#e8edf2] transition-colors flex items-center justify-between"
+                onClick={() => pickTheme(t.key)}
+                data-testid={`btn-theme-${t.key}`}
+              >
+                <span>
+                  {t.label}
+                  <span className="block text-[10px] text-[#6b6b7b] mt-0.5">{t.desc}</span>
+                </span>
+                {appTheme === t.key && <span className="text-[#2e7d32] font-bold">✓</span>}
               </button>
             ))}
           </div>
