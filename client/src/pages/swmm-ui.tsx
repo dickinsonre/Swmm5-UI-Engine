@@ -206,7 +206,7 @@ export default function SwmmUI() {
   const [simStatus, setSimStatus] = useState<'none' | 'running' | 'current' | 'outdated'>('none');
   const [simProgress, setSimProgress] = useState(0);
   const [simProgressMsg, setSimProgressMsg] = useState('');
-  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56'>('mock');
+  const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'both56dev'>('mock');
   const [localAvailable, setLocalAvailable] = useState(false);
   const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [wasmAvailable, setWasmAvailable] = useState(false);
@@ -939,8 +939,8 @@ export default function SwmmUI() {
     // Revalidate SWMM6 artifact availability just before running — a stale
     // engineMode (artifacts removed after page load) should fail loudly with
     // guidance rather than a confusing engine error mid-run.
-    if (engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56') {
-      const variant = engineMode === 'wasm6dev' ? 'wasm6dev' as const : 'wasm6' as const;
+    if (engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56' || engineMode === 'both56dev') {
+      const variant = (engineMode === 'wasm6dev' || engineMode === 'both56dev') ? 'wasm6dev' as const : 'wasm6' as const;
       const stillAvailable = await checkWasm6Engine(variant);
       if (!stillAvailable) {
         if (variant === 'wasm6dev') setWasm6DevAvailable(false); else setWasm6Available(false);
@@ -969,7 +969,9 @@ export default function SwmmUI() {
 
     // "Run 5+6" comparison: run SWMM5 (WASM) then SWMM6 (WASM) back-to-back,
     // keep both result sets so graphs/tables can overlay them.
-    if (engineMode === 'both56') {
+    if (engineMode === 'both56' || engineMode === 'both56dev') {
+      const compareVariant = engineMode === 'both56dev' ? 'wasm6dev' as const : 'wasm6' as const;
+      const six = compareVariant === 'wasm6dev' ? 'SWMM6 dev' : 'SWMM6';
       try {
         const engine5 = createWasmEngine();
         const res5 = await engine5.run(project, (pct, msg) => {
@@ -978,11 +980,11 @@ export default function SwmmUI() {
           setSimProgressMsg(`SWMM5: ${msg}`);
         });
         if (abortCtrl.signal.aborted) return;
-        const engine6 = createWasm6Engine();
+        const engine6 = createWasm6Engine(compareVariant);
         const res6 = await engine6.run(project, (pct, msg) => {
           if (abortCtrl.signal.aborted) return;
           setSimProgress(50 + Math.round(pct / 2));
-          setSimProgressMsg(`SWMM6: ${msg}`);
+          setSimProgressMsg(`${six}: ${msg}`);
         });
         if (abortCtrl.signal.aborted) return;
         setSimProgress(100);
@@ -1006,7 +1008,7 @@ export default function SwmmUI() {
         toast({
           title: 'Comparison Run Complete',
           description: bothNative
-            ? `SWMM5: ${res5.timeSteps.length} steps · SWMM6: ${res6.timeSteps.length} steps. Graphs and tables now overlay both engines.`
+            ? `SWMM5: ${res5.timeSteps.length} steps · ${six}: ${res6.timeSteps.length} steps. Graphs and tables now overlay both engines.`
             : 'At least one engine produced summary-only results, so the time-series overlay is unavailable. SWMM5 results are shown; check each engine\u2019s report for summary comparison.',
           variant: bothNative ? undefined : 'destructive',
         });
@@ -2416,27 +2418,28 @@ export default function SwmmUI() {
             <div className="w-px h-8 bg-[#d0d0d8] mx-1" />
             <button
               onClick={() => {
-                const modes: Array<'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'remote' | 'mock'> = [];
+                const modes: Array<'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'both56dev' | 'remote' | 'mock'> = [];
                 if (localAvailable) modes.push('local');
                 if (wasmAvailable) modes.push('wasm');
                 if (wasm6Available) modes.push('wasm6');
                 if (wasm6DevAvailable) modes.push('wasm6dev');
                 if (wasmAvailable && wasm6Available) modes.push('both56');
+                if (wasmAvailable && wasm6DevAvailable) modes.push('both56dev');
                 if (remoteAvailable) modes.push('remote');
                 modes.push('mock');
                 const idx = modes.indexOf(engineMode);
                 setEngineMode(modes[(idx + 1) % modes.length]);
               }}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-medium transition-colors border ${
-                engineMode === 'local' || engineMode === 'remote' || engineMode === 'wasm' || engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56'
+                engineMode === 'local' || engineMode === 'remote' || engineMode === 'wasm' || engineMode === 'wasm6' || engineMode === 'wasm6dev' || engineMode === 'both56' || engineMode === 'both56dev'
                   ? 'bg-[rgba(44,110,181,0.12)] border-[#2c6eb5] text-[#2c6eb5]'
                   : 'bg-transparent border-[#d0d0d8] text-[#6b6b7b] hover:text-[#2a2a3e]'
               } cursor-pointer`}
-              title="Cycle engine mode: Local → WASM 5 → WASM 6 rel → WASM 6 dev → Compare 5+6 → Remote → Mock"
+              title="Cycle engine mode: Local → WASM 5 → WASM 6 rel → WASM 6 dev → Compare 5+6 → Compare 5+6dev → Remote → Mock"
               data-testid="btn-engine-toggle"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
-              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
+              <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'both56dev' ? 'bg-[#0e7a9e]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
+              {engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'both56dev' ? 'Compare 5+6dev' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock Engine'}
             </button>
           </div>
         )}
@@ -3189,9 +3192,9 @@ export default function SwmmUI() {
           />
         )}
         <StatusItem
-          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
-          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'wasm6dev' ? '#c24ae2' : engineMode === 'both56' ? '#1a9e8a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
-          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
+          text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'both56dev' ? 'Compare 5+6dev' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
+          color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'wasm6dev' ? '#c24ae2' : engineMode === 'both56' ? '#1a9e8a' : engineMode === 'both56dev' ? '#0e7a9e' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
+          icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'both56dev' ? 'bg-[#0e7a9e]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
         />
         <div className="flex-1" />
         <span className="text-[8px] sm:text-[9px] font-mono text-[#6b6b7b] flex items-center gap-1 sm:gap-1.5" data-testid="status-counts">
