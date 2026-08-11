@@ -4732,7 +4732,7 @@ function ToolbarIconButton({ icon, onClick, title, testId }: {
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="p-1 text-[#6b6b7b] hover:text-[#2a2a3e] transition-colors"
+      className="p-1 text-white/80 hover:text-white transition-colors"
       data-testid={testId}
     >
       {icon}

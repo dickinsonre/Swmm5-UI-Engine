@@ -983,8 +983,89 @@ export function parseInpFile(text: string): SwmmProject {
   }
   project.swmm6Options = swmm6Opts;
 
+  normalizeCaseInsensitiveRefs(project);
+
   project.parseWarnings = warnings;
   return project;
+}
+
+/**
+ * EPA SWMM 5.x matches object IDs case-insensitively (IDs are upper-cased in
+ * its hash table), so files where e.g. an outfall references BOUNDARY@1020
+ * while the time series is named Boundary@1020 run fine in SWMM5. OpenSWMM 6
+ * matches IDs case-sensitively and fails with ERROR 209 on the same file.
+ * Normalize such references to the defining object's exact name at parse time
+ * (SWMM5 semantics), so written .inp files run identically on both engines.
+ */
+function normalizeCaseInsensitiveRefs(project: SwmmProject): void {
+  const canon = (names: string[]): Map<string, string> => {
+    const m = new Map<string, string>();
+    const ambiguous = new Set<string>();
+    for (const n of names) {
+      const k = n.toUpperCase();
+      const prev = m.get(k);
+      if (prev !== undefined && prev !== n) ambiguous.add(k);
+      else m.set(k, n);
+    }
+    // Names like `Foo` and `FOO` are distinct under SWMM6 — never retarget
+    // references between them.
+    for (const k of ambiguous) m.delete(k);
+    return m;
+  };
+  const tsMap = canon(Object.keys(project.timeseries).concat(Object.keys(project.timeseriesFiles || {})));
+  const curveMap = canon(Object.keys(project.curves));
+  const patMap = canon(Object.keys(project.patterns));
+
+  // Rewrite only when the exact name is absent but a case-insensitive match exists.
+  const resolve = (map: Map<string, string>, names: Set<string>, ref: string | undefined): string | undefined => {
+    if (!ref || names.has(ref)) return ref;
+    return map.get(ref.toUpperCase()) ?? ref;
+  };
+  const tsNames = new Set(tsMap.values());
+  const curveNames = new Set(curveMap.values());
+  const patNames = new Set(patMap.values());
+
+  for (const o of project.outfalls) {
+    if (o.type === 'TIMESERIES') o.stageData = resolve(tsMap, tsNames, o.stageData) || o.stageData;
+    else if (o.type === 'TIDAL') o.stageData = resolve(curveMap, curveNames, o.stageData) || o.stageData;
+  }
+  for (const g of project.raingages) {
+    if ((g.sourceType || '').toUpperCase() === 'TIMESERIES') {
+      g.sourceName = resolve(tsMap, tsNames, g.sourceName) || g.sourceName;
+    }
+  }
+  for (const p of project.pumps) p.pumpCurve = resolve(curveMap, curveNames, p.pumpCurve) || p.pumpCurve;
+  for (const d of project.dividers) if (d.curve) d.curve = resolve(curveMap, curveNames, d.curve);
+  for (const ot of project.outlets) {
+    if (ot.type.toUpperCase().includes('TABULAR')) {
+      ot.curveOrTable = resolve(curveMap, curveNames, ot.curveOrTable) || ot.curveOrTable;
+    }
+  }
+  for (const s of project.storageUnits) {
+    if ((s.shape || '').toUpperCase() === 'TABULAR' && s.curveParams[0]) {
+      s.curveParams[0] = resolve(curveMap, curveNames, s.curveParams[0]) || s.curveParams[0];
+    }
+  }
+  for (const d of project.dwf) {
+    d.patterns = d.patterns.map(p => resolve(patMap, patNames, p) || p);
+  }
+  // [INFLOWS] lines are preserved raw: Node Constituent Tseries (Type) (Mfactor) (Sfactor) (Base) (Pattern)
+  // Substitute tokens in place so original spacing and inline comments survive.
+  const inflows = project.rawSections['INFLOWS'];
+  if (inflows) {
+    project.rawSections['INFLOWS'] = inflows.map(line => {
+      const data = line.split(';')[0];
+      let idx = -1;
+      return data.length
+        ? line.slice(0, data.length).replace(/\S+/g, tok => {
+            idx++;
+            if (idx === 2 && tok !== '""' && tok !== '*') return resolve(tsMap, tsNames, tok)!;
+            if (idx === 7) return resolve(patMap, patNames, tok)!;
+            return tok;
+          }) + line.slice(data.length)
+        : line;
+    });
+  }
 }
 
 /**
