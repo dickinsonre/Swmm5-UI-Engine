@@ -985,21 +985,127 @@ Splits long/unstable conduits into smaller segments:
 
 ## 17. WASM Engine Compilation
 
-### Source
-EPA SWMM 5.2.4 source code in `swmm-engine/Stormwater-Management-Model-5.2.4/`
+This project ships **three** in-browser engines, all built with Emscripten:
 
-### Compiled Artifacts
-- `client/public/swmm_engine.js` (65 KB) — Emscripten JavaScript glue code
-- `client/public/swmm_engine.wasm` (455 KB) — Compiled WebAssembly module
+| Engine | Artifacts | Factory (EXPORT_NAME) | Source |
+|--------|-----------|------------------------|--------|
+| SWMM 5.2.4 | `client/public/swmm_engine.js` + `.wasm` | classic `Module` glue | EPA `Stormwater-Management-Model` 5.2.4, `src/solver/*.c` |
+| OpenSWMM 6 release (6.0.0-alpha.3) | `client/public/wasm6/openswmm6.js` + `.wasm` | `createOswmm6Module` | `HydroCouple/openswmm.engine`, **`swmm6_rel` branch** |
+| OpenSWMM 6 develop | `client/public/wasm6dev/openswmm6dev.js` + `.wasm` | `createOswmm6DevModule` | same repo, `develop` branch |
 
-### Native Binary
-- `swmm-engine/runswmm` (511 KB) — Linux x86_64 ELF binary for local execution
+There is also a native Linux binary `swmm-engine/runswmm` (511 KB) for the "Local" engine mode.
 
-### Runtime Behavior
-- Module loaded lazily on first WASM simulation run
-- Cached in memory for subsequent runs
-- Uses Emscripten virtual filesystem (`mod.FS`) for file I/O
-- No server round-trip needed — runs entirely in browser tab
+### 17.0 Environment prerequisites (all builds)
+
+- Emscripten + CMake come from Nix system deps.
+- **`export EM_CACHE=/tmp/emcache` before the first build** — the Nix emscripten cache is read-only; without a writable cache every `emcc` invocation fails.
+- Run emcc synchronously (foreground); long background builds can get killed.
+
+### 17.1 Building the SWMM5 WASM engine
+
+SWMM5's solver is plain C — the build is one command with **no source changes**:
+
+```bash
+export EM_CACHE=/tmp/emcache
+
+emcc swmm-source/src/solver/*.c \
+  -I swmm-source/src/solver \
+  -O2 \
+  -s MODULARIZE=1 \
+  -s EXPORT_NAME=createSwmmModule \
+  -s ENVIRONMENT=web,worker \
+  -s ALLOW_MEMORY_GROWTH=1 \
+  -s EXPORTED_FUNCTIONS='["_swmm_run","_swmm_open","_swmm_start","_swmm_step","_swmm_end","_swmm_report","_swmm_close","_swmm_getError","_swmm_getWarnings","_swmm_getVersion","_swmm_getMassBalErr","_malloc","_free"]' \
+  -s EXPORTED_RUNTIME_METHODS='["FS","ccall","cwrap","getValue","UTF8ToString","stringToUTF8"]' \
+  -o client/public/wasm/swmm5.js
+```
+
+Key points:
+- Only `src/solver` is required. Do **not** pull in `src/outfile` (needs a CMake-generated header; `swmm5.c` writes its own `.out` binary anyway).
+- Export every `swmm_*` entry point you'll call, each with a leading underscore, plus `_malloc`/`_free`.
+- Optionally also compile `src/run/main.c` to get the CLI contract (`mod.callMain(['/m.inp','/m.rpt','/m.out'])`) — the same argv contract the SWMM6 CLI uses.
+
+Driving it (one-shot):
+
+```js
+importScripts('/swmm_engine.js');            // classic worker
+const mod = await createSwmmModule();        // fresh instance per run
+mod.FS.writeFile('/model.inp', inpText);
+const err = mod.ccall('swmm_run', 'number',
+  ['string', 'string', 'string'],
+  ['/model.inp', '/model.rpt', '/model.out']);
+const rpt = mod.FS.readFile('/model.rpt', { encoding: 'utf8' });
+const out = mod.FS.readFile('/model.out');   // binary Uint8Array
+```
+
+For live progress/cancel, use the step API instead: `swmm_open` → `swmm_start(1)` → loop `swmm_step(&elapsed)` until elapsed reaches 0 → `swmm_end` → `swmm_report` → `swmm_close`, posting progress between steps.
+
+### 17.2 Building the SWMM6 (OpenSWMM 6) WASM engine
+
+Much rougher: C++ with exceptions, a background IO thread, a dlfcn plugin loader, and OpenMP — each needs a patch or flag to survive in a browser.
+
+**Source traps (before compiling anything):**
+1. The repo's **default branch is an EPA SWMM 5.2.4 mirror** — clone the `swmm6_rel` branch (release) or `develop` explicitly, or you silently build the wrong engine.
+2. Two engines live in the tree: `src/` is the real SWMM6 (handle-based `swmm_engine_*` API); `src/legacy/engine` is a 5.3.0-era C engine that *silently ignores* SWMM6-only keywords. Always confirm which engine ran from the `.rpt` header ("OPENSWMM ENGINE - VERSION 6.0.0-alpha…" vs 5.3.x) — never from which files you think you built.
+
+**The three required source patches (both release and develop builds):**
+1. **`PluginFactory.cpp`** — the dlfcn plugin loader's platform `#if` whitelist errors on unknown platforms. Add `__EMSCRIPTEN__` to the allowed list (Emscripten ships dlfcn stubs; plugins just won't load, which is fine).
+2. **`IOThread.cpp`** — output is written on a background `std::thread`; spawning threads in single-threaded WASM aborts at runtime. Under `#ifdef __EMSCRIPTEN__`, run the queued write tasks inline instead of launching the thread. This is also what keeps the build single-threaded — no `-pthread`, so no COOP/COEP headers required when serving.
+3. **Duplicate `omp_get_max_threads` fallback** — both `project.c` and legacy `swmm5.c` define the no-OpenMP fallback and collide at link time. Remove the copy in legacy `swmm5.c` (keep `project.c`'s).
+
+**Configure and build:**
+
+```bash
+export EM_CACHE=/tmp/emcache
+cd oswmm
+emcmake cmake -B build-wasm \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DOPENSWMM_WITH_GEOPACKAGE=OFF \
+  -DOPENSWMM_BUILD_2D=OFF \
+  -DOPENSWMM_BUILD_GPU_PLUGIN=OFF \
+  -DCMAKE_C_FLAGS=-fexceptions \
+  -DCMAKE_CXX_FLAGS=-fexceptions
+cmake --build build-wasm --target openswmm_engine -j
+```
+
+- The three heavy deps map to the three OFF'd options (GeoPackage→sqlite3, 2D→hdf5, GPU→kokkos). With all three OFF the build is pure C++20 with zero external dependencies — that's what makes the wasm build tractable.
+- **`-fexceptions` is not optional and must be on for every translation unit** (hence global CMake flags, not just link). The engine throws/catches during normal operation; without it the run aborts right after parsing.
+- The CMake target is `openswmm_engine` (underscore, not `openswmm.engine`); the lib lands at `build-wasm/src/engine/libopenswmm.engine.a`.
+
+**Link:**
+
+```bash
+em++ -O2 -fexceptions \
+  src/cli/main.cpp build-wasm/src/engine/libopenswmm.engine.a \
+  -I include -I include/openswmm/engine -I build-wasm/include \
+  -s MODULARIZE=1 \
+  -s EXPORT_NAME=createOswmm6Module \
+  -s ENVIRONMENT=web,worker \
+  -s ALLOW_MEMORY_GROWTH=1 \
+  -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_swmm_engine_run","_swmm_engine_create","_swmm_engine_open","_swmm_engine_initialize","_swmm_engine_start","_swmm_engine_step","_swmm_engine_end","_swmm_engine_report","_swmm_engine_close","_swmm_engine_destroy","_swmm_get_last_error_msg"]' \
+  -s EXPORTED_RUNTIME_METHODS='["FS","ccall","cwrap","getValue","UTF8ToString","stringToUTF8"]' \
+  -o client/public/wasm6/openswmm6.js
+```
+
+Forgetting `EXPORTED_FUNCTIONS` produces a wasm that loads but exposes no API — after every rebuild verify `typeof mod._swmm_engine_run === 'function'`.
+
+**Dual variants (release + develop side by side):** each build must use a **distinct `EXPORT_NAME`** (`createOswmm6Module` vs `createOswmm6DevModule`) and live in a distinct dir (`wasm6/` vs `wasm6dev/`) — identical factory names mean the second script silently overwrites the first's global.
+
+### 17.3 Runtime rules (learned the hard way)
+
+- **Fresh module instance per run.** SWMM5 has global state; SWMM6 traps are unrecoverable; and MEMFS lives in the JS glue, not the wasm instance, so a fresh `WebAssembly.Instance` alone does not clear leftover files. A fresh factory call gives clean state. (Fetch of the `.wasm` binary is cached; the factory call is not.)
+- **`noInitialRun: true`** for the SWMM6 glue — it contains `main()` and otherwise auto-runs with no argv ("not enough arguments" on stderr).
+- **Run in a Web Worker** (`client/public/swmm-worker.js`) — a wasm trap is unrecoverable in the instance; `worker.terminate()` is the only reliable cancel and the only trap recovery.
+- **Emscripten `exit()` throws** — treat `ExitStatus` with `status === 0` as success, not an error.
+- **Never trust the exit code.** SWMM6 exits 0 on some fatal parses. Verify the `.rpt` has no `ERROR nnn` lines and results exist before declaring success.
+- **Init failures leave an empty `.rpt` and lose their message**: `swmm_engine_run` destroys its handle before returning. When the run fails with an empty report, replay `swmm_engine_create` → `open` → `initialize` on a fresh handle and read `swmm_get_last_error_msg(handle)` — that's how the app surfaces e.g. FV geometry rejections (see `probeSwmm6InitError` in `swmm-engine.ts` / `swmm-worker.js`). Do **not** gate this probe on nonzero exit code.
+- **Unlink/overwrite output paths before every run** so a failed run yields 0 bytes rather than a stale `.rpt`/`.out`.
+- `.out` is the classic SWMM5 binary layout in both engines (same magic 516114522; version int 5xxxx vs 60000) — one `parseSwmmOut` reads both.
+- `[REPORT]` flags in the `.inp` gate what lands in the **`.out`** file, not just the `.rpt` — empty graphs usually mean a missing `NODES ALL` / `LINKS ALL`.
+- **Serving:** ship glue + wasm un-bundled under `client/public/` (Vite serves as-is); never import the glue through the bundler — it locates the `.wasm` relative to its own URL (`Module.locateFile` is the escape hatch). Single-threaded builds need no COOP/COEP headers.
+- **Node testing** (fixtures/CI): `require()` of a `web,worker` glue returns `{}`; instead read the glue source, wrap with `new Function`, and pass `wasmBinary: fs.readFileSync(...)` explicitly. Then `FS.writeFile`, `callMain([...])` or `ccall('swmm_engine_run', ...)`, and read results from `FS`.
+
+The full build recipe also lives in the uploaded skill `attached_assets/0_swmm-wasm-build_*.skill` (zip containing `swmm5-wasm-build.md` and `swmm6-wasm-build.md`).
 
 ---
 
