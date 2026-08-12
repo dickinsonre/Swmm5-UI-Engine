@@ -1,0 +1,255 @@
+# Replit Workflow — One Consolidated `.lid` File + Animated LID Layer Viewer
+
+**Project:** Modify the EPA SWMM5 engine (compiled to WebAssembly) so that detailed LID
+reporting — currently one text file per LID unit — is written to **exactly one file with
+the extension `.lid`**, then build a web app that draws each LID's layer stack and
+**animates the layers through time** using the results in that `.lid` file.
+
+Give this whole document to Replit Agent as the build spec. Work the phases in order.
+Do not skip the baseline (Phase 1) — the parity gate in Phase 5 depends on it.
+
+---
+
+## 0. Success check (what "done" means)
+
+1. The modified engine, run on a model with N LID units that request detailed reporting,
+   produces **one** `.lid` file and **zero** per-unit report files.
+2. Every numeric value in the consolidated `.lid` file matches the stock engine's
+   per-unit files for the same model, same columns, same timesteps (parity test, Phase 5).
+3. The engine runs as WASM in a Web Worker in the browser; the app reads
+   `/model.lid` from MEMFS after the run.
+4. The app shows a correct layer diagram for each LID type present in the model and
+   animates layer water levels / soil moisture / flux arrows with play, pause, and a
+   time scrubber. Dark theme on first paint.
+5. Continuity sanity: per-unit totals integrated from the `.lid` rows agree with the
+   `.rpt` **LID Performance Summary** within ~1–2% (dry-row compression explains small gaps).
+
+Evidence rule: every claim of "works" must be backed by an actual run artifact
+(file listing, diff output, screenshot). Never report a phase done without it.
+
+---
+
+## 1. Repo setup and native baseline (golden fixtures)
+
+1. Vendor the EPA source: `github.com/USEPA/Stormwater-Management-Model`, tag **v5.2.4**,
+   into `engine/src/solver/`. Only `src/solver` is needed (do NOT pull `src/outfile`).
+2. Build the **stock** engine natively first (`gcc engine/src/solver/*.c src/run/main.c -lm -O2 -o swmm5-stock`).
+3. Create/obtain a test model `fixtures/lid_test.inp` with at least:
+   - 3+ LID types among: bio-retention cell, permeable pavement, green roof,
+     infiltration trench, rain barrel, rain garden, vegetative swale;
+   - a report file name (9th token) on each `[LID_USAGE]` line so detailed
+     reporting is active, e.g. `S1 BioCell 4 500 25 0 50 1 bio_s1.txt * 0`;
+   - a storm long enough to wet, drain, and dry the LIDs (48 h, 25 mm+ event).
+4. Run stock: `./swmm5-stock fixtures/lid_test.inp out/stock.rpt out/stock.out`.
+   Archive the per-unit report files it creates into `fixtures/golden/` — these are the
+   parity reference. Commit them.
+
+---
+
+## 2. Engine modification — one `.lid` file
+
+### Where the per-unit files live today (verified against v5.2.4 source)
+
+| File | Function | Line (5.2.4) | What it does now |
+|---|---|---|---|
+| `lid.c` | `readLidUsageParams` → `createLidRptFile(lidUnit, fname)` | ~559 / 567 | `fopen(fname, "wt")` — one FILE* per LID unit, from the RptFile token in `[LID_USAGE]` |
+| `lid.c` | `initLidRptFile(title, lidID, subcatchID, lidUnit)` | 1972 | writes the 14-column header into each unit's file |
+| `lid.c` | `freeLidGroup` cleanup | ~339–342 | `fclose` per unit |
+| `lidproc.c` | `lidproc_saveResults(lidUnit, ucfRainfall, ucfRainDepth)` | 360 | formats one row into `rptFile->results` and writes it, with `wasDry` dry-period compression |
+
+### The change
+
+1. Add one shared file handle (e.g. `static TFile LidRptFile;` in `lid.c`, or a global in
+   `globals.h` beside `Frpt`). Its path = the report-file argv with the extension replaced
+   by `.lid` (`model.rpt` → `model.lid`). Open it lazily the first time any LID unit
+   requests detailed output; write the file-level `[META]` header then.
+2. In `createLidRptFile`: **stop opening per-unit files.** Keep the `TLidRptFile` struct
+   per unit (its `wasDry` state and `results` buffer are still needed per unit), but point
+   every unit's `file` at the shared handle — or better, drop the `file` member's per-unit
+   role and route writes through a small `lidRptWrite(unit, text)` helper.
+3. Give each unit a stable key: `Subcatch[j].ID` + `LidProcs[k].ID` (+ an index if the
+   same control appears twice in one subcatchment). The old RptFile token now only means
+   "include this unit" — its filename is ignored (keep accepting it so existing `.inp`
+   files run unchanged; `*` still means excluded).
+4. In `lidproc_saveResults`: prepend the unit key columns to each row. Keep the
+   `wasDry` compression logic exactly as is — it is per-unit state and still works with
+   interleaved rows.
+5. Close the shared file once, in the LID cleanup path (`lid_delete` / end of run),
+   not per unit.
+
+### `.lid` file format v1 (self-describing, tab-separated)
+
+```
+;SWMM5 Consolidated LID Report v1
+[META]
+Project     <title>
+Engine      5.2.4-lid1
+FlowUnits   CMS            ; controls in/hr+inches vs mm/hr+mm below
+ReportStep  00:05:00
+Units       rates=mm/hr depths=mm moisture=fraction
+
+[CONTROLS]                 ; layer geometry copied from [LID_CONTROLS], one block per process,
+BioCell  BC                ; so the app can draw the stack without re-parsing the .inp
+BioCell  SURFACE  150 0.1 0.24 1.0 5
+BioCell  SOIL     450 0.45 0.19 0.08 120 44 3.9
+BioCell  STORAGE  300 0.6 3.6 0
+BioCell  DRAIN    1.2 0.5 150 6 0 0
+
+[RESULTS]
+;Subcatch  LID  Unit  Date        Time      Elapsed  Inflow  Evap  SurfInfil  PavePerc  SoilPerc  StorExfil  SurfRunoff  DrainOut  SurfLevel  PaveLevel  SoilMoist  StorLevel
+S1  BC  1  08/12/2026  00:05:00  0.083  12.50  0.02  12.10  0.00  8.40  2.10  0.00  0.00  4.2  0.0  0.312  18.5
+...
+```
+
+Column order after the key/date columns is **identical to the stock per-unit file**
+(verified header in `initLidRptFile`): Elapsed Hours; then rates — Total Inflow, Total
+Evap, Surface Infil, Pavement Perc, Soil Perc, Storage Exfil, Surface Runoff, Drain
+Outflow (in/hr or mm/hr); then Surface Level, Pavement Level (inches or mm), Soil
+Moisture (content, dimensionless θ), Storage Level. Keeping the order identical makes
+the Phase 5 diff trivial.
+
+### Native check before touching WASM
+
+Build the modified engine natively (`swmm5-lid`), run the fixture, and confirm:
+one `lid_test.lid`, zero `bio_s1.txt`-style files, `[RESULTS]` row counts per unit equal
+to the golden per-unit row counts.
+
+---
+
+## 3. WASM build
+
+Replit's Nix store is read-only — Emscripten's default cache path fails there.
+**Export a writable cache first or every build dies:**
+
+```bash
+export EM_CACHE=/tmp/emcache    # first build pays ~90 s for libc; SWMM itself ~20 s
+```
+
+```bash
+emcc engine/src/solver/*.c \
+  -I engine/src/solver \
+  -O2 \
+  -s MODULARIZE=1 \
+  -s EXPORT_NAME=createSwmmModule \
+  -s ENVIRONMENT=web,worker \
+  -s ALLOW_MEMORY_GROWTH=1 \
+  -s EXPORTED_FUNCTIONS='["_swmm_run","_swmm_open","_swmm_start","_swmm_step","_swmm_end","_swmm_report","_swmm_close","_swmm_getError","_swmm_getVersion","_swmm_getMassBalErr","_malloc","_free"]' \
+  -s EXPORTED_RUNTIME_METHODS='["FS","ccall","cwrap","getValue","UTF8ToString","stringToUTF8"]' \
+  -o client/public/wasm/swmm5.js
+```
+
+Rules that have bitten before — hold to all of them:
+
+- Forgetting `_malloc,_free` or an entry point in `EXPORTED_FUNCTIONS` yields a wasm that
+  loads fine and exposes **no API**. After every rebuild verify
+  `typeof mod._swmm_run === 'function'`.
+- Run the engine in a **Web Worker** (classic worker + `importScripts`); a wasm trap is
+  unrecoverable and `worker.terminate()` is the only reliable cancel.
+- **Fresh module instance per run** (SWMM5 has global state — including the new shared
+  `.lid` handle). MEMFS lives in the JS glue, so also **unlink `/model.rpt`,
+  `/model.out`, `/model.lid` before every run** — a failed run must yield 0 bytes, not
+  last run's file.
+- Emscripten's `exit()` throws: a clean rc 0 can land in your `catch`. Handle it.
+- Serve `swmm5.js` + `swmm5.wasm` un-bundled from `client/public/wasm/`; do not import
+  the glue through Vite.
+
+Worker contract:
+
+```js
+const mod = await createSwmmModule();
+mod.FS.writeFile('/model.inp', inpText);
+mod.ccall('swmm_run','number',['string','string','string'],
+          ['/model.inp','/model.rpt','/model.out']);
+const lid = mod.FS.readFile('/model.lid', { encoding:'utf8' });  // the new file
+const rpt = mod.FS.readFile('/model.rpt', { encoding:'utf8' });  // for the parity panel
+postMessage({ lid, rpt });
+```
+
+---
+
+## 4. The app — LID layer diagram + animation
+
+Vite + React on Replit. **Dark theme on first paint** (`<html data-theme="dark">` in the
+markup, three-way Dark | Light | Auto toggle in the header, every colour a CSS custom
+property, chart/SVG colours from a JS theme table — no hard-coded hex in generated SVG).
+
+### Screens
+
+1. **Load/Run** — drop or pick an `.inp` (and optionally an existing `.lid` directly, so
+   the viewer works standalone), Run button, live progress from the worker, cancel =
+   terminate worker.
+2. **LID Viewer** — unit selector (grouped Subcatch → LID), the layer diagram, transport
+   arrows, time scrubber + play/pause + speed (1×/10×/60×), and a strip chart of the
+   selected variable synced to the scrubber.
+3. **Parity/Report panel** — the `.rpt` LID Performance Summary beside totals integrated
+   from `.lid` rows.
+
+### Layer stack per LID type (draw only the layers the type has)
+
+| LID type | Layers, top → bottom |
+|---|---|
+| Bio-retention cell | Surface → Soil → Storage (→ Underdrain if defined) |
+| Rain garden | Surface → Soil (exfiltrates to native soil; no storage/drain) |
+| Green roof | Surface → Soil → Drainage mat |
+| Infiltration trench | Surface → Storage (→ Underdrain) |
+| Permeable pavement | Surface → Pavement (→ Soil if defined) → Storage (→ Underdrain) |
+| Rain barrel | Storage → Drain only |
+| Vegetative swale | Surface only |
+| Rooftop disconnection | Surface → Roof drain |
+
+Layer thicknesses come from the `[CONTROLS]` block in the `.lid` file, drawn to scale
+(SVG rectangles; cap extreme ratios so thin layers stay visible, and label true depths).
+
+### Animation mapping (per timestep row)
+
+- **Surface layer:** blue fill rising from the layer bottom, height = SurfLevel /
+  surface berm height.
+- **Pavement layer:** same, PaveLevel against pavement thickness.
+- **Storage layer:** same, StorLevel against storage height; rain barrel is just this.
+- **Soil layer:** no water line — encode Soil Moisture as colour saturation from wilting
+  point θ_WP (dry tan) → porosity φ (saturated deep blue), values from the `[CONTROLS]`
+  soil line. Show θ numerically.
+- **Flux arrows**, width ∝ rate, labelled with the value: Inflow (down onto surface),
+  Evap (up from surface), Surface Infil (surface→next layer), Pavement Perc, Soil Perc,
+  Storage Exfil (down out of storage), Surface Runoff (right, off the surface), Drain
+  Outflow (right, out of storage/drain). Hide arrows at 0; never rescale mid-playback —
+  fix the scale to the run's max per variable.
+- **Dry-period compression:** the engine skips repeated dry rows (`wasDry` logic writes
+  the last dry row before a wet one). The player must interpolate/hold across the time
+  gaps, and the scrubber must be time-true, not row-index-true.
+
+### Parser notes
+
+- Tab-separated; `[META]`, `[CONTROLS]`, `[RESULTS]` sections; comment lines start `;`.
+- Units switch wholesale on FlowUnits (US: in/hr + inches; SI: mm/hr + mm). Read the
+  META Units line — do not guess.
+- Group rows by (Subcatch, LID, Unit) into typed arrays once at load; the animation loop
+  must not re-parse.
+
+---
+
+## 5. Verification gates (all must pass before "done")
+
+1. **One-file gate:** after a WASM run, `mod.FS.readdir('/')` contains `model.lid` and no
+   per-unit report files.
+2. **Parity gate:** script `scripts/parity.js` — for each unit, extract its rows from the
+   consolidated file, strip the key columns, and diff against the golden per-unit file
+   from Phase 1. Expect identical values (same fprintf formats ⇒ byte-comparable after
+   whitespace normalisation). Show the diff output in the report, even when empty.
+3. **Continuity gate:** integrate Inflow, Evap, Exfil, Runoff, Drain from `.lid` rows per
+   unit (trapezoidal over elapsed hours, honouring dry gaps) and compare to the `.rpt`
+   LID Performance Summary columns; flag anything off by >2%.
+4. **Trap-recovery gate:** feed a deliberately broken `.inp`; the worker terminates, the
+   UI recovers, and a rerun of the good model still produces a fresh, complete `.lid`
+   (proves the unlink-before-run discipline).
+5. **Theme gate:** first paint is dark, toggle to light leaves every number identical,
+   no white flashes, no invisible SVG strokes in either theme.
+
+---
+
+## 6. Report back (outcome first)
+
+End with: what ran and what it produced (file names, sizes, row counts per unit), the
+parity diff result, the continuity table, screenshots/GIF of the animation for one wet
+event, and any deviations from this spec with reasons. A failing gate is reported as
+failing with its output — never summarised as fixed.
