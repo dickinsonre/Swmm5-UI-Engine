@@ -112,7 +112,10 @@ async function runSwmm5(inpText) {
   var rptData = readFileSafe(mod, 'model.rpt');
   var rptText = rptData ? new TextDecoder().decode(rptData) : '';
   var outData = errCode === 0 ? readFileSafe(mod, 'model.out') : null;
-  return { errCode: errCode, rptText: rptText, outData: outData };
+  // Consolidated LID detail report (present only when the model requests it)
+  var lidData = errCode === 0 ? readFileSafe(mod, 'model.lid') : null;
+  var lidText = lidData ? new TextDecoder().decode(lidData) : '';
+  return { errCode: errCode, rptText: rptText, outData: outData, lidText: lidText };
 }
 
 async function runSwmm6(inpText, variant) {
@@ -162,7 +165,7 @@ self.onmessage = async function (e) {
       : null;
     var transfer = outBytes ? [outBytes.buffer] : [];
     self.postMessage(
-      { type: 'done', errCode: result.errCode, rptText: result.rptText, outData: outBytes, stderrText: result.stderrText || '' },
+      { type: 'done', errCode: result.errCode, rptText: result.rptText, outData: outBytes, stderrText: result.stderrText || '', lidText: result.lidText || '' },
       transfer
     );
   } catch (err) {

@@ -158,11 +158,14 @@ typedef struct
 }  TWaterBalance;
 
 // LID Report File
+// LIDCONSOLIDATE: all units write to one shared .lid file; the per-unit
+// struct keeps dry-period state, the buffered row, and the unit's key.
 typedef struct
 {
-    FILE*     file;               // file pointer
+    FILE*     file;               // unused (kept for struct stability; always NULL)
     int       wasDry;             // number of successive dry periods
-    char      results[256];       // results for current time period
+    char      results[384];       // results for current time period (incl. key)
+    char      unitKey[128];       // "subcatch\tlid\tunitNo" row prefix
 }   TLidRptFile;
 
 // LID Unit - specific LID process applied over a given area
@@ -221,6 +224,7 @@ void     lid_addDrainInflow(int subcatch, double f);
 void     lid_getRunoff(int subcatch, double tStep);
 void     lid_writeSummary(void);
 void     lid_writeWaterBalance(void);
+FILE*    lid_sharedRptFile(void);   // LIDCONSOLIDATE: shared .lid file handle
 
 //-----------------------------------------------------------------------------
 

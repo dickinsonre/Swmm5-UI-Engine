@@ -232,6 +232,131 @@ static void   evalLidUnit(int j, TLidUnit* lidUnit, double lidArea,
               double lidInflow, double tStep, double *qRunoff,
               double *qDrain, double *qReturn);
 
+//-----------------------------------------------------------------------------
+// LIDCONSOLIDATE: one shared consolidated .lid report file for all units
+//-----------------------------------------------------------------------------
+static FILE*  LidSharedFile = NULL;
+static int    LidUnitSerials = 0;        // # keys registered this run
+
+// registry used to number duplicate (subcatch, lid) pairs
+typedef struct LidKeyReg {
+    char* subcatchID;                    // points at stable Subcatch[].ID
+    char* lidID;                         // points at stable LidProcs[].ID
+    int   count;
+    struct LidKeyReg* next;
+} LidKeyReg;
+static LidKeyReg* LidKeyRegistry = NULL;
+
+static void freeLidKeyRegistry(void)
+{
+    LidKeyReg* r = LidKeyRegistry;
+    while (r) { LidKeyReg* nxt = r->next; free(r); r = nxt; }
+    LidKeyRegistry = NULL;
+    LidUnitSerials = 0;
+}
+
+static int nextLidUnitNumber(char* subcatchID, char* lidID)
+{
+    LidKeyReg* r;
+    for (r = LidKeyRegistry; r; r = r->next)
+    {
+        if (r->subcatchID == subcatchID && r->lidID == lidID)
+            return ++r->count;
+    }
+    r = (LidKeyReg*) malloc(sizeof(LidKeyReg));
+    if (r == NULL) return 1;
+    r->subcatchID = subcatchID;
+    r->lidID = lidID;
+    r->count = 1;
+    r->next = LidKeyRegistry;
+    LidKeyRegistry = r;
+    return 1;
+}
+
+FILE* lid_sharedRptFile(void)
+{
+    return LidSharedFile;
+}
+
+// writes the [CONTROLS] layer-geometry block so a viewer can draw each
+// LID's layer stack without re-parsing the .inp (values in report units)
+static void writeLidControlsBlock(FILE* f)
+{
+    int j;
+    double d = UCF(RAINDEPTH);           // ft -> in or mm
+    double r = UCF(RAINFALL);            // ft/s -> in/hr or mm/hr
+    fprintf(f, "\n[CONTROLS]");
+    fprintf(f, "\n;LID\tType|Layer\tParameters (depths in %s, rates in %s)",
+        UnitSystem == US ? "inches" : "mm", UnitSystem == US ? "in/hr" : "mm/hr");
+    for (j = 0; j < LidCount; j++)
+    {
+        TLidProc* p = &LidProcs[j];
+        fprintf(f, "\n%s\t%s", p->ID, LidTypeWords[p->lidType]);
+        if (p->surface.thickness > 0.0 || p->surface.roughness > 0.0)
+            fprintf(f, "\n%s\tSURFACE\t%.4f\t%.4f\t%.4f\t%.4f",
+                p->ID, p->surface.thickness*d, p->surface.voidFrac,
+                p->surface.roughness, p->surface.surfSlope);
+        if (p->pavement.thickness > 0.0)
+            fprintf(f, "\n%s\tPAVEMENT\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
+                p->ID, p->pavement.thickness*d, p->pavement.voidFrac,
+                p->pavement.impervFrac, p->pavement.kSat*r, p->pavement.clogFactor);
+        if (p->soil.thickness > 0.0)
+            fprintf(f, "\n%s\tSOIL\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
+                p->ID, p->soil.thickness*d, p->soil.porosity, p->soil.fieldCap,
+                p->soil.wiltPoint, p->soil.kSat*r, p->soil.kSlope, p->soil.suction*d);
+        if (p->storage.thickness > 0.0)
+            fprintf(f, "\n%s\tSTORAGE\t%.4f\t%.4f\t%.4f\t%.4f",
+                p->ID, p->storage.thickness*d, p->storage.voidFrac,
+                p->storage.kSat*r, p->storage.clogFactor);
+        if (p->drain.coeff > 0.0)
+            fprintf(f, "\n%s\tDRAIN\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
+                p->ID, p->drain.coeff, p->drain.expon, p->drain.offset*d,
+                p->drain.delay/3600.0, p->drain.hOpen*d, p->drain.hClose*d);
+        if (p->drainMat.thickness > 0.0)
+            fprintf(f, "\n%s\tDRAINMAT\t%.4f\t%.4f\t%.4f",
+                p->ID, p->drainMat.thickness*d, p->drainMat.voidFrac,
+                p->drainMat.roughness);
+    }
+}
+
+// opens the shared .lid file (path = report file path with extension
+// replaced by .lid) and writes the [META], [CONTROLS] and [RESULTS] headers
+static int openSharedLidFile(char* title)
+{
+    char path[MAXFNAME+16];
+    char* dot;
+    FILE* f;
+    int hr, min, sec;
+
+    if (LidSharedFile) return 1;
+    sstrncpy(path, Frpt.name, MAXFNAME);
+    dot = strrchr(path, '.');
+    if (dot && !strchr(dot, '/') && !strchr(dot, '\\')) *dot = '\0';
+    strcat(path, ".lid");
+    f = fopen(path, "wt");
+    if (f == NULL) return 0;
+    LidSharedFile = f;
+    freeLidKeyRegistry();
+
+    hr = ReportStep / 3600; min = (ReportStep % 3600) / 60; sec = ReportStep % 60;
+    fprintf(f, ";SWMM5 Consolidated LID Report v1");
+    fprintf(f, "\n[META]");
+    fprintf(f, "\nProject\t%s", title);
+    fprintf(f, "\nEngine\t5.2.4-lid1");
+    fprintf(f, "\nFlowUnits\t%s", FlowUnitWords[FlowUnits]);
+    fprintf(f, "\nReportStep\t%02d:%02d:%02d", hr, min, sec);
+    if (UnitSystem == US)
+        fprintf(f, "\nUnits\trates=in/hr depths=inches moisture=fraction");
+    else
+        fprintf(f, "\nUnits\trates=mm/hr depths=mm moisture=fraction");
+    writeLidControlsBlock(f);
+    fprintf(f, "\n\n[RESULTS]");
+    fprintf(f, "\n;Subcatch\tLID\tUnit\tDate       Time    \tElapsedHours\t"
+        "TotalInflow\tTotalEvap\tSurfInfil\tPavePerc\tSoilPerc\tStorExfil\t"
+        "SurfRunoff\tDrainOutflow\tSurfLevel\tPaveLevel\tSoilMoisture\tStorLevel");
+    return 1;
+}
+
 //=============================================================================
 
 void lid_create(int lidCount, int subcatchCount)
@@ -315,6 +440,14 @@ void lid_delete()
     FREE(LidProcs);
     GroupCount = 0;
     LidCount = 0;
+
+    // LIDCONSOLIDATE: close the shared .lid file once, at end of run
+    if ( LidSharedFile )
+    {
+        fclose(LidSharedFile);
+        LidSharedFile = NULL;
+    }
+    freeLidKeyRegistry();
 }
 
 //=============================================================================
@@ -338,7 +471,7 @@ void freeLidGroup(int j)
         lidUnit = lidList->lidUnit;
         if ( lidUnit->rptFile )
         {
-            if ( lidUnit->rptFile->file ) fclose(lidUnit->rptFile->file);
+            // LIDCONSOLIDATE: units share one file; closed in lid_delete().
             free(lidUnit->rptFile);
         }
         nextLidUnit = lidList->nextLidUnit;
@@ -567,12 +700,18 @@ int addLidUnit(int j, int k, int n, double x[], char* fname,
 int createLidRptFile(TLidUnit* lidUnit, char* fname)
 {
     TLidRptFile* rptFile;
-    
+
+    // LIDCONSOLIDATE: the RptFile token now only means "include this unit
+    // in the consolidated .lid file" — its filename is accepted but ignored
+    // so existing .inp files run unchanged ('*' still means excluded).
+    (void)fname;
     rptFile = (TLidRptFile *) malloc(sizeof(TLidRptFile));
     if ( rptFile == NULL ) return 0;
     lidUnit->rptFile = rptFile;
-    rptFile->file = fopen(fname, "wt");
-    if ( rptFile->file == NULL ) return 0;
+    rptFile->file = NULL;
+    rptFile->wasDry = 1;
+    rptFile->results[0] = '\0';
+    rptFile->unitKey[0] = '\0';
     return 1;
 }
 
@@ -1971,57 +2110,34 @@ void lid_writeWaterBalance()
 
 void initLidRptFile(char* title, char* lidID, char* subcatchID, TLidUnit* lidUnit)
 //
-//  Purpose: initializes the report file used for a specific LID unit
+//  Purpose: registers a LID unit with the consolidated .lid report file.
 //  Input:   title = project's title
 //           lidID = LID process name
 //           subcatchID = subcatchment ID name
 //           lidUnit = ptr. to LID unit
 //  Output:  none
 //
+//  LIDCONSOLIDATE: replaces the stock per-unit header writer. Opens the
+//  shared .lid file on first use (writing [META]/[CONTROLS]/[RESULTS]
+//  headers), then assigns this unit its stable row key.
 {
-    static int colCount = 14;
-    static char* head1[] = {
-        "\n                    \t", "  Elapsed\t",
-        "    Total\t", "    Total\t", "  Surface\t", " Pavement\t", "     Soil\t",
-        "  Storage\t", "  Surface\t", "    Drain\t", "  Surface\t", " Pavement\t",
-        "     Soil\t", "  Storage"};
-    static char* head2[] = {
-        "\n                    \t", "     Time\t",
-        "   Inflow\t", "     Evap\t", "    Infil\t", "     Perc\t", "     Perc\t",
-        "    Exfil\t", "   Runoff\t", "  OutFlow\t", "    Level\t", "    Level\t",
-        " Moisture\t", "    Level"};
-    static char* units1[] = {
-        "\nDate        Time    \t", "    Hours\t",
-        "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t", "    in/hr\t",
-        "    in/hr\t", "    in/hr\t", "    in/hr\t", "   inches\t", "   inches\t",
-        "  Content\t", "   inches"};
-    static char* units2[] = {
-        "\nDate        Time    \t", "    Hours\t",
-        "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "    mm/hr\t",
-        "    mm/hr\t", "    mm/hr\t", "    mm/hr\t", "       mm\t", "       mm\t",
-        "  Content\t", "       mm"};
-    static char line9[] = " ---------";
-    int   i;
-    FILE* f = lidUnit->rptFile->file;
+    int unitNo;
 
-    //... check that file was opened
-    if ( f ==  NULL ) return;
-
-    //... write title lines
-    fprintf(f, "SWMM5 LID Report File\n");
-    fprintf(f, "\nProject:  %s", title);
-    fprintf(f, "\nLID Unit: %s in Subcatchment %s\n", lidID, subcatchID);
-
-    //... write column headings
-    for ( i = 0; i < colCount; i++) fprintf(f, "%s", head1[i]);
-    for ( i = 0; i < colCount; i++) fprintf(f, "%s", head2[i]);
-    if (  UnitSystem == US )
+    if ( !openSharedLidFile(title) )
     {
-        for ( i = 0; i < colCount; i++) fprintf(f, "%s", units1[i]);
+        // could not open the consolidated file — drop detailed reporting
+        // for this unit rather than crash writing to a NULL handle, and
+        // say so in the main report instead of failing silently
+        report_writeWarningMsg(
+            "WARNING: could not open consolidated LID report file - "
+            "detailed LID results not available for", subcatchID);
+        free(lidUnit->rptFile);
+        lidUnit->rptFile = NULL;
+        return;
     }
-    else for ( i = 0; i < colCount; i++) fprintf(f, "%s", units2[i]);
-    fprintf(f, "\n----------- --------");
-    for ( i = 1; i < colCount; i++) fprintf(f, "\t%s", line9);
+    unitNo = nextLidUnitNumber(subcatchID, lidID);
+    snprintf(lidUnit->rptFile->unitKey, sizeof(lidUnit->rptFile->unitKey),
+        "%s\t%s\t%d", subcatchID, lidID, unitNo);
 
     //... initialize LID dryness state
     lidUnit->rptFile->wasDry = 1;

@@ -420,7 +420,7 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
         //    to the report file thus marking the end of a dry period
         if ( !isDry && theLidUnit->rptFile->wasDry > 1)
         {
-            fprintf(theLidUnit->rptFile->file, "%s",
+            fprintf(lid_sharedRptFile(), "%s",                                 // LIDCONSOLIDATE
                 theLidUnit->rptFile->results);
         }
 
@@ -430,8 +430,9 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
         datetime_getTimeStamp(
             M_D_Y, getDateTime(NewRunoffTime), TIME_STAMP_SIZE, timeStamp);
         snprintf(theLidUnit->rptFile->results, sizeof(theLidUnit->rptFile->results),
-             "\n%20s\t %8.3f\t %8.3f\t %8.4f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t"
-             "%8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f",
+             "\n%s\t%20s\t %8.3f\t %8.3f\t %8.4f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t"
+             "%8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f",                  // LIDCONSOLIDATE: key prefix
+             theLidUnit->rptFile->unitKey,
              timeStamp, elapsedHrs, rptVars[0], rptVars[1], rptVars[2],
              rptVars[3], rptVars[4], rptVars[5], rptVars[6], rptVars[7],
              rptVars[8], rptVars[9], rptVars[10], rptVars[11]);
@@ -443,7 +444,7 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
             //    results to file marking the start of a dry period
             if ( theLidUnit->rptFile->wasDry == 0 )
             {
-                fprintf(theLidUnit->rptFile->file, "%s",
+                fprintf(lid_sharedRptFile(), "%s",                             // LIDCONSOLIDATE
                     theLidUnit->rptFile->results);
             }
 
@@ -455,7 +456,7 @@ void lidproc_saveResults(TLidUnit* lidUnit, double ucfRainfall, double ucfRainDe
         else
         {
             //... write the current results to the report file
-            fprintf(theLidUnit->rptFile->file, "%s",
+            fprintf(lid_sharedRptFile(), "%s",                                 // LIDCONSOLIDATE
                 theLidUnit->rptFile->results);
 
             //... re-set the number of successive dry periods to 0

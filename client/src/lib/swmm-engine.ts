@@ -137,7 +137,7 @@ export function createWasmEngine(): SwmmEngine {
 
       // Purge any stale files from a previous run before writing new ones
       // so that a crash mid-run never lets old results bleed into the next run.
-      for (const f of ['model.inp', 'model.rpt', 'model.out']) {
+      for (const f of ['model.inp', 'model.rpt', 'model.out', 'model.lid']) {
         try { mod.FS.unlink(f); } catch {}
       }
 
@@ -153,7 +153,7 @@ export function createWasmEngine(): SwmmEngine {
         errCode = swmm_run('model.inp', 'model.rpt', 'model.out');
       } catch (runErr) {
         // Always clean up even if the engine throws
-        for (const f of ['model.inp', 'model.rpt', 'model.out']) {
+        for (const f of ['model.inp', 'model.rpt', 'model.out', 'model.lid']) {
           try { mod.FS.unlink(f); } catch {}
         }
         throw runErr;
@@ -165,11 +165,18 @@ export function createWasmEngine(): SwmmEngine {
         rptText = new TextDecoder().decode(rptData);
       } catch {}
 
+      // Consolidated LID detail report (engine writes it only when at least
+      // one [LID_USAGE] line requests detailed reporting).
+      let lidText = '';
+      try {
+        lidText = new TextDecoder().decode(mod.FS.readFile('model.lid'));
+      } catch {}
+
       if (errCode !== 0) {
         const errLines = rptText.split('\n').filter((l: string) => /ERROR|WARNING/i.test(l)).slice(0, 5).join('; ');
         const err = new Error(`SWMM error code ${errCode}. ${errLines || 'Check report for details.'}`) as any;
         err.reportContent = rptText;
-        for (const f of ['model.inp', 'model.rpt', 'model.out']) {
+        for (const f of ['model.inp', 'model.rpt', 'model.out', 'model.lid']) {
           try { mod.FS.unlink(f); } catch {}
         }
         throw err;
@@ -194,11 +201,12 @@ export function createWasmEngine(): SwmmEngine {
         parsed = parseRptToResults(rptText, project);
       }
 
-      for (const f of ['model.inp', 'model.rpt', 'model.out']) {
+      for (const f of ['model.inp', 'model.rpt', 'model.out', 'model.lid']) {
         try { mod.FS.unlink(f); } catch {}
       }
 
       computeExtendedVariables(project, parsed);
+      if (lidText) parsed.lidReportText = lidText;
       parsed.engineUsed = 'wasm';
       parsed.inpUsed = inpText;
       if (onProgress) onProgress(100, 'Simulation complete');
@@ -464,6 +472,8 @@ interface WorkerDone {
   outData: Uint8Array | null;
   /** Last engine stderr lines — init failures explain themselves only here. */
   stderrText?: string;
+  /** Consolidated LID detail report (.lid) text (SWMM5 runs only). */
+  lidText?: string;
 }
 
 function runInWorker(
@@ -492,7 +502,7 @@ function runInWorker(
       if (msg.type === 'progress') {
         opts.onProgress?.(msg.pct, msg.msg);
       } else if (msg.type === 'done') {
-        finish(() => resolve({ errCode: msg.errCode, rptText: msg.rptText || '', outData: msg.outData || null, stderrText: msg.stderrText || '' }));
+        finish(() => resolve({ errCode: msg.errCode, rptText: msg.rptText || '', outData: msg.outData || null, stderrText: msg.stderrText || '', lidText: msg.lidText || '' }));
       } else if (msg.type === 'error') {
         finish(() => reject(new Error(msg.message || 'WASM worker error')));
       }
@@ -530,7 +540,7 @@ export async function runWasmEngineInWorker(
 ): Promise<SimulationResults> {
   const isSwmm6 = engineId === 'wasm6' || engineId === 'wasm6dev';
   const inpText = projectToInp(project, isSwmm6 ? 'swmm6' : 'swmm5');
-  const { errCode, rptText, outData, stderrText } = await runInWorker(engineId, inpText, opts);
+  const { errCode, rptText, outData, stderrText, lidText } = await runInWorker(engineId, inpText, opts);
 
   if (isSwmm6) {
     // SWMM6 engines have exited 0 on fatal parses — verify results exist in
@@ -594,6 +604,7 @@ export async function runWasmEngineInWorker(
     parsed = parseRptToResults(rptText, project);
   }
   computeExtendedVariables(project, parsed);
+  if (lidText) parsed.lidReportText = lidText;
   parsed.engineUsed = 'wasm';
   parsed.inpUsed = inpText;
   if (opts.onProgress) opts.onProgress(100, 'Simulation complete');
