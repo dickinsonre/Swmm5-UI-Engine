@@ -105,7 +105,9 @@ The honest short version:
 
 ## 3. The variable catalogue
 
-220 result variables across four scopes, grouped exactly as the UI groups them.
+218 result variables across four scopes, grouped exactly as the UI groups them.
+(`bernoulliLHS` / `bernoulliRHS` are still computed internally for the Engine
+Inspector energy balance, but are not offered as selectable output variables.)
 Break-points are the five map-legend bands.
 
 <!-- SCOPE node (27 variables) -->
@@ -204,7 +206,7 @@ Break-points are the five map-legend bands.
 | `y1` | Y1 (US Depth) | ft/m | DRV | < 0.5 · 0.5-1.5 · 1.5-2.5 · 2.5-4 · > 4 |
 | `y2` | Y2 (DS Depth) | ft/m | DRV | < 0.5 · 0.5-1.5 · 1.5-2.5 · 2.5-4 · > 4 |
 
-#### Energy / Bernoulli — `LINK_ENERGY` (11) — Directly derived
+#### Energy / Bernoulli — `LINK_ENERGY` (9) — Directly derived
 
 | Key | Name | Units | Provenance | Legend break-points |
 | --- | --- | --- | --- | --- |
@@ -215,8 +217,6 @@ Break-points are the five map-legend bands.
 | `vhMid` | VH_mid (Vel Head) | ft/m | DRV | < 0.2 · 0.2-0.5 · 0.5-1.0 · 1.0-1.5 · > 1.5 |
 | `vhDn` | VH_dn (DS Vel Head) | ft/m | DRV | < 0.2 · 0.2-0.5 · 0.5-1.0 · 1.0-1.5 · > 1.5 |
 | `frictionLossHf` | Friction Loss (hf) | ft/m | DRV | < 0.5 · 0.5-1.5 · 1.5-2.5 · 2.5-4 · > 4 |
-| `bernoulliLHS` | Bernoulli LHS | ft/m | DRV | Low · High |
-| `bernoulliRHS` | Bernoulli RHS | ft/m | DRV | Low · High |
 | `rho` | ρ (Density Factor) | — | DRV | < 0.5 · 0.5-0.8 · 0.8-1.0 · 1.0-1.5 · > 1.5 |
 | `sigma` | σ (Inertial Damping) | 0–1 | DRV | < 0.2 · 0.2-0.4 · 0.4-0.6 · 0.6-0.8 · > 0.8 |
 
@@ -462,7 +462,7 @@ Break-points are the five map-legend bands.
 | `width` | Width | ft | ENG | Narrow · Wide |
 | `slope` | Slope | % | ENG | Flat · Steep |
 
-<!-- TOTALS node=27 link=66 sub=100 sys=27 total=220 -->
+<!-- TOTALS node=27 link=64 sub=100 sys=27 total=218 -->
 
 ---
 

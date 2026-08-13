@@ -148,8 +148,8 @@ export const LINK_VARS: SwmmVariable[] = [
   { key: 'vhMid', name: 'VH_mid (Vel Head)', units: 'ft/m', cat: 'LINK_ENERGY', scope: 'link', maxVal: 2, labels: ['< 0.2', '0.2-0.5', '0.5-1.0', '1.0-1.5', '> 1.5'] },
   { key: 'vhDn', name: 'VH_dn (DS Vel Head)', units: 'ft/m', cat: 'LINK_ENERGY', scope: 'link', maxVal: 2, labels: ['< 0.2', '0.2-0.5', '0.5-1.0', '1.0-1.5', '> 1.5'] },
   { key: 'frictionLossHf', name: 'Friction Loss (hf)', units: 'ft/m', cat: 'LINK_ENERGY', scope: 'link', maxVal: 5, labels: ['< 0.5', '0.5-1.5', '1.5-2.5', '2.5-4', '> 4'] },
-  { key: 'bernoulliLHS', name: 'Bernoulli LHS', units: 'ft/m', cat: 'LINK_ENERGY', scope: 'link', maxVal: 120, labels: ['Low', '', '', '', 'High'] },
-  { key: 'bernoulliRHS', name: 'Bernoulli RHS', units: 'ft/m', cat: 'LINK_ENERGY', scope: 'link', maxVal: 120, labels: ['Low', '', '', '', 'High'] },
+  // bernoulliLHS / bernoulliRHS are still computed in swmm-engine.ts (Engine Inspector
+  // energy balance) but are deliberately not offered as selectable output variables.
   { key: 'rho', name: '\u03C1 (Density Factor)', units: '\u2014', cat: 'LINK_ENERGY', scope: 'link', maxVal: 2, labels: ['< 0.5', '0.5-0.8', '0.8-1.0', '1.0-1.5', '> 1.5'] },
   { key: 'sigma', name: '\u03C3 (Inertial Damping)', units: '0\u20131', cat: 'LINK_ENERGY', scope: 'link', maxVal: 1, labels: ['< 0.2', '0.2-0.4', '0.4-0.6', '0.6-0.8', '> 0.8'] },
 
