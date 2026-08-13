@@ -2409,7 +2409,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<TrendingUp className="w-4 h-4" />} label="Graph" onClick={() => { if (!results) toast({ title: 'No Results', description: 'Run a simulation first to view time series graphs' }); else if (reportSummaryOnly) blockReportSummaryTool('Time Series Graph'); else setOpenDialog('timeSeries'); }} testId="btn-graph" />
             {expertMode && <ToolbarButton icon={<Target className="w-4 h-4" />} label="Calibrate" onClick={() => { if (reportSummaryOnly) blockReportSummaryTool('Calibration Analysis'); else setOpenDialog('calibration'); }} testId="btn-calibration" />}
             <ToolbarButton icon={<Table2 className="w-4 h-4" />} label="Table" onClick={() => { if (reportSummaryOnly) blockReportSummaryTool('Results Table'); else setOpenDialog('tableView'); }} testId="btn-table-view" />
-            {results?.lidReportText && <ToolbarButton icon={<Layers className="w-4 h-4" />} label="LID" onClick={() => setShowLidViewer(true)} testId="btn-lid-viewer" />}
+            {(results?.lidReportText || (project.lidUsage?.length ?? 0) > 0) && <ToolbarButton icon={<Layers className="w-4 h-4" />} label="LID" onClick={() => setShowLidViewer(true)} testId="btn-lid-viewer" />}
             {expertMode && <ToolbarButton icon={<Activity className="w-4 h-4" />} label="Scatter" onClick={() => { if (!results) toast({ title: 'No Results', description: 'Run a simulation first' }); else if (reportSummaryOnly) blockReportSummaryTool('Scatter Plot'); else setOpenDialog('scatterPlot'); }} testId="btn-scatter-plot" />}
             {expertMode && <ToolbarButton icon={<Droplets className="w-4 h-4" />} label="Transect" onClick={() => setOpenDialog('transectEditor')} testId="btn-transect-editor" />}
             {expertMode && <ToolbarButton icon={<PanelLeftOpen className="w-4 h-4" />} label="Compare" onClick={() => { if (reportSummaryOnly) blockReportSummaryTool('Split-Screen Comparison'); else setOpenDialog('splitScreen'); }} testId="btn-split-screen" />}
@@ -4619,7 +4619,27 @@ export default function SwmmUI() {
         onProjectChange={(p) => { handleUpdateProject(() => p); setActiveSubDialog(null); }}
       />
 
-      <LidViewerDialog open={showLidViewer} onOpenChange={setShowLidViewer} results={results} />
+      <LidViewerDialog
+        open={showLidViewer}
+        onOpenChange={setShowLidViewer}
+        results={results}
+        engineUsed={results?.engineUsed}
+        lidUsage={project.lidUsage}
+        onEnableReporting={() => {
+          handleUpdateProject((prev) => ({
+            ...prev,
+            lidUsage: (prev.lidUsage || []).map((u) =>
+              !u.rptFile || u.rptFile === '*'
+                ? { ...u, rptFile: `${u.subcatchId}_${u.lidId}.txt`.replace(/\s+/g, '_') }
+                : u,
+            ),
+          }));
+          toast({
+            title: 'Detailed LID reporting enabled',
+            description: 'Run the simulation (WASM 5.2.4 engine) to generate the animated LID details.',
+          });
+        }}
+      />
 
       {results && results.timeSteps.length > 0 && (
         <EngineInspectorDialog

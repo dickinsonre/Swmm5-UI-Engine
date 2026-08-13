@@ -220,11 +220,16 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   results: SimulationResults | null;
+  /** LID units defined in the project — used to explain an empty viewer. */
+  lidUsage?: { subcatchId: string; lidId: string; rptFile: string }[];
+  /** Turns on detailed reporting for every LID unit (caller re-runs). */
+  onEnableReporting?: () => void;
+  engineUsed?: string;
 }
 
 const SPEEDS = [1, 10, 60];
 
-export default function LidViewerDialog({ open, onOpenChange, results }: Props) {
+export default function LidViewerDialog({ open, onOpenChange, results, lidUsage = [], onEnableReporting, engineUsed }: Props) {
   const report = useMemo(() => parseLidReport(results?.lidReportText || ''), [results?.lidReportText]);
   const rptSummary = useMemo(() => parseRptLidSummary(results?.reportContent), [results?.reportContent]);
   const [unitKey, setUnitKey] = useState<string>('');
@@ -320,16 +325,48 @@ export default function LidViewerDialog({ open, onOpenChange, results }: Props) 
   const svgH = yCursor + 70;
 
   if (!report) {
+    const off = lidUsage.filter((u) => !u.rptFile || u.rptFile === '*');
+    const wrongEngine = !!results && engineUsed !== undefined && engineUsed !== 'wasm';
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-md bg-white" data-testid="lid-viewer-dialog">
+        <DialogContent className="max-w-lg bg-white" data-testid="lid-viewer-dialog">
           <DialogHeader>
             <DialogTitle className="text-[#2c3e6b] flex items-center gap-2"><Layers className="w-5 h-5" /> LID Viewer</DialogTitle>
-            <DialogDescription>
-              No detailed LID results available. Run the model with the in-browser SWMM 5 engine and set a report
-              file name (any name) in the LID Usage editor for the units you want to inspect.
-            </DialogDescription>
+            <DialogDescription>Detailed, animated LID results are not available yet for this run.</DialogDescription>
           </DialogHeader>
+          <div className="text-sm text-[#2a2a3e] space-y-3">
+            {lidUsage.length === 0 && <p>This project has no LID units in <span className="font-mono">[LID_USAGE]</span>.</p>}
+            {off.length > 0 && (
+              <div>
+                <p className="mb-1">
+                  {off.length} of {lidUsage.length} LID unit{lidUsage.length === 1 ? '' : 's'} {off.length === 1 ? 'has' : 'have'} detailed
+                  reporting turned off (the report-file column is <span className="font-mono">*</span>). SWMM only records
+                  layer-by-layer detail for units that ask for it.
+                </p>
+                <ul className="max-h-28 overflow-y-auto text-xs font-mono text-[#6b6b7b] pl-4 list-disc">
+                  {off.slice(0, 20).map((u, i) => <li key={i}>{u.subcatchId} — {u.lidId}</li>)}
+                  {off.length > 20 && <li>…and {off.length - 20} more</li>}
+                </ul>
+                {onEnableReporting && (
+                  <button
+                    className="mt-2 px-3 py-1.5 rounded bg-[#2c3e6b] text-white text-sm hover:bg-[#22315a]"
+                    onClick={() => { onEnableReporting(); onOpenChange(false); }}
+                    data-testid="lid-enable-reporting"
+                  >Turn on detailed reporting for all LID units</button>
+                )}
+                <p className="text-xs text-[#6b6b7b] mt-1">You can also set it per unit in the Subcatchment editor’s LID Usage grid.</p>
+              </div>
+            )}
+            {wrongEngine && (
+              <p className="text-xs text-[#6b6b7b]">
+                Detailed LID output currently comes from the in-browser engine only. This run used{' '}
+                <span className="font-mono">{engineUsed}</span> — switch the engine to WASM 5.2.4 and run again.
+              </p>
+            )}
+            {off.length === 0 && lidUsage.length > 0 && !wrongEngine && (
+              <p>Reporting is enabled — run the simulation again to generate detailed LID results.</p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     );
