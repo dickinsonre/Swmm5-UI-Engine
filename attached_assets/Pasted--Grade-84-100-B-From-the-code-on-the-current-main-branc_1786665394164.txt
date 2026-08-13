@@ -1,0 +1,52 @@
+# Grade: **84/100 — B+**
+
+From the code on the current `main` branch, this is **well beyond a typical Replit prototype**. It is a substantial SWMM engineering workbench with multiple real engines, binary-output parsing, model editing, diagnostics, comparison tools, autosave/recovery, mapping, and unusually good attention to result provenance. The main thing holding it back is not capability; it is that the application has grown faster than its architecture and deployment model.
+
+I reviewed the source statically; I did **not** execute the Replit deployment or run the complete test suite.
+
+| Area                                  |      Score | Assessment                                      |
+| ------------------------------------- | ---------: | ----------------------------------------------- |
+| Feature / engineering depth           |  **18/20** | Exceptionally broad                             |
+| Engine fidelity / numerical integrity |  **17/20** | Strong, with two important gaps                 |
+| Backend robustness                    |  **16/20** | Very good process protections                   |
+| Front-end architecture                |  **12/15** | Functional but becoming monolithic              |
+| Testing                               |   **9/10** | Excellent domain tests; enforcement needs work  |
+| Replit deployment / operations        |   **5/10** | Biggest technical weakness                      |
+| Security / repository hygiene         |   **7/10** | Sensible foundation, needs production hardening |
+| **Total**                             | **84/100** | **B+**                                          |
+
+## What is especially good
+
+The **engine architecture is one of the strongest parts**. You have a common `SwmmEngine` abstraction covering local SWMM5, WASM SWMM5, remote, mock, and two OpenSWMM 6 WASM variants. The WASM code clears old MEMFS files, validates loader/binary availability, captures reports and binary output, handles engine errors, and distinguishes actual binary results from report-only and synthetic results.
+
+I particularly like the **provenance discipline**. Your documentation explicitly separates true engine output (`ENG`) from directly derived, reconstructed, and estimated variables, and even warns that certain water-quality, snow, and LID variables are fixed-coefficient placeholders that should not be used quantitatively. That is exactly the sort of transparency an engineering application should have.
+
+The native server runner has become quite robust. It has a 25 MB input limit, an eight-second request cooldown, a two-process concurrency ceiling, simulation timeout/kill logic, client-disconnect cleanup, temporary-directory isolation, strict success classification, and special handling for large `.out` files rather than blindly putting them into a massive base64 JSON response.
+
+Your **round-trip testing is also unusually good**. The tests do far more than test a trivial INP. They check weirs, culverts, storage parameters, time series, LIDs, RDII, groundwater, snowpacks, pollutants, DWF, pumps, controls, patterns, labels, losses, and comment preservation through parse → export → parse.
+
+## Highest-priority improvements
+
+1. **Fix the Replit autoscaling/result-storage design first.** The deployment target is `autoscale`, while large `.out` files are stored in instance-local `/tmp` and registered in an in-memory `pendingOutFiles` map.   A simulation POST can therefore theoretically run on instance A and the subsequent `/api/swmm/out/:id` request reach instance B, where the ID and file do not exist. Move temporary large results to shared object storage, or redesign the endpoint so the result is streamed through a single request. The same principle applies to `activeSims` and IP rate-limit maps: they are per-process rather than global.
+
+2. **Remove the silent 5,000-period time-series cutoff.** `parseSwmmOut()` currently does `Math.min(actualPeriods, 5000)` and then reports that reduced number as `reportingSteps`.  A long-duration or short-report-step simulation can therefore contain more real SWMM output than the UI exposes without making the truncation obvious. I would retain `actualReportingSteps`, add `loadedReportingSteps` and `isTruncated`, show a conspicuous warning, and eventually parse/decimate the series on demand.
+
+3. **Break up `swmm-ui.tsx`.** It is currently about **431 KB in one TSX file**.  It owns project state, engine selection, simulation, themes, dialogs, GitHub loading, imports, reports, comparisons, autosave, undo/redo, CFL analysis, AI assistance, mobile layout, map state and many other domains. The giant dialog-state union and large collection of `useState` calls illustrate the problem.  I would split this into `useProjectController`, `useSimulationController`, `useResultsController`, `useMapController`, `useProjectHistory`, `useImportExport` and feature-specific dialog components. You don't necessarily need Redux; well-structured reducers/hooks would be enough.
+
+4. **Optimize `NetworkMap` before large models become painful.** Several hot paths repeatedly scan entire model arrays. For example, node hit testing loops through every coordinate and then does multiple `.find()` calls; node coloring recomputes model-wide elevation arrays/min/max; and link coloring repeatedly searches conduits/nodes and sometimes recalculates the maximum conduit length.  Those functions are then called from the canvas drawing loop for potentially every visible object.  Precompute `nodeById`, `linkById`, theme min/max ranges and adjacency maps with `useMemo`. For very large networks, add a spatial grid/quadtree for hit testing and viewport/label culling. This could be a **major** performance improvement.
+
+5. **Make quality output match the product claims.** The README says the application supports pollutant simulations,  while the detailed engine documentation accurately says pollutant columns are present in the binary output but are currently discarded rather than exposed as result series.  The parser reads pollutant names and the variable counts but only stores the fixed eight subcatchment, six node and five link variables.  I would make pollutant concentration/load series a first-class `SimulationResults` structure. Until then, change the README to distinguish **“SWMM quality simulation is executed”** from **“quality time-series visualization is supported.”**
+
+6. **Make type checking and tests deployment gates.** You already have `strict: true` TypeScript and `npm run check`.  But Replit deployment invokes `npm run build`, and `build.ts` performs Vite/esbuild compilation without first invoking `tsc` or the test suite.   I would make the production pipeline effectively `npm run check && npm test && npm run build`. Also, `tests/run-all.sh` currently runs five suites but does not include everything visible under `tests/`, such as the output-offset test and E2E folder.
+
+7. **Harden the public server endpoints.** Your SSRF protection around GitHub raw-file fetching is good: HTTPS is required and hosts are allowlisted.  I would next require authentication/quotas for publicly exposed native-compute endpoints, configure `trust proxy` correctly for Replit before depending on `req.ip`, add upstream-fetch timeouts with `AbortController`, add standard security headers/CSP, and make `BATCH_SWMM_URL` an environment setting instead of a hard-coded service dependency. The MCP endpoint already supports a bearer key, but currently deliberately permits anonymous access when `MCP_API_KEY` is unset; production should fail closed instead.
+
+8. **Clean the repository itself.** Literal files named `C:\Users\dickinre\Desktop\...` have been committed, including a roughly 2.6 MB runoff file, and `attached_assets` contains some very large uploaded/archive material.  Your `.gitignore` is currently quite minimal.  Add patterns for SWMM runtime outputs (`*.out`, `*.rpt`, `*.rof`, `*.hsf` as appropriate), logs, environment files, coverage and temporary artifacts. I would also move historical analysis/uploads out of the production source tree where possible.
+
+A couple of smaller fixes would improve polish quickly. `README.md` says the backend uses **Drizzle ORM**, but Drizzle is not in the current dependency list, suggesting that sentence is stale.   And although a `not-found.tsx` exists, `App.tsx` routes unknown URLs back to `SwmmUI`, so the not-found page is effectively unused.
+
+## Where I think this could get to
+
+With the first four items fixed, I would move the codebase to roughly **91–93/100**. The SWMM-specific engineering foundation is already stronger than the grade might suggest; most of the remaining deductions come from **software architecture and production deployment concerns rather than the hydraulic/modeling capability**.
+
+The three changes I would do first are **shared result storage for autoscale → eliminate the 5,000-period silent cutoff → refactor `swmm-ui.tsx` and optimize `NetworkMap`**. Those would improve reliability, numerical transparency, maintainability, and large-model performance simultaneously.
