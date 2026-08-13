@@ -36,9 +36,32 @@ export default function AboutDialog({ open, onOpenChange }: Props) {
               Originally developed by the U.S. Environmental Protection Agency (EPA). This web-based interface provides access to SWMM's full modeling capabilities through a modern browser-based environment.
             </p>
           </div>
+          <div className="border-t border-[#e0e0e8] pt-3 space-y-2">
+            <div className="text-xs font-semibold text-[#2c3e6b]">Credits &amp; Acknowledgements</div>
+            <p className="text-xs leading-relaxed">
+              With gratitude to <span className="font-semibold">Dr. Lewis A. Rossman</span>, author of SWMM and EPANET.
+              For more than thirty years, modelers and modellers around the world have built their careers on his code.
+            </p>
+            <p className="text-xs leading-relaxed">
+              The interface design here also draws on his{' '}
+              <a
+                href="https://github.com/OpenWaterAnalytics/EPANET-UI"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#2c6eb5] underline underline-offset-2 hover:text-[#2c3e6b]"
+                data-testid="link-epanet-ui"
+              >
+                EPANET-UI
+              </a>
+              , which this project uses and adapts for SWMM5 — including the side-by-side SWMM5 vs. SWMM6 comparison.
+              Like almost everything Lew has made across his career, it is open source, and there is a great deal to
+              learn from reading it.
+            </p>
+          </div>
           <div className="border-t border-[#e0e0e8] pt-3">
             <div className="text-[10px] text-[#6b6b7b] space-y-0.5">
               <div>EPA SWMM is public domain software.</div>
+              <div>EPANET-UI is maintained by OpenWaterAnalytics.</div>
               <div>Web interface built with React, Canvas rendering, and local/WASM/remote engine support.</div>
             </div>
           </div>
