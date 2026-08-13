@@ -1,0 +1,916 @@
+diff --git a/src/engine/core/SWMMEngine.cpp b/src/engine/core/SWMMEngine.cpp
+index cd73bcc..7821949 100644
+--- a/src/engine/core/SWMMEngine.cpp
++++ b/src/engine/core/SWMMEngine.cpp
+@@ -830,6 +830,10 @@ int SWMMEngine::start(int save_results) noexcept {
+     // gated on this in step()/postOutputSnapshot().
+     do_routing_ = (ctx_.n_nodes() > 0 && !ctx_.options.ignore_routing);
+ 
++    // Consolidated detailed LID report (.lid, one file for all units that
++    // carry an [LID_USAGE] RptFile token). No-op when no unit reports.
++    lid_report_.open(ctx_, rpt_path_, lid_);
++
+     // Everything up to prepare_all() is interface-file work ([FILES] inflows /
+     // outflows / hotstart / RDII / rainfall).
+     const auto _pt_iface0 = perf::now();
+@@ -1583,7 +1587,9 @@ void SWMMEngine::stepRunoff(double dt_routing) noexcept {
+                 // Per-subarea runoff CFS from non-LID area (set by RunoffSolver, Gap #23)
+                 double q_imperv = rsoa.imperv_runoff_cfs[usc];
+                 double q_perv   = rsoa.perv_runoff_cfs[usc];
+-                double lid_area = g.area[uu];
++                // Runon spreads over ALL replicates of this usage row, not one
++                // (legacy lid.c:1794 lidArea = area * number).
++                double lid_area = g.area[uu] * g.n_units[uu];
+                 // Inflow = rainfall on LID + fraction of non-LID subarea runoff captured
+                 double q_from_sc = 0.0;
+                 if (lid_area > 0.0)
+@@ -1604,7 +1610,7 @@ void SWMMEngine::stepRunoff(double dt_routing) noexcept {
+                 int sc = g.subcatch_idx[uu];
+                 if (sc < 0 || sc >= ctx_.n_subcatches()) continue;
+                 auto usc = static_cast<std::size_t>(sc);
+-                double lid_area = g.area[uu];
++                double lid_area = g.area[uu] * g.n_units[uu];
+ 
+                 // Surface runoff from LID (ft/sec * ft² = CFS):
+                 //  to_perv==0 → goes to subcatch outlet (add to subcatch runoff CFS)
+@@ -3601,6 +3607,14 @@ void SWMMEngine::postOutputSnapshot(double /*dt_step*/) noexcept {
+             return;
+         }
+ 
++        // Detailed LID report row(s) for this report instant. Written on the
++        // report grid (not the runoff grid) so ReportStep in the file's [META]
++        // block describes the row spacing, dry-period gaps aside.
++        if (lid_report_.active()) {
++            lid_report_.writeStep(ctx_, lid_, report_date,
++                                  ctx_.next_report_ms / 3600000.0);
++        }
++
+         // Routing interface file: write one outfall row per reporting step
+         // (legacy output_saveResults() → iface_saveOutletResults()). Not
+         // gated on save_results_ — the interface file is a model-coupling
+@@ -4110,6 +4124,8 @@ int SWMMEngine::end() noexcept {
+         return SWMM_ERR_WRONG_STATE;
+     }
+ 
++    lid_report_.close();
++
+     // Compute final GW storage for mass balance reporting
+     {
+         auto& gw = groundwater_.state();
+diff --git a/src/engine/core/SWMMEngine.hpp b/src/engine/core/SWMMEngine.hpp
+index 51214e7..059faff 100644
+--- a/src/engine/core/SWMMEngine.hpp
++++ b/src/engine/core/SWMMEngine.hpp
+@@ -63,6 +63,7 @@
+ #include "../hydrology/Snow.hpp"
+ #include "../hydrology/Groundwater.hpp"
+ #include "../hydrology/LID.hpp"
++#include "../hydrology/LIDReport.hpp"
+ #include "../hydrology/Inflow.hpp"
+ #include "../hydrology/RDII.hpp"
+ #include "../hydrology/RunoffInterface.hpp"
+@@ -377,6 +378,7 @@ private:
+     snow::SnowSolver             snow_;         ///< Snowmelt (batch over subcatch×subareas)
+     groundwater::GWSolver        groundwater_;  ///< Groundwater (batch ODE per subcatchment)
+     lid::LIDSolver               lid_;          ///< LID (batch by type group)
++    lid::LIDReport               lid_report_;   ///< Consolidated .lid detailed report
+     quality::QualitySolver       quality_;      ///< Quality routing (batch link-load + mixing)
+     landuse::LanduseSolver       landuse_solver_; ///< Buildup/washoff computation
+     landuse::SurfaceQualitySoA   surface_quality_; ///< Per-subcatch surface quality state
+diff --git a/src/engine/hydrology/LID.cpp b/src/engine/hydrology/LID.cpp
+index 411a0ed..1bc2fb1 100644
+--- a/src/engine/hydrology/LID.cpp
++++ b/src/engine/hydrology/LID.cpp
+@@ -26,6 +26,7 @@
+ 
+ #include "LID.hpp"
+ #include "../core/SimulationContext.hpp"
++#include "../core/UnitConversion.hpp"
+ #include <cmath>
+ #include <algorithm>
+ #include <array>
+@@ -81,6 +82,7 @@ void LIDGroupSoA::resize(int n) {
+     subcatch_idx.assign(un, -1);
+     control_idx.assign(un, -1);
+     area.assign(un, 0.0);
++    n_units.assign(un, 1);
+     from_imperv.assign(un, 0.0);
+     from_perv.assign(un, 0.0);
+     to_perv.assign(un, 0);
+@@ -152,6 +154,13 @@ void LIDGroupSoA::resize(int n) {
+     evap_loss.assign(un, 0.0);
+     infil_loss.assign(un, 0.0);
+ 
++    rpt_inflow.assign(un, 0.0);
++    rpt_evap.assign(un, 0.0);
++    rpt_surf_infil.assign(un, 0.0);
++    rpt_pave_perc.assign(un, 0.0);
++    rpt_soil_perc.assign(un, 0.0);
++    rpt_stor_exfil.assign(un, 0.0);
++
+     wb_inflow.assign(un, 0.0);
+     wb_evap.assign(un, 0.0);
+     wb_infil.assign(un, 0.0);
+@@ -213,6 +222,21 @@ void LIDSolver::init(SimulationContext& ctx) {
+         groups_[static_cast<size_t>(t)].resize(type_counts[static_cast<size_t>(t)]);
+ 
+     // 3. Populate per-unit parameters from LidControlStore + LidUsageStore
++    //
++    // UNITS: [LID_CONTROLS] parameters are stored verbatim in project units
++    // (in or mm, in/hr or mm/hr, slope in percent, drain delay in hours) —
++    // the .inp handler does not convert them, so that InpWriter can echo the
++    // section back out unchanged. Every flux in this solver, and the inflow
++    // the engine hands us, is internal ft / ft-per-second. Convert on the way
++    // into the SoA, exactly as legacy SWMM5 converts on read (lid.c:
++    // readSurfaceData / readSoilData / readStorageData / readDrainData).
++    // Void RATIO likewise becomes void FRACTION here, per readStorageData.
++    const auto uus = static_cast<std::size_t>(
++        ucf::getUnitSystem(static_cast<int>(ctx.options.flow_units)));
++    const double ucf_depth = ucf::Ucf[ucf::RAINDEPTH][uus];  // in|mm    -> ft
++    const double ucf_rate  = ucf::Ucf[ucf::RAINFALL][uus];   // in|mm/hr -> ft/sec
++    const double ucf_len   = ucf::Ucf[ucf::LENGTH][uus];     // ft|m     -> ft
++
+     std::array<int, 8> type_cursor = {};  // next free slot in each group
+     for (int j = 0; j < n_usage; ++j) {
+         auto uj = static_cast<std::size_t>(j);
+@@ -229,8 +253,12 @@ void LIDSolver::init(SimulationContext& ctx) {
+         // Usage-level fields
+         g.subcatch_idx[us] = ctx.lid_usage.subcatch_index[uj];
+         g.control_idx[us]  = li;
+-        g.area[us]         = ctx.lid_usage.area[uj];
+-        g.full_width[us]   = ctx.lid_usage.width[uj];
++        // [LID_USAGE] geometry is also unconverted: area in m2 / ft2 and width
++        // in m / ft as typed (legacy lid.c:680 divides by SQR(UCF(LENGTH))).
++        g.area[us]         = ctx.lid_usage.area[uj] / (ucf_len * ucf_len);
++        g.full_width[us]   = ctx.lid_usage.width[uj] / ucf_len;
++        g.n_units[us]      = (uj < ctx.lid_usage.number.size())
++                             ? std::max(1, ctx.lid_usage.number[uj]) : 1;
+         g.from_imperv[us]  = ctx.lid_usage.from_imperv[uj] / 100.0;  // % → fraction
+         g.from_perv[us]    = (uj < ctx.lid_usage.from_perv.size())
+                              ? ctx.lid_usage.from_perv[uj] / 100.0 : 0.0;
+@@ -251,10 +279,10 @@ void LIDSolver::init(SimulationContext& ctx) {
+         // SURFACE layer: [0]=StorHt, [1]=VegVolFrac, [2]=Roughness, [3]=SurfSlope, [4]=SideSlope
+         if (uli < ctx.lid_controls.surface.size()) {
+             const auto& p = ctx.lid_controls.surface[uli];
+-            g.surf_store[us]      = p[0];
++            g.surf_store[us]      = p[0] / ucf_depth;
+             g.surf_void_frac[us]  = (p[1] > 0.0) ? (1.0 - p[1]) : 1.0;
+             g.surf_rough[us]      = (p[2] > 0.0) ? p[2] : 0.01;
+-            g.surf_slope[us]      = (p[3] > 0.0) ? p[3] : 0.01;
++            g.surf_slope[us]      = (p[3] > 0.0) ? p[3] / 100.0 : 0.01;  // percent
+             g.surf_side_slope[us] = p[4];  // swale side slope (run/rise)
+             g.surf_alpha[us] = 1.49 * std::sqrt(g.surf_slope[us]) / g.surf_rough[us];
+         }
+@@ -262,21 +290,21 @@ void LIDSolver::init(SimulationContext& ctx) {
+         // SOIL layer: [0]=Thick, [1]=Poros, [2]=FC, [3]=WP, [4]=Ksat, [5]=Kslope, [6]=Suction
+         if (uli < ctx.lid_controls.soil.size()) {
+             const auto& p = ctx.lid_controls.soil[uli];
+-            g.soil_thick[us]    = p[0];
++            g.soil_thick[us]    = p[0] / ucf_depth;
+             g.soil_poros[us]    = p[1];
+             g.soil_fc[us]       = p[2];
+             g.soil_wp[us]       = p[3];
+-            g.soil_ksat[us]     = p[4];
++            g.soil_ksat[us]     = p[4] / ucf_rate;
+             g.soil_kslope[us]   = p[5];
+-            g.soil_suction[us]  = p[6];
++            g.soil_suction[us]  = p[6] / ucf_depth;
+         }
+ 
+         // STORAGE layer: [0]=Thick, [1]=VoidRatio, [2]=Ksat, [3]=ClogFactor
+         if (uli < ctx.lid_controls.storage.size()) {
+             const auto& p = ctx.lid_controls.storage[uli];
+-            g.stor_thick[us] = p[0];
+-            g.stor_void[us]  = p[1];
+-            g.stor_ksat[us]  = p[2];
++            g.stor_thick[us] = p[0] / ucf_depth;
++            g.stor_void[us]  = p[1] / (p[1] + 1.0);   // void ratio -> fraction
++            g.stor_ksat[us]  = p[2] / ucf_rate;
+             g.stor_clog[us]  = p[3];
+         }
+ 
+@@ -285,19 +313,19 @@ void LIDSolver::init(SimulationContext& ctx) {
+             const auto& p = ctx.lid_controls.drain[uli];
+             g.drain_coeff[us]  = p[0];
+             g.drain_expon[us]  = p[1];
+-            g.drain_offset[us] = p[2];
+-            g.drain_delay[us]  = p[3];
+-            g.drain_hopen[us]  = p[4];
+-            g.drain_hclose[us] = p[5];
++            g.drain_offset[us] = p[2] / ucf_depth;
++            g.drain_delay[us]  = p[3] * 3600.0;       // hours -> seconds
++            g.drain_hopen[us]  = p[4] / ucf_depth;
++            g.drain_hclose[us] = p[5] / ucf_depth;
+         }
+ 
+         // PAVEMENT layer: [0]=Thick, [1]=VoidRatio, [2]=FracImperv, [3]=Ksat, [4]=ClogFactor, [5]=RegenDays
+         if (uli < ctx.lid_controls.pavement.size()) {
+             const auto& p = ctx.lid_controls.pavement[uli];
+-            g.pave_thick[us]       = p[0];
+-            g.pave_void[us]        = p[1];
++            g.pave_thick[us]       = p[0] / ucf_depth;
++            g.pave_void[us]        = p[1] / (p[1] + 1.0);  // void ratio -> fraction
+             g.pave_imperv_frac[us] = p[2];
+-            g.pave_ksat[us]        = p[3];
++            g.pave_ksat[us]        = p[3] / ucf_rate;
+             g.pave_clog_factor[us] = p[4];
+             if (p[5] > 0.0) {
+                 g.pave_regen_days[us] = p[5];
+@@ -310,13 +338,13 @@ void LIDSolver::init(SimulationContext& ctx) {
+         // DRAINMAT layer: [0]=Thick, [1]=VoidRatio, [2]=Roughness
+         if (uli < ctx.lid_controls.drainmat.size()) {
+             const auto& p = ctx.lid_controls.drainmat[uli];
+-            g.drainmat_thick[us] = p[0];
++            g.drainmat_thick[us] = p[0] / ucf_depth;
+             g.drainmat_void[us]  = p[1];
+             g.drainmat_rough[us] = p[2];
+         }
+ 
+         // Initial saturation
+-        double initSat = ctx.lid_usage.init_sat[uj];
++        double initSat = ctx.lid_usage.init_sat[uj] / 100.0;  // percent (lid.c:682)
+         if (g.soil_thick[us] > 0.0) {
+             g.soil_moist[us] = g.soil_wp[us]
+                              + initSat * (g.soil_poros[us] - g.soil_wp[us]);
+@@ -386,7 +414,8 @@ void LIDSolver::init(SimulationContext& ctx) {
+                 auto uu = static_cast<std::size_t>(u);
+                 int sc = grp.subcatch_idx[uu];
+                 if (sc >= 0 && sc < n_sc)
+-                    ctx.subcatches.total_lid_area_ft2[static_cast<std::size_t>(sc)] += grp.area[uu];
++                    ctx.subcatches.total_lid_area_ft2[static_cast<std::size_t>(sc)] +=
++                        grp.area[uu] * grp.n_units[uu];  // area is per unit
+             }
+         }
+     }
+@@ -465,6 +494,14 @@ void LIDSolver::batchBioCellFlux(LIDGroupSoA& g, double rainfall,
+         g.evap_loss[ui] = surf_evap * dt;
+         g.infil_loss[ui] = exfil * dt;
+ 
++        // Reporting capture (instantaneous rates, ft/sec)
++        g.rpt_inflow[ui]     = inflow;
++        g.rpt_evap[ui]       = surf_evap;
++        g.rpt_surf_infil[ui] = soil_infil;
++        g.rpt_pave_perc[ui]  = 0.0;        // no pavement layer
++        g.rpt_soil_perc[ui]  = soil_perc;
++        g.rpt_stor_exfil[ui] = exfil;
++
+         // Water balance tracking
+         double totalVolume = g.surf_depth[ui] * g.surf_void_frac[ui]
+                            + g.soil_moist[ui] * g.soil_thick[ui]
+@@ -537,6 +574,14 @@ void LIDSolver::batchBarrelFlux(LIDGroupSoA& g, double rainfall, double dt) {
+         g.evap_loss[ui] = 0.0;
+         g.infil_loss[ui] = (dt > 0.0) ? exfil / dt : 0.0;
+ 
++        // Reporting capture (instantaneous rates, ft/sec)
++        g.rpt_inflow[ui]     = unit_inflow;
++        g.rpt_evap[ui]       = 0.0;        // barrel has no evaporation
++        g.rpt_surf_infil[ui] = 0.0;        // storage-only, no surface layer
++        g.rpt_pave_perc[ui]  = 0.0;        // no pavement layer
++        g.rpt_soil_perc[ui]  = 0.0;        // no soil layer
++        g.rpt_stor_exfil[ui] = (dt > 0.0) ? exfil / dt : 0.0;
++
+         // Water balance tracking
+         g.wb_inflow[ui]     += unit_inflow * dt;
+         g.wb_evap[ui]       += 0.0;
+@@ -650,6 +695,14 @@ void LIDSolver::batchInfilTrenchFlux(LIDGroupSoA& g, double rainfall,
+         g.evap_loss[ui]      = surfaceEvap + storageEvap;
+         g.infil_loss[ui]     = storageExfil;
+ 
++        // Reporting capture (instantaneous rates, ft/sec)
++        g.rpt_inflow[ui]     = surfaceInflow;
++        g.rpt_evap[ui]       = surfaceEvap + storageEvap;
++        g.rpt_surf_infil[ui] = surfaceInfil;   // surface -> storage (no soil layer)
++        g.rpt_pave_perc[ui]  = 0.0;            // no pavement layer
++        g.rpt_soil_perc[ui]  = 0.0;            // no soil layer
++        g.rpt_stor_exfil[ui] = storageExfil;
++
+         // Water balance
+         g.wb_inflow[ui]     += surfaceInflow * dt;
+         g.wb_evap[ui]       += (surfaceEvap + storageEvap) * dt;
+@@ -695,6 +748,14 @@ void LIDSolver::batchSwaleFlux(LIDGroupSoA& g, double rainfall,
+         g.evap_loss[ui] = surf_evap * dt;
+         g.infil_loss[ui] = infil * dt;
+ 
++        // Reporting capture (instantaneous rates, ft/sec)
++        g.rpt_inflow[ui]     = inflow;
++        g.rpt_evap[ui]       = surf_evap;
++        g.rpt_surf_infil[ui] = infil;      // surface -> soil infiltration
++        g.rpt_pave_perc[ui]  = 0.0;        // no pavement layer
++        g.rpt_soil_perc[ui]  = 0.0;        // no storage layer below soil
++        g.rpt_stor_exfil[ui] = 0.0;        // no storage layer
++
+         // Water balance tracking
+         g.wb_inflow[ui]     += inflow * dt;
+         g.wb_evap[ui]       += surf_evap * dt;
+@@ -780,6 +841,14 @@ void LIDSolver::batchSwaleModPuls(LIDGroupSoA& g, double rainfall,
+         g.evap_loss[ui] = surf_evap * dt;
+         g.infil_loss[ui] = soil_infil * dt;
+ 
++        // Reporting capture (instantaneous rates, ft/sec)
++        g.rpt_inflow[ui]     = inflow;
++        g.rpt_evap[ui]       = surf_evap;
++        g.rpt_surf_infil[ui] = soil_infil;  // surface -> soil infiltration
++        g.rpt_pave_perc[ui]  = 0.0;         // no pavement layer
++        g.rpt_soil_perc[ui]  = 0.0;         // no storage layer below soil
++        g.rpt_stor_exfil[ui] = 0.0;         // no storage layer
++
+         // Water balance: use actual state change to back-compute fluxes
+         // delta_vol = (x - x_old) * void_frac
+         // inflow*dt = evap*dt + infil*dt + runoff*dt + delta_vol
+@@ -962,6 +1031,14 @@ void LIDSolver::batchGreenRoofFlux(LIDGroupSoA& g, double rainfall,
+         g.evap_loss[ui] = totalEvap * dt;
+         g.infil_loss[ui] = storageExfil * dt; // always 0 for green roof
+ 
++        // Reporting capture (instantaneous rates, ft/sec)
++        g.rpt_inflow[ui]     = surfaceInflow;
++        g.rpt_evap[ui]       = totalEvap;
++        g.rpt_surf_infil[ui] = surfaceInfil;   // surface -> soil infiltration
++        g.rpt_pave_perc[ui]  = 0.0;            // no pavement layer
++        g.rpt_soil_perc[ui]  = soilPerc;       // soil -> drainage mat percolation
++        g.rpt_stor_exfil[ui] = storageExfil;   // always 0 for green roof
++
+         // --- water balance ---
+         double totalVolume = newSurf * surfVoidFrac
+                            + newTheta * soilThickness
+@@ -1248,6 +1325,14 @@ void LIDSolver::batchPavementFlux(LIDGroupSoA& g, double rainfall,
+         g.evap_loss[ui] = totalEvap * dt;
+         g.infil_loss[ui] = storageExfil * dt;
+ 
++        // Reporting capture (instantaneous rates, ft/sec)
++        g.rpt_inflow[ui]     = surfaceInflow;
++        g.rpt_evap[ui]       = totalEvap;
++        g.rpt_surf_infil[ui] = surfaceInfil;   // surface -> pavement infiltration
++        g.rpt_pave_perc[ui]  = pavePerc;       // pavement -> soil/storage percolation
++        g.rpt_soil_perc[ui]  = soilPerc;       // soil -> storage percolation (0 if no soil layer)
++        g.rpt_stor_exfil[ui] = storageExfil;   // storage -> native soil exfiltration
++
+         // --- water balance ---
+         double totalVolume = newSurf * surfVoidFrac
+                            + newPave * paveVoidFrac
+@@ -1324,6 +1409,14 @@ void LIDSolver::batchRoofDisconFlux(LIDGroupSoA& g, double rainfall,
+         g.evap_loss[ui] = surfaceEvap * dt;
+         g.infil_loss[ui] = 0.0;
+ 
++        // Reporting capture (instantaneous rates, ft/sec)
++        g.rpt_inflow[ui]     = surfaceInflow;
++        g.rpt_evap[ui]       = surfaceEvap;
++        g.rpt_surf_infil[ui] = 0.0;        // no infiltration (surface -> drain/overflow only)
++        g.rpt_pave_perc[ui]  = 0.0;        // no pavement layer
++        g.rpt_soil_perc[ui]  = 0.0;        // no soil layer
++        g.rpt_stor_exfil[ui] = 0.0;        // no storage layer
++
+         // --- water balance ---
+         double totalVolume = newSurf * g.surf_void_frac[ui];
+         g.wb_inflow[ui]     += surfaceInflow * dt;
+diff --git a/src/engine/hydrology/LID.hpp b/src/engine/hydrology/LID.hpp
+index 51d8dd1..3b223e0 100644
+--- a/src/engine/hydrology/LID.hpp
++++ b/src/engine/hydrology/LID.hpp
+@@ -86,7 +86,8 @@ struct LIDGroupSoA {
+ 
+     std::vector<int> subcatch_idx;     ///< Which subcatchment this unit belongs to
+     std::vector<int> control_idx;      ///< LID control index (into ctx.lid_controls)
+-    std::vector<double> area;          ///< Unit area (ft2)
++    std::vector<double> area;          ///< Area of ONE unit (ft2)
++    std::vector<int>    n_units;       ///< Replicate count ([LID_USAGE] Number)
+     std::vector<double> from_imperv;   ///< Fraction of impervious runoff treated (0-1)
+     std::vector<double> from_perv;     ///< Fraction of pervious runoff treated (0-1)
+     std::vector<int>    to_perv;       ///< Route surface outflow to pervious area (1=yes)
+@@ -159,6 +160,16 @@ struct LIDGroupSoA {
+     std::vector<double> evap_loss;
+     std::vector<double> infil_loss;
+ 
++    // Reporting capture (consolidated .lid report). Instantaneous rates in
++    // ft/sec, refreshed every call to the type's batch flux function.
++    // Physics never reads these back - they are write-only observers.
++    std::vector<double> rpt_inflow;      ///< Total surface inflow (rain + routed runon)
++    std::vector<double> rpt_evap;        ///< Total evaporation, all layers summed
++    std::vector<double> rpt_surf_infil;  ///< Surface -> soil (or -> pavement) infiltration
++    std::vector<double> rpt_pave_perc;   ///< Pavement -> soil/storage percolation
++    std::vector<double> rpt_soil_perc;   ///< Soil -> storage percolation
++    std::vector<double> rpt_stor_exfil;  ///< Storage -> native soil exfiltration
++
+     // Pollutant drain removal fractions: drain_rmvl[unit * n_pollutants + pollutant]
+     std::vector<double> drain_rmvl;  ///< Removal fraction per unit per pollutant
+     int n_pollutants = 0;            ///< Number of pollutants (for indexing drain_rmvl)
+diff --git a/src/engine/hydrology/LIDReport.cpp b/src/engine/hydrology/LIDReport.cpp
+new file mode 100644
+index 0000000..790267e
+--- /dev/null
++++ b/src/engine/hydrology/LIDReport.cpp
+@@ -0,0 +1,313 @@
++// SPDX-License-Identifier: Apache-2.0
++//
++// Copyright 2026 Caleb Buahin
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++/**
++ * @file LIDReport.cpp
++ * @brief Consolidated detailed LID report (.lid) writer.
++ * @ingroup new_engine
++ */
++
++#include "LIDReport.hpp"
++
++#include "LID.hpp"
++#include "../core/DateTime.hpp"
++#include "../core/SimulationContext.hpp"
++#include "../core/UnitConversion.hpp"
++
++#include <array>
++#include <cstdio>
++#include <string>
++
++namespace openswmm {
++namespace lid {
++
++namespace {
++
++/// Flow cutoff for dry conditions (= 0.001 in/hr). Legacy lidproc.c MINFLOW.
++constexpr double MINFLOW = 2.3e-8;
++
++/// LID type code -> group index. Must stay in lockstep with the private
++/// typeCodeToIndex() in LID.cpp, or rows land on the wrong unit.
++int typeCodeToGroup(const std::string& code) {
++    if (code == "BC") return 0;
++    if (code == "RG") return 1;
++    if (code == "GR") return 2;
++    if (code == "IT") return 3;
++    if (code == "PP") return 4;
++    if (code == "RB") return 5;
++    if (code == "VS") return 6;
++    if (code == "RD") return 7;
++    return -1;
++}
++
++/// Legacy RptFile semantics: a unit reports unless the token is absent or `*`.
++bool unitReports(const std::string& token) {
++    if (token.empty()) return false;
++    if (token == "*") return false;
++    return true;
++}
++
++} // namespace
++
++LIDReport::~LIDReport() {
++    close();
++}
++
++//=============================================================================
++
++bool LIDReport::open(SimulationContext& ctx, const std::string& rpt_path,
++                     LIDSolver& solver) {
++    close();
++    if (rpt_path.empty()) return false;
++
++    const int n_usage = ctx.lid_usage.count();
++    if (n_usage == 0) return false;
++
++    // Resolve every reporting unit to its (group, slot) home. This walks the
++    // usage rows in exactly the order LIDSolver::init() does, with the same
++    // skip conditions, so the cursors land on the same slots. Any divergence
++    // here silently reports one unit's state under another unit's name.
++    std::array<int, 8> type_cursor = {};
++    for (int j = 0; j < n_usage; ++j) {
++        auto uj = static_cast<std::size_t>(j);
++        int li = ctx.lid_usage.lid_index[uj];
++        if (li < 0 || li >= ctx.lid_controls.count()) continue;
++        auto uli = static_cast<std::size_t>(li);
++        int ti = typeCodeToGroup(ctx.lid_controls.lid_type[uli]);
++        if (ti < 0 || ti >= 8) continue;
++
++        int slot = type_cursor[static_cast<std::size_t>(ti)]++;
++
++        const std::string& rpt_token =
++            (uj < ctx.lid_usage.rpt_file.size()) ? ctx.lid_usage.rpt_file[uj]
++                                                 : std::string();
++        if (!unitReports(rpt_token)) continue;
++
++        int sc = ctx.lid_usage.subcatch_index[uj];
++        if (sc < 0 || sc >= ctx.n_subcatches()) continue;
++
++        const std::string& subcatch_id = ctx.subcatch_names.name_of(sc);
++        const std::string& lid_id      = ctx.lid_controls.names[uli];
++
++        // Unit number is per (subcatch, LID) pair, in usage order — matching
++        // the legacy consolidated writer's nextLidUnitNumber().
++        int unit_no = 1;
++        for (const auto& prior : units_) {
++            if (prior.key.rfind(subcatch_id + "\t" + lid_id + "\t", 0) == 0)
++                ++unit_no;
++        }
++
++        UnitRef ref;
++        ref.group   = ti;
++        ref.slot    = slot;
++        ref.key     = subcatch_id + "\t" + lid_id + "\t" + std::to_string(unit_no);
++        ref.was_dry = 1;
++        units_.push_back(std::move(ref));
++    }
++
++    if (units_.empty()) return false;
++
++    // Path = report path with its extension replaced by .lid (only strip a dot
++    // that belongs to the file name, not to a directory component).
++    std::string path = rpt_path;
++    const std::size_t dot = path.find_last_of('.');
++    const std::size_t sep = path.find_last_of("/\\");
++    if (dot != std::string::npos && (sep == std::string::npos || dot > sep))
++        path.erase(dot);
++    path += ".lid";
++
++    file_ = std::fopen(path.c_str(), "wt");
++    if (file_ == nullptr) {
++        units_.clear();
++        return false;
++    }
++
++    const int us = ucf::getUnitSystem(static_cast<int>(ctx.options.flow_units));
++    const auto uus = static_cast<std::size_t>(us);
++    ucf_rate_  = ucf::Ucf[ucf::RAINFALL][uus];
++    ucf_depth_ = ucf::Ucf[ucf::RAINDEPTH][uus];
++
++    const int report_step = static_cast<int>(ctx.options.report_step);
++    const int hr  = report_step / 3600;
++    const int min = (report_step % 3600) / 60;
++    const int sec = report_step % 60;
++
++    const std::string title =
++        ctx.title_notes.empty() ? std::string() : ctx.title_notes.front();
++    const int fu = static_cast<int>(ctx.options.flow_units);
++
++    std::fprintf(file_, ";SWMM6 Consolidated LID Report v1");
++    std::fprintf(file_, "\n[META]");
++    std::fprintf(file_, "\nProject\t%s", title.c_str());
++    std::fprintf(file_, "\nEngine\t6.0.0-alpha.3-lid1");
++    std::fprintf(file_, "\nFlowUnits\t%s", ucf::FlowUnitWords[fu]);
++    std::fprintf(file_, "\nReportStep\t%02d:%02d:%02d", hr, min, sec);
++    if (us == 0)
++        std::fprintf(file_, "\nUnits\trates=in/hr depths=inches moisture=fraction");
++    else
++        std::fprintf(file_, "\nUnits\trates=mm/hr depths=mm moisture=fraction");
++
++    writeControlsBlock(ctx);
++
++    std::fprintf(file_, "\n\n[RESULTS]");
++    std::fprintf(file_, "\n;Subcatch\tLID\tUnit\tDate       Time    \tElapsedHours\t"
++        "TotalInflow\tTotalEvap\tSurfInfil\tPavePerc\tSoilPerc\tStorExfil\t"
++        "SurfRunoff\tDrainOutflow\tSurfLevel\tPaveLevel\tSoilMoisture\tStorLevel");
++
++    (void)solver;
++    return true;
++}
++
++//=============================================================================
++
++void LIDReport::writeControlsBlock(SimulationContext& ctx) {
++    // LidControlStore holds the [LID_CONTROLS] values verbatim in project
++    // units — the same units this block advertises — so nothing is converted
++    // here. (The SoA the results block reads from IS internal; that one is
++    // converted. Do not "unify" the two.)
++    const bool us_units = (ucf_depth_ == 12.0);
++
++    std::fprintf(file_, "\n[CONTROLS]");
++    std::fprintf(file_, "\n;LID\tType|Layer\tParameters (depths in %s, rates in %s)",
++        us_units ? "inches" : "mm", us_units ? "in/hr" : "mm/hr");
++
++    const int n = ctx.lid_controls.count();
++    for (int j = 0; j < n; ++j) {
++        auto uj = static_cast<std::size_t>(j);
++        const std::string& id = ctx.lid_controls.names[uj];
++        std::fprintf(file_, "\n%s\t%s", id.c_str(),
++                     ctx.lid_controls.lid_type[uj].c_str());
++
++        if (uj < ctx.lid_controls.surface.size()) {
++            const auto& p = ctx.lid_controls.surface[uj];
++            if (p[0] > 0.0 || p[2] > 0.0)
++                std::fprintf(file_, "\n%s\tSURFACE\t%.4f\t%.4f\t%.4f\t%.4f",
++                    id.c_str(), p[0], p[1], p[2], p[3]);
++        }
++        if (uj < ctx.lid_controls.pavement.size()) {
++            const auto& p = ctx.lid_controls.pavement[uj];
++            if (p[0] > 0.0)
++                std::fprintf(file_, "\n%s\tPAVEMENT\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
++                    id.c_str(), p[0], p[1], p[2], p[3], p[4]);
++        }
++        if (uj < ctx.lid_controls.soil.size()) {
++            const auto& p = ctx.lid_controls.soil[uj];
++            if (p[0] > 0.0)
++                std::fprintf(file_, "\n%s\tSOIL\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
++                    id.c_str(), p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
++        }
++        if (uj < ctx.lid_controls.storage.size()) {
++            const auto& p = ctx.lid_controls.storage[uj];
++            if (p[0] > 0.0)
++                std::fprintf(file_, "\n%s\tSTORAGE\t%.4f\t%.4f\t%.4f\t%.4f",
++                    id.c_str(), p[0], p[1], p[2], p[3]);
++        }
++        if (uj < ctx.lid_controls.drain.size()) {
++            const auto& p = ctx.lid_controls.drain[uj];
++            if (p[0] > 0.0)
++                std::fprintf(file_, "\n%s\tDRAIN\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
++                    id.c_str(), p[0], p[1], p[2], p[3], p[4], p[5]);
++        }
++        if (uj < ctx.lid_controls.drainmat.size()) {
++            const auto& p = ctx.lid_controls.drainmat[uj];
++            if (p[0] > 0.0)
++                std::fprintf(file_, "\n%s\tDRAINMAT\t%.4f\t%.4f\t%.4f",
++                    id.c_str(), p[0], p[1], p[2]);
++        }
++    }
++}
++
++//=============================================================================
++
++void LIDReport::writeStep(SimulationContext& ctx, LIDSolver& solver,
++                          double report_date, double elapsed_hrs) {
++    if (file_ == nullptr) return;
++    (void)ctx;
++
++    int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
++    datetime::decodeDate(report_date, year, month, day);
++    datetime::decodeTime(report_date, hour, minute, second);
++
++    char stamp[32];
++    std::snprintf(stamp, sizeof(stamp), "%02d/%02d/%04d %02d:%02d:%02d",
++                  month, day, year, hour, minute, second);
++
++    for (auto& u : units_) {
++        const LIDGroupSoA& g = solver.group(u.group);
++        if (u.slot < 0 || u.slot >= g.count) continue;
++        const auto ui = static_cast<std::size_t>(u.slot);
++
++        // Rates -> in/hr (or mm/hr); depths -> inches (or mm); moisture stays
++        // a fraction. Same 12 columns, same order, as the legacy writer.
++        const double inflow    = g.rpt_inflow[ui]     * ucf_rate_;
++        const double evap      = g.rpt_evap[ui]       * ucf_rate_;
++        const double surfInfil = g.rpt_surf_infil[ui] * ucf_rate_;
++        const double pavePerc  = g.rpt_pave_perc[ui]  * ucf_rate_;
++        const double soilPerc  = g.rpt_soil_perc[ui]  * ucf_rate_;
++        const double storExfil = g.rpt_stor_exfil[ui] * ucf_rate_;
++        const double runoff    = g.surface_runoff[ui] * ucf_rate_;
++        const double drain     = g.drain_flow[ui]     * ucf_rate_;
++        const double surfLevel = g.surf_depth[ui]     * ucf_depth_;
++        const double paveLevel = g.pave_depth[ui]     * ucf_depth_;
++        const double soilMoist = g.soil_moist[ui];
++        const double storLevel = g.stor_depth[ui]     * ucf_depth_;
++
++        // Dry test on the INTERNAL rates, exactly as legacy does before any
++        // unit conversion (MINFLOW is a ft/sec threshold).
++        const bool is_dry = g.rpt_inflow[ui]     < MINFLOW &&
++                            g.surface_runoff[ui] < MINFLOW &&
++                            g.drain_flow[ui]     < MINFLOW &&
++                            g.rpt_stor_exfil[ui] < MINFLOW &&
++                            g.rpt_evap[ui]       < MINFLOW;
++
++        // Wet again after a dry spell longer than one period: flush the last
++        // held row first, so the dry spell is bracketed by a row at each end.
++        if (!is_dry && u.was_dry > 1 && !u.pending.empty())
++            std::fputs(u.pending.c_str(), file_);
++
++        char row[512];
++        std::snprintf(row, sizeof(row),
++            "\n%s\t%20s\t %8.3f\t %8.3f\t %8.4f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t"
++            "%8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f\t %8.3f",
++            u.key.c_str(), stamp, elapsed_hrs,
++            inflow, evap, surfInfil, pavePerc, soilPerc, storExfil,
++            runoff, drain, surfLevel, paveLevel, soilMoist, storLevel);
++        u.pending.assign(row);
++
++        if (is_dry) {
++            // First dry period after a wet one marks the start of the gap.
++            if (u.was_dry == 0) std::fputs(u.pending.c_str(), file_);
++            ++u.was_dry;
++        } else {
++            std::fputs(u.pending.c_str(), file_);
++            u.was_dry = 0;
++        }
++    }
++}
++
++//=============================================================================
++
++void LIDReport::close() {
++    if (file_ != nullptr) {
++        std::fputs("\n", file_);
++        std::fclose(file_);
++        file_ = nullptr;
++    }
++    units_.clear();
++}
++
++} // namespace lid
++} // namespace openswmm
+diff --git a/src/engine/hydrology/LIDReport.hpp b/src/engine/hydrology/LIDReport.hpp
+new file mode 100644
+index 0000000..1a2312a
+--- /dev/null
++++ b/src/engine/hydrology/LIDReport.hpp
+@@ -0,0 +1,126 @@
++// SPDX-License-Identifier: Apache-2.0
++//
++// Copyright 2026 Caleb Buahin
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++/**
++ * @file LIDReport.hpp
++ * @brief Consolidated detailed LID report (.lid) writer.
++ *
++ * @details Legacy SWMM5 writes one detailed report file per LID unit, named
++ *          by the RptFile token in [LID_USAGE]. That does not survive a
++ *          browser MEMFS round-trip well (the host cannot discover the file
++ *          names generically), so this writer emits a SINGLE file for every
++ *          reporting unit in the project — path = report path with the
++ *          extension replaced by `.lid` — with each row key-prefixed by
++ *          `subcatch \t lid \t unitNo`.
++ *
++ *          Format is byte-compatible with the SWMM5 consolidated writer
++ *          (`;SWMM5 Consolidated LID Report v1`): a [META] block, a
++ *          [CONTROLS] block describing each LID's layer stack so a viewer can
++ *          draw the profile without re-parsing the .inp, and a [RESULTS]
++ *          block of 17 tab-separated columns.
++ *
++ *          The RptFile token keeps its legacy meaning of "report this unit";
++ *          the file name it carries is ignored, and `*` means no reporting.
++ *
++ *          Dry-period compression matches legacy lidproc_saveResults(): while
++ *          a unit is dry only the first and last row of the dry spell are
++ *          emitted, so rows have TIME GAPS. Anything integrating a rate over
++ *          rows must skip intervals much larger than the report step.
++ *
++ * @note Legacy reference: src/legacy/engine/lid.c, lidproc.c
++ * @ingroup new_engine
++ */
++
++#ifndef OPENSWMM_LIDREPORT_HPP
++#define OPENSWMM_LIDREPORT_HPP
++
++#include <cstdio>
++#include <string>
++#include <vector>
++
++namespace openswmm {
++
++struct SimulationContext;
++
++namespace lid {
++
++class LIDSolver;
++
++/**
++ * @brief Writes the consolidated `.lid` detailed report.
++ *
++ * Lifecycle: open() once after LIDSolver::init(), writeStep() on each report
++ * boundary, close() at end of run. All three are no-ops when no LID unit in
++ * the project requested detailed reporting.
++ */
++class LIDReport {
++public:
++    LIDReport() = default;
++    ~LIDReport();
++
++    LIDReport(const LIDReport&) = delete;
++    LIDReport& operator=(const LIDReport&) = delete;
++
++    /**
++     * @brief Open the report and write the [META]/[CONTROLS]/[RESULTS] headers.
++     *
++     * @param ctx       Simulation context (parsed, after LIDSolver::init()).
++     * @param rpt_path  Report file path; the `.lid` path is derived from it.
++     * @param solver    LID solver, for unit -> (group, slot) resolution.
++     * @return true if the file was opened and at least one unit reports.
++     */
++    bool open(SimulationContext& ctx, const std::string& rpt_path,
++              LIDSolver& solver);
++
++    /**
++     * @brief Emit one row per reporting unit for the current report instant.
++     *
++     * @param ctx          Simulation context.
++     * @param solver       LID solver holding current per-unit state.
++     * @param report_date  Report instant as an OADate.
++     * @param elapsed_hrs  Elapsed hours since start of simulation.
++     */
++    void writeStep(SimulationContext& ctx, LIDSolver& solver,
++                   double report_date, double elapsed_hrs);
++
++    /// Flush and close. Safe to call more than once.
++    void close();
++
++    /// True when a file is open and rows are being written.
++    bool active() const { return file_ != nullptr; }
++
++private:
++    /// One reporting unit: where its state lives, plus its dry-run state.
++    struct UnitRef {
++        int         group = 0;      ///< Index into LIDSolver groups
++        int         slot  = 0;      ///< Index within that group
++        std::string key;            ///< "subcatch\tlid\tunitNo"
++        std::string pending;        ///< Last formatted row, held back while dry
++        int         was_dry = 1;    ///< Consecutive dry periods (legacy semantics)
++    };
++
++    void writeControlsBlock(SimulationContext& ctx);
++
++    std::FILE*           file_ = nullptr;
++    std::vector<UnitRef> units_;
++    double               ucf_rate_  = 43200.0;  ///< ft/sec -> in/hr or mm/hr
++    double               ucf_depth_ = 12.0;     ///< ft -> inches or mm
++};
++
++} // namespace lid
++} // namespace openswmm
++
++#endif // OPENSWMM_LIDREPORT_HPP
+diff --git a/src/engine/output/IOThread.cpp b/src/engine/output/IOThread.cpp
+index 24511b8..c88aa3c 100644
+--- a/src/engine/output/IOThread.cpp
++++ b/src/engine/output/IOThread.cpp
+@@ -51,7 +51,13 @@ IOThread::~IOThread() {
+ void IOThread::start() {
+     if (running_.load(std::memory_order_relaxed)) return;
+     stop_flag_.store(false, std::memory_order_relaxed);
++#ifdef __EMSCRIPTEN__
++    // Single-threaded WASM: spawning a std::thread aborts at runtime. Mark
++    // ourselves running and let post() do the work inline instead.
++    running_.store(true, std::memory_order_relaxed);
++#else
+     thread_ = std::thread(&IOThread::run, this);
++#endif
+ }
+ 
+ // ============================================================================
+@@ -59,6 +65,16 @@ void IOThread::start() {
+ // ============================================================================
+ 
+ void IOThread::post(SimulationSnapshot snap) {
++#ifdef __EMSCRIPTEN__
++    // Inline delivery — same work run() would do, on the calling thread.
++    if (stop_flag_.load(std::memory_order_relaxed)) return;
++    {
++        const int rc = factory_.update_all(snap);
++        if (rc != 0) last_error_.store(rc, std::memory_order_relaxed);
++        tasks_completed_.fetch_add(1, std::memory_order_relaxed);
++    }
++    return;
++#else
+     {
+         std::unique_lock<std::mutex> lock(mutex_);
+         // Block if the queue is full (back-pressure on the sim thread)
+@@ -72,6 +88,7 @@ void IOThread::post(SimulationSnapshot snap) {
+         queue_.emplace(std::move(snap), next_sequence_++);
+     }
+     cv_not_empty_.notify_one();
++#endif
+ }
+ 
+ // ============================================================================
+diff --git a/src/engine/plugins/PluginFactory.cpp b/src/engine/plugins/PluginFactory.cpp
+index b039def..42d7c44 100644
+--- a/src/engine/plugins/PluginFactory.cpp
++++ b/src/engine/plugins/PluginFactory.cpp
+@@ -56,7 +56,7 @@
+ #if defined(_WIN32)
+ #  define WIN32_LEAN_AND_MEAN
+ #  include <windows.h>
+-#elif defined(__APPLE__) || defined(__linux__)
++#elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
+ #  include <dlfcn.h>
+ #else
+ #  error "PluginFactory: unsupported platform"
+diff --git a/src/legacy/engine/swmm5.c b/src/legacy/engine/swmm5.c
+index d549ca1..f693fe6 100644
+--- a/src/legacy/engine/swmm5.c
++++ b/src/legacy/engine/swmm5.c
+@@ -93,7 +93,8 @@
+  * \brief Dummy function for getting threads available for OpenMP to prevent compiler errors.
+  * \return 1
+  */
+-int omp_get_max_threads(void) { return 1; }
++/* no-OpenMP fallback lives in project.c (duplicate definition collides
++   at link time under Emscripten) */
+ #endif
+ 
+ //-----------------------------------------------------------------------------

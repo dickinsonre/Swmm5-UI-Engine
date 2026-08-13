@@ -6,6 +6,7 @@
 - [SWMM6-only .inp options gating](swmm6-only-options.md) — never write SWMM6-only lines into SWMM5-target .inp (ERROR 205); carried as `;;SWMM6` comments, which must not be re-preserved as comments.
 - [SWMM6 WASM engine](swmm6-wasm-engine.md) — how client/public/wasm6 was built (3 patches, -fexceptions, EM_CACHE) and run rules: fresh instance per run, noInitialRun, never trust exit code.
 - [SWMM5 vs SWMM6 ID case sensitivity](swmm-id-case-sensitivity.md) — SWMM5 matches IDs case-insensitively, SWMM6 doesn't (ERROR 209); parser normalizes refs, check case before blaming special chars.
+- [SWMM6 LID module is an incomplete port](swmm6-lid-port-gaps.md) — unconverted params AND unit-inconsistent flux equations; LID results are garbage, don't build LID features on wasm6.
 - [Consolidated .lid report + LID viewer](lid-consolidated-report.md) — SWMM5 WASM writes ONE .lid file for all LID units; parity gates via scripts/parity-lid.cjs before shipping any engine rebuild.
 - [Dead subrepl remotes break the Git pane](git-subrepl-remotes.md) — "Unknown Git Error" while shell git is fine means dead `subrepl-*` remotes hanging `fetch --all`; remove them.
 - [SWMM .rpt heading parsing](rpt-heading-parsing.md) — match headings with startsWith (trailing column labels!) and never break on the **** underline before content; critical-elements lists mix Node and Link rows.
