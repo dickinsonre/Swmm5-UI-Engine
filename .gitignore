@@ -6,3 +6,8 @@ vite.config.ts.*
 *.tar.gz
 # local GitHub token (never commit)
 token.local.txt
+
+# SWMM interface files written by runs (the Greenville sample's SAVE lines
+# point at absolute Windows paths, which land here as literal filenames)
+*.hsf
+*.rof
