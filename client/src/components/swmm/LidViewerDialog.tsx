@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Layers, Play, Pause, SkipBack } from 'lucide-react';
+import { Layers, Play, Pause, SkipBack, Maximize2, Minimize2 } from 'lucide-react';
 import type { SimulationResults } from '@/lib/swmm-types';
 
 // ---------------------------------------------------------------------------
@@ -262,28 +262,37 @@ function soilColor(theta: number, wp: number, por: number): string {
  * is currently inactive is drawn as a faint dashed ghost rather than removed,
  * so the diagram always shows the complete set of pathways.
  */
-function FluxArrow({ x, y, dir, rate, max, label, color }: {
+function FluxArrow({ x, y, dir, rate, max, label, color, labelSide = 'right', scale = 1 }: {
   x: number; y: number; dir: 'down' | 'up' | 'right'; rate: number; max: number; label: string; color: string;
+  /** Which side of the arrow the label sits on — vertical arrows label outside the stack. */
+  labelSide?: 'left' | 'right';
+  scale?: number;
 }) {
   const active = rate > 1e-6;
   const frac = Math.min(1, rate / Math.max(max, 1e-9));
-  const w = active ? 2 + 9 * frac : 1;
-  const len = active ? 14 + 14 * frac : 16;
+  const w = (active ? 2 + 9 * frac : 1) * scale;
+  const len = (active ? 14 + 14 * frac : 16) * scale;
   let x2 = x, y2 = y;
   if (dir === 'down') y2 = y + len; else if (dir === 'up') y2 = y - len; else x2 = x + len;
   const ang = dir === 'down' ? 90 : dir === 'up' ? -90 : 0;
   const op = active ? 0.9 : 0.28;
+  const fs = 10 * scale;
+  const textX = dir === 'right' ? x2 + 12 * scale : labelSide === 'left' ? x - 9 * scale : x + 9 * scale;
   return (
     <g>
       <line
         x1={x} y1={y} x2={x2} y2={y2} stroke={color} strokeWidth={w} strokeLinecap="round"
         strokeDasharray={active ? undefined : '3 3'} opacity={op}
       />
-      <polygon points="0,-5 8,0 0,5" fill={color} transform={`translate(${x2},${y2}) rotate(${ang})`} opacity={op} />
+      <polygon
+        points="0,-5 8,0 0,5" fill={color} opacity={op}
+        transform={`translate(${x2},${y2}) rotate(${ang}) scale(${scale})`}
+      />
       <text
-        x={dir === 'right' ? x2 + 12 : x + 14}
-        y={dir === 'right' ? y2 + 4 : (y + y2) / 2 + 4}
-        fontSize={10} fill={active ? '#2a2a3e' : '#9a9aa8'}
+        x={textX}
+        y={dir === 'right' ? y2 + fs * 0.36 : (y + y2) / 2 + fs * 0.36}
+        textAnchor={dir !== 'right' && labelSide === 'left' ? 'end' : 'start'}
+        fontSize={fs} fill={active ? '#2a2a3e' : '#9a9aa8'}
       >{label}</text>
     </g>
   );
@@ -311,6 +320,8 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
   const [time, setTime] = useState(0);           // elapsed hours
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(10);
+  /** Diagram-only layout: the cross-section takes the whole dialog. */
+  const [maximized, setMaximized] = useState(false);
   const rafRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
 
@@ -406,18 +417,23 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
   const stack = useMemo(() => buildStack(ctrl), [ctrl]);
   const rateMax = Math.max(maxima[V.inflow], maxima[V.drain], maxima[V.runoff], maxima[V.storExfil], maxima[V.surfInfil], 1e-9);
 
-  // stack geometry
-  const W = 360, PAD = 76, STACKW = 168;
+  // stack geometry — wider canvas and taller layers when the diagram is maximized
+  const W = maximized ? 700 : 400;
+  const PAD = maximized ? 190 : 108;      // left gutter holds the vertical flux labels
+  const STACKW = maximized ? 320 : 180;
+  const stackH = maximized ? 470 : 300;
+  const minLayerH = maximized ? 52 : 34;
+  const gScale = maximized ? 1.25 : 1;
   const totalTh = stack.reduce((s, l) => s + Math.max(l.thickness, 1), 0) || 1;
-  const stackH = 300;
-  let yCursor = 58;
+  let yCursor = maximized ? 74 : 58;
   const layerRects = stack.map((l) => {
-    const h = Math.max(30, (Math.max(l.thickness, 1) / totalTh) * stackH);
+    const h = Math.max(minLayerH, (Math.max(l.thickness, 1) / totalTh) * stackH);
     const r = { ...l, y: yCursor, h };
     yCursor += h;
     return r;
   });
-  const svgH = yCursor + 62;
+  const svgH = yCursor + (maximized ? 78 : 62);
+  const xFlux = PAD - 30 * gScale;        // vertical flux channel, just left of the stack
 
   if (!report) {
     const off = lidUsage.filter((u) => !u.rptFile || u.rptFile === '*');
@@ -517,15 +533,26 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
             className="flex-1 min-w-[160px]" data-testid="lid-scrubber"
           />
           <span className="text-sm font-mono text-[#2a2a3e] w-28 text-right" data-testid="lid-time-readout">{elapsedLabel(time)}</span>
+          <button
+            className={`px-2 py-1 rounded border ${maximized ? 'bg-[#2c3e6b] text-white border-[#2c3e6b]' : 'border-[#d0d0d8] text-[#2a2a3e] hover:bg-[#f0f0f4]'}`}
+            onClick={() => setMaximized((m) => !m)}
+            title={maximized ? 'Show chart and mass balance' : 'Maximize the cross-section diagram'}
+            aria-label={maximized ? 'Restore split view' : 'Maximize diagram'}
+            data-testid="lid-maximize"
+          >{maximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}</button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={maximized ? 'grid grid-cols-1' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}>
           {/* layer stack */}
           <div className="bg-[#f8f8fa] border border-[#d0d0d8] rounded p-2">
-            <svg viewBox={`0 0 ${W} ${svgH}`} width="100%" data-testid="lid-stack-svg">
+            <svg
+              viewBox={`0 0 ${W} ${svgH}`} width="100%"
+              style={maximized ? { maxHeight: '68vh' } : undefined}
+              data-testid="lid-stack-svg"
+            >
               {/* inflow / evap at the top of the stack */}
-              <FluxArrow x={PAD + 34} y={16} dir="down" rate={cur[V.inflow]} max={rateMax} color={C.inflow} label={`In ${fmt(cur[V.inflow])}`} />
-              <FluxArrow x={PAD + STACKW - 20} y={52} dir="up" rate={cur[V.evap]} max={rateMax} color={C.evap} label={`Evap ${fmt(cur[V.evap])}`} />
+              <FluxArrow x={xFlux} y={16 * gScale} dir="down" rate={cur[V.inflow]} max={rateMax} color={C.inflow} scale={gScale} labelSide="left" label={`In ${fmt(cur[V.inflow])}`} />
+              <FluxArrow x={PAD + STACKW - 20 * gScale} y={layerRects[0] ? layerRects[0].y - 6 : 52} dir="up" rate={cur[V.evap]} max={rateMax} color={C.evap} scale={gScale} label={`Evap ${fmt(cur[V.evap])}`} />
               {layerRects.map((l) => {
                 const levelVal: number | undefined =
                   l.name === 'SURFACE' ? cur[V.surfLevel]
@@ -544,19 +571,19 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
                     {waterFrac > 0 && (
                       <rect x={PAD} y={l.y + l.h * (1 - waterFrac)} width={STACKW} height={l.h * waterFrac} fill={C.water} opacity={0.78} />
                     )}
-                    <text x={PAD + 4} y={l.y + 13} fontSize={10} fontWeight={600} fill="#2a2a3e">{l.name}</text>
+                    <text x={PAD + 5 * gScale} y={l.y + 13 * gScale} fontSize={10 * gScale} fontWeight={600} fill="#2a2a3e">{l.name}</text>
                     {/* current / capacity so geometry and state are not conflated */}
-                    <text x={PAD + STACKW - 4} y={l.y + 13} fontSize={9} fill="#2a2a3e" textAnchor="end">
+                    <text x={PAD + STACKW - 5 * gScale} y={l.y + 13 * gScale} fontSize={9 * gScale} fill="#2a2a3e" textAnchor="end">
                       {levelVal !== undefined ? `${fmt(levelVal, 1)} / ${fmt(l.thickness, 0)} ${depthU}` : `${fmt(l.thickness, 0)} ${depthU}`}
                     </text>
                     {l.name === 'SOIL' && (
                       <>
-                        <text x={PAD + 4} y={l.y + l.h - 6} fontSize={9} fill="#1a1a2e">
+                        <text x={PAD + 5 * gScale} y={l.y + Math.max(26 * gScale, l.h - 7 * gScale)} fontSize={9 * gScale} fill="#1a1a2e">
                           θ {fmt(cur[V.soilMoist])} (wp {fmt(soilWp, 2)} → n {fmt(soilPor, 2)})
                         </text>
                         {/* saturation bar so the moisture shade is readable quantitatively */}
-                        <rect x={PAD + STACKW - 54} y={l.y + l.h - 16} width={50} height={6} fill="#ffffff" stroke="#55556a" strokeWidth={0.5} opacity={0.8} />
-                        <rect x={PAD + STACKW - 54} y={l.y + l.h - 16} width={50 * satFrac} height={6} fill={C.water} opacity={0.9} />
+                        <rect x={PAD + STACKW - 54 * gScale} y={l.y + Math.max(18 * gScale, l.h - 17 * gScale)} width={50 * gScale} height={6 * gScale} fill="#ffffff" stroke="#55556a" strokeWidth={0.5} opacity={0.8} />
+                        <rect x={PAD + STACKW - 54 * gScale} y={l.y + Math.max(18 * gScale, l.h - 17 * gScale)} width={50 * gScale * satFrac} height={6 * gScale} fill={C.water} opacity={0.9} />
                       </>
                     )}
                   </g>
@@ -565,34 +592,36 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
               {/* pathway arrows, coloured to match the chart legend */}
               {layerRects.map((l, i) => {
                 const isBottom = i === layerRects.length - 1;
-                const xMid = PAD + 34;
+                // Vertical pathways run in a channel left of the stack with
+                // their labels outside it, so they never sit on layer text.
                 const parts: JSX.Element[] = [];
+                const boundaryY = l.y + l.h - 9 * gScale;
                 if (l.name === 'SURFACE') {
-                  if (!isBottom) parts.push(<FluxArrow key="infil" x={xMid} y={l.y + l.h - 12} dir="down" rate={cur[V.surfInfil]} max={rateMax} color={C.infil} label={`Infil ${fmt(cur[V.surfInfil])}`} />);
-                  parts.push(<FluxArrow key="runoff" x={PAD + STACKW + 4} y={l.y + l.h / 2} dir="right" rate={cur[V.runoff]} max={rateMax} color={C.runoff} label={`Runoff ${fmt(cur[V.runoff])}`} />);
+                  if (!isBottom) parts.push(<FluxArrow key="infil" x={xFlux} y={boundaryY} dir="down" rate={cur[V.surfInfil]} max={rateMax} color={C.infil} scale={gScale} labelSide="left" label={`Infil ${fmt(cur[V.surfInfil])}`} />);
+                  parts.push(<FluxArrow key="runoff" x={PAD + STACKW + 4} y={l.y + l.h / 2} dir="right" rate={cur[V.runoff]} max={rateMax} color={C.runoff} scale={gScale} label={`Runoff ${fmt(cur[V.runoff])}`} />);
                 } else if (l.name === 'PAVEMENT' && !isBottom) {
-                  parts.push(<FluxArrow key="pperc" x={xMid} y={l.y + l.h - 12} dir="down" rate={cur[V.pavePerc]} max={rateMax} color={C.perc} label={`Perc ${fmt(cur[V.pavePerc])}`} />);
+                  parts.push(<FluxArrow key="pperc" x={xFlux} y={boundaryY} dir="down" rate={cur[V.pavePerc]} max={rateMax} color={C.perc} scale={gScale} labelSide="left" label={`Perc ${fmt(cur[V.pavePerc])}`} />);
                 } else if (l.name === 'SOIL' && !isBottom) {
-                  parts.push(<FluxArrow key="sperc" x={xMid} y={l.y + l.h - 12} dir="down" rate={cur[V.soilPerc]} max={rateMax} color={C.perc} label={`Perc ${fmt(cur[V.soilPerc])}`} />);
+                  parts.push(<FluxArrow key="sperc" x={xFlux} y={boundaryY} dir="down" rate={cur[V.soilPerc]} max={rateMax} color={C.perc} scale={gScale} labelSide="left" label={`Perc ${fmt(cur[V.soilPerc])}`} />);
                 }
                 // The bottom layer is where water leaves the unit, whatever it
                 // is: a bio-cell may end at SOIL (no storage), in which case
                 // SWMM reports the soil-to-native-soil flow as StorExfil.
                 if (isBottom) {
-                  parts.push(<FluxArrow key="exfil" x={xMid} y={l.y + l.h + 2} dir="down" rate={cur[V.storExfil]} max={rateMax} color={C.exfil} label={`Exfil ${fmt(cur[V.storExfil])}`} />);
-                  parts.push(<FluxArrow key="drain" x={PAD + STACKW + 4} y={l.y + l.h - 14} dir="right" rate={cur[V.drain]} max={rateMax} color={C.drain} label={`Drain ${fmt(cur[V.drain])}`} />);
+                  parts.push(<FluxArrow key="exfil" x={xFlux} y={l.y + l.h + 4 * gScale} dir="down" rate={cur[V.storExfil]} max={rateMax} color={C.exfil} scale={gScale} labelSide="left" label={`Exfil ${fmt(cur[V.storExfil])}`} />);
+                  parts.push(<FluxArrow key="drain" x={PAD + STACKW + 4} y={l.y + l.h - 14 * gScale} dir="right" rate={cur[V.drain]} max={rateMax} color={C.drain} scale={gScale} label={`Drain ${fmt(cur[V.drain])}`} />);
                 }
                 return parts.length ? <g key={`fx-${l.name}`}>{parts}</g> : null;
               })}
-              {/* native soil hatch under the stack when exfiltration is possible */}
+              {/* native soil below the unit, where exfiltration goes */}
               {hasStorage && (
-                <text x={PAD + 34 + 14} y={svgH - 12} fontSize={9} fill="#9a9aa8">native soil</text>
+                <text x={xFlux + 12 * gScale} y={svgH - 14 * gScale} fontSize={9 * gScale} fill="#9a9aa8">native soil</text>
               )}
             </svg>
           </div>
 
-          {/* right column: strip chart + mass balance */}
-          <div className="flex flex-col gap-3">
+          {/* right column: strip chart + mass balance (hidden while maximized) */}
+          <div className={maximized ? 'hidden' : 'flex flex-col gap-3'}>
             <StripChart
               unit={unit!} time={time} maxima={maxima} depthU={depthU} rateU={rateU}
               onSeek={(h) => { setPlaying(false); setTime(h); }}
