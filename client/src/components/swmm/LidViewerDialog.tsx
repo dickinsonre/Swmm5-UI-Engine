@@ -313,6 +313,31 @@ interface Props {
 
 const SPEEDS = [1, 10, 60];
 
+/** Dialog size the user dragged to, remembered between openings. */
+const SIZE_KEY = 'swmm.lidViewer.size';
+const MIN_W = 560;
+const MIN_H = 360;
+
+type DialogSize = { w: number; h: number };
+
+const clampPx = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+
+function readStoredSize(): DialogSize | null {
+  try {
+    const raw = localStorage.getItem(SIZE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    return typeof p?.w === 'number' && typeof p?.h === 'number' ? { w: p.w, h: p.h } : null;
+  } catch { return null; }
+}
+
+function writeStoredSize(s: DialogSize | null) {
+  try {
+    if (s) localStorage.setItem(SIZE_KEY, JSON.stringify(s));
+    else localStorage.removeItem(SIZE_KEY);
+  } catch { /* ignore */ }
+}
+
 export default function LidViewerDialog({ open, onOpenChange, results, lidUsage = [], onEnableReporting, engineUsed }: Props) {
   const report = useMemo(() => parseLidReport(results?.lidReportText || ''), [results?.lidReportText]);
   const rptSummary = useMemo(() => parseRptLidSummary(results?.reportContent), [results?.reportContent]);
@@ -324,6 +349,36 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
   const [maximized, setMaximized] = useState(false);
   const rafRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
+  /** Dragged dialog size in px; null = default responsive size. */
+  const [size, setSize] = useState<DialogSize | null>(readStoredSize);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = contentRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY, sw = rect.width, sh = rect.height;
+    let latest: DialogSize = { w: sw, h: sh };
+    // The dialog is centre-anchored, so each edge only moves half of any size
+    // change — double the delta to keep the corner under the cursor.
+    const onMove = (ev: PointerEvent) => {
+      latest = {
+        w: clampPx(sw + (ev.clientX - sx) * 2, MIN_W, window.innerWidth - 24),
+        h: clampPx(sh + (ev.clientY - sy) * 2, MIN_H, window.innerHeight - 24),
+      };
+      setSize(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      writeStoredSize(latest);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const resetSize = () => { setSize(null); writeStoredSize(null); };
 
   const unit = useMemo(
     () => report?.units.find((u) => u.key === unitKey) || report?.units[0] || null,
@@ -489,7 +544,14 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl bg-white max-h-[92vh] overflow-y-auto" data-testid="lid-viewer-dialog">
+      <DialogContent
+        ref={contentRef}
+        className="max-w-5xl bg-white flex flex-col overflow-hidden"
+        style={size
+          ? { width: size.w, height: size.h, maxWidth: '98vw', maxHeight: '96vh' }
+          : { maxHeight: '92vh' }}
+        data-testid="lid-viewer-dialog"
+      >
         <DialogHeader>
           <DialogTitle className="text-[#2c3e6b] flex items-center gap-2"><Layers className="w-5 h-5" /> LID Viewer</DialogTitle>
           <DialogDescription>
@@ -497,6 +559,7 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
           </DialogDescription>
         </DialogHeader>
 
+        <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
         {/* controls row */}
         <div className="flex flex-wrap items-center gap-3 pb-2 border-b border-[#d0d0d8]">
           <select
@@ -658,6 +721,20 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
               </div>
             </div>
           </div>
+        </div>
+        </div>
+
+        {/* drag-to-resize corner; double-click restores the default size */}
+        <div
+          onPointerDown={startResize}
+          onDoubleClick={resetSize}
+          title="Drag to resize (double-click to reset)"
+          className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize text-[#9a9aa8] hover:text-[#2c3e6b]"
+          data-testid="lid-resize-handle"
+        >
+          <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
+            <path d="M15 6 L6 15 M15 11 L11 15" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          </svg>
         </div>
       </DialogContent>
     </Dialog>
