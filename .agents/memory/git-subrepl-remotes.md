@@ -23,6 +23,19 @@ block background gc.
 any stale `.git/*.lock` / `.git/objects/*.lock`. Verify with `time git fetch --all` — it should
 finish in well under a second. Back up `.git/config` first.
 
+**Same symptom, other causes** — the pane reports every fatal git error as "UNKNOWN", so work
+through these too:
+
+- *The GitHub repo was renamed or transferred.* Fetch silently follows GitHub's 301 redirect
+  (so the pane happily says "last fetched just now") but **push over a redirect is refused**.
+  Detect with `curl -s -o /dev/null -w "%{redirect_url}" <remote url>`; fix with
+  `git remote set-url origin <new url>`.
+- *Expired GitHub OAuth token.* `git push --dry-run` returns "Invalid username or token.
+  Password authentication is not supported". `GIT_ASKPASS` is set by the platform and there is
+  no credential helper in `.git/config`, so this is not agent-fixable — the user must
+  disconnect and reconnect GitHub in Replit account settings → Git Providers. Anonymous fetch
+  keeps working on a public repo, which is why the failure looks push-only.
+
 The leftover local `subrepl-*` **branches** are separate: they are NOT merged into `main`
 (each holds the task agent's own divergent history, merged into main as a squash), so they
 only delete with `git branch -D`. They are harmless clutter and are not part of this failure —
