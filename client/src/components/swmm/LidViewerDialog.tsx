@@ -13,6 +13,19 @@ const V = {
   runoff: 6, drain: 7, surfLevel: 8, paveLevel: 9, soilMoist: 10, storLevel: 11,
 } as const;
 
+// One palette shared by the cross-section arrows and the chart legend, so a
+// colour in the diagram can be read off the chart without matching numbers.
+const C = {
+  inflow: '#2f6fb5',
+  evap: '#e67e22',
+  infil: '#3aa0c9',   // surface -> soil/pavement infiltration
+  perc: '#5bbcd6',    // percolation between internal layers
+  exfil: '#16a085',   // storage -> native soil
+  runoff: '#c0392b',
+  drain: '#8e44ad',
+  water: '#4a9fd8',
+} as const;
+
 interface LidLayerParams { [k: string]: number[]; }
 interface LidControl { type: string; layers: LidLayerParams; }
 interface LidUnitSeries {
@@ -113,6 +126,22 @@ function interpAt(u: LidUnitSeries, vi: number, h: number): number {
   return v[lo] + f * (v[hi] - v[lo]);
 }
 
+/** Index of the row nearest to elapsed time h. */
+function nearestIndex(u: LidUnitSeries, h: number): number {
+  const t = u.t, n = t.length;
+  if (n === 0) return 0;
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (t[m] <= h) lo = m; else hi = m; }
+  return Math.abs(t[lo] - h) <= Math.abs(t[hi] - h) ? lo : hi;
+}
+
+/** Median reporting interval (hours); rows further apart are dry-period gaps. */
+function medianStep(u: LidUnitSeries): number {
+  if (u.t.length < 2) return 0;
+  const dts = Array.from({ length: u.t.length - 1 }, (_, i) => u.t[i + 1] - u.t[i]).sort((a, b) => a - b);
+  return dts[dts.length >> 1] || 0;
+}
+
 /**
  * Trapezoidal integral of a rate variable (units/hr) -> depth units.
  * The .lid report omits long dry periods, so intervals much longer than the
@@ -122,10 +151,7 @@ function interpAt(u: LidUnitSeries, vi: number, h: number): number {
 function integrate(u: LidUnitSeries, vi: number): number {
   const t = u.t, v = u.vars[vi];
   if (t.length < 2) return 0;
-  // median interval ~ report step
-  const dts = Array.from({ length: t.length - 1 }, (_, i) => t[i + 1] - t[i]).sort((a, b) => a - b);
-  const step = dts[dts.length >> 1] || 0;
-  const gapLimit = step * 2.5;
+  const gapLimit = medianStep(u) * 2.5;
   let s = 0;
   for (let i = 1; i < t.length; i++) {
     const dt = t[i] - t[i - 1];
@@ -135,8 +161,27 @@ function integrate(u: LidUnitSeries, vi: number): number {
   return s;
 }
 
+/**
+ * Water stored in the unit at row index i, as an equivalent depth.
+ * Mirrors SWMM's own volume terms: surface and storage depths are scaled by
+ * their void fractions, soil contributes theta x thickness.
+ */
+function storedDepth(u: LidUnitSeries, ctrl: LidControl | undefined, i: number): number {
+  const L = ctrl?.layers || {};
+  const surfVoid = L.SURFACE?.[1] ?? 1;
+  const paveVoid = L.PAVEMENT?.[1] ?? 0;
+  const soilTh = L.SOIL?.[0] ?? 0;
+  const storVoid = L.STORAGE?.[1] ?? L.DRAINMAT?.[1] ?? 0;
+  return (
+    u.vars[V.surfLevel][i] * surfVoid +
+    u.vars[V.paveLevel][i] * paveVoid +
+    u.vars[V.soilMoist][i] * soilTh +
+    u.vars[V.storLevel][i] * storVoid
+  );
+}
+
 // ---------------------------------------------------------------------------
-// .rpt LID Performance Summary parsing (for the continuity check panel)
+// .rpt LID Performance Summary parsing (for the mass-balance panel)
 // ---------------------------------------------------------------------------
 interface RptLidRow { inflow: number; evap: number; infil: number; runoff: number; drain: number; init: number; final: number; err: number; }
 
@@ -172,8 +217,12 @@ function buildStack(ctrl: LidControl | undefined): StackLayer[] {
   if (L.SURFACE) s.push({ name: 'SURFACE', thickness: Math.max(L.SURFACE[0], 0), color: '#7cb26e' });
   if (L.PAVEMENT) s.push({ name: 'PAVEMENT', thickness: L.PAVEMENT[0], color: '#8d8d99' });
   if (L.SOIL) s.push({ name: 'SOIL', thickness: L.SOIL[0], color: '#a9805a' });
-  if (L.STORAGE) s.push({ name: 'STORAGE', thickness: L.STORAGE[0], color: '#c2b280' });
+  // A green roof's drainage mat IS its storage: SWMM copies the drain mat's
+  // thickness/void fraction into the storage layer during validation, so both
+  // blocks appear in [CONTROLS] and both are driven by the one StorLevel.
+  // Render the real drain mat only, never the synthesized duplicate.
   if (L.DRAINMAT) s.push({ name: 'DRAINMAT', thickness: L.DRAINMAT[0], color: '#6b7a8f' });
+  else if (L.STORAGE) s.push({ name: 'STORAGE', thickness: L.STORAGE[0], color: '#c2b280' });
   return s;
 }
 
@@ -182,34 +231,60 @@ function fmt(v: number, d = 3): string {
   return Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(d);
 }
 
-function hhmm(hours: number): string {
-  const totalMin = Math.round(hours * 60);
+/** Elapsed sim time, matching the chart axis convention. */
+function elapsedLabel(hours: number): string {
+  const totalMin = Math.max(0, Math.round(hours * 60));
   const d = Math.floor(totalMin / 1440);
   const h = Math.floor((totalMin % 1440) / 60);
   const m = totalMin % 60;
-  return (d > 0 ? `${d}d ` : '') + `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  return `Day ${d}, ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-/** Soil moisture color from wilting point (dry tan) to porosity (saturated blue). */
+/** Compact axis form of the same convention. */
+function axisLabel(hours: number): string {
+  const totalMin = Math.max(0, Math.round(hours * 60));
+  const d = Math.floor(totalMin / 1440);
+  const h = Math.floor((totalMin % 1440) / 60);
+  const m = totalMin % 60;
+  return `${d}d ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Soil moisture colour, wilting point (dry tan) -> porosity (saturated blue). */
 function soilColor(theta: number, wp: number, por: number): string {
   const f = Math.max(0, Math.min(1, (theta - wp) / Math.max(por - wp, 1e-6)));
   const mix = (a: number, b: number) => Math.round(a + (b - a) * f);
-  return `rgb(${mix(169, 74)}, ${mix(128, 199 * 0.6)}, ${mix(90, 190)})`;
+  return `rgb(${mix(186, 58)}, ${mix(146, 132)}, ${mix(104, 178)})`;
 }
 
-// Arrow between layers, width scaled by rate / max
-function FluxArrow({ x, y, dir, rate, max, label }: { x: number; y: number; dir: 'down' | 'up' | 'right'; rate: number; max: number; label: string }) {
-  if (!(rate > 1e-6)) return null;
-  const w = 2 + 10 * Math.min(1, rate / Math.max(max, 1e-9));
-  const len = 22;
+/**
+ * Flux arrow between layers. Width AND length scale with the rate so relative
+ * importance reads without the label; a pathway that exists for this LID but
+ * is currently inactive is drawn as a faint dashed ghost rather than removed,
+ * so the diagram always shows the complete set of pathways.
+ */
+function FluxArrow({ x, y, dir, rate, max, label, color }: {
+  x: number; y: number; dir: 'down' | 'up' | 'right'; rate: number; max: number; label: string; color: string;
+}) {
+  const active = rate > 1e-6;
+  const frac = Math.min(1, rate / Math.max(max, 1e-9));
+  const w = active ? 2 + 9 * frac : 1;
+  const len = active ? 14 + 14 * frac : 16;
   let x2 = x, y2 = y;
   if (dir === 'down') y2 = y + len; else if (dir === 'up') y2 = y - len; else x2 = x + len;
   const ang = dir === 'down' ? 90 : dir === 'up' ? -90 : 0;
+  const op = active ? 0.9 : 0.28;
   return (
     <g>
-      <line x1={x} y1={y} x2={x2} y2={y2} stroke="#2f6fb5" strokeWidth={w} strokeLinecap="round" opacity={0.85} />
-      <polygon points="0,-6 10,0 0,6" fill="#2f6fb5" transform={`translate(${x2},${y2}) rotate(${ang})`} opacity={0.85} />
-      <text x={dir === 'right' ? x2 + 14 : x + 16} y={dir === 'right' ? y2 + 4 : (y + y2) / 2 + 4} fontSize={10} fill="#2a2a3e">{label}</text>
+      <line
+        x1={x} y1={y} x2={x2} y2={y2} stroke={color} strokeWidth={w} strokeLinecap="round"
+        strokeDasharray={active ? undefined : '3 3'} opacity={op}
+      />
+      <polygon points="0,-5 8,0 0,5" fill={color} transform={`translate(${x2},${y2}) rotate(${ang})`} opacity={op} />
+      <text
+        x={dir === 'right' ? x2 + 12 : x + 14}
+        y={dir === 'right' ? y2 + 4 : (y + y2) / 2 + 4}
+        fontSize={10} fill={active ? '#2a2a3e' : '#9a9aa8'}
+      >{label}</text>
     </g>
   );
 }
@@ -290,39 +365,59 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
     return c;
   }, [unit, time]);
 
-  // continuity panel: integrated .lid totals vs .rpt LID Performance Summary
-  const continuity = useMemo(() => {
+  // mass balance: integrated .lid totals + storage change vs .rpt summary
+  const massBalance = useMemo(() => {
     if (!unit) return null;
     const rpt = rptSummary.get(`${unit.subcatch}\t${unit.lid}`);
+    const n = unit.t.length;
+    const dStorLid = n > 1 ? storedDepth(unit, ctrl, n - 1) - storedDepth(unit, ctrl, 0) : 0;
+    const inflow = integrate(unit, V.inflow);
+    const evap = integrate(unit, V.evap);
+    const infil = integrate(unit, V.storExfil);
+    const runoff = integrate(unit, V.runoff);
+    const drain = integrate(unit, V.drain);
     const rows = [
-      { name: 'Total Inflow', lid: integrate(unit, V.inflow), rpt: rpt?.inflow },
-      { name: 'Evap Loss', lid: integrate(unit, V.evap), rpt: rpt?.evap },
-      { name: 'Infil Loss', lid: integrate(unit, V.storExfil), rpt: rpt?.infil },
-      { name: 'Surface Outflow', lid: integrate(unit, V.runoff), rpt: rpt?.runoff },
-      { name: 'Drain Outflow', lid: integrate(unit, V.drain), rpt: rpt?.drain },
+      { name: 'Total Inflow', lid: inflow, rpt: rpt?.inflow, sign: 1 },
+      { name: 'Evap Loss', lid: evap, rpt: rpt?.evap, sign: -1 },
+      { name: 'Infil Loss', lid: infil, rpt: rpt?.infil, sign: -1 },
+      { name: 'Surface Outflow', lid: runoff, rpt: rpt?.runoff, sign: -1 },
+      { name: 'Drain Outflow', lid: drain, rpt: rpt?.drain, sign: -1 },
+      { name: 'Storage Change', lid: dStorLid, rpt: rpt ? rpt.final - rpt.init : undefined, sign: -1 },
     ];
-    return rows.map((r) => {
-      const base = Math.max(Math.abs(rpt?.inflow ?? 0), 1e-6);
-      const diffPct = r.rpt === undefined ? null : (100 * (r.lid - r.rpt)) / base;
-      return { ...r, diffPct };
-    });
-  }, [unit, rptSummary]);
+    const base = Math.max(Math.abs(rpt?.inflow ?? inflow), 1e-6);
+    const withDiff = rows.map((r) => ({
+      ...r,
+      diffPct: r.rpt === undefined ? null : (100 * (r.lid - r.rpt)) / base,
+    }));
+    // closure: in - out - storage change (should be ~0 for both columns)
+    const closeLid = inflow - evap - infil - runoff - drain - dStorLid;
+    const closeRpt = rpt ? rpt.inflow - rpt.evap - rpt.infil - rpt.runoff - rpt.drain - (rpt.final - rpt.init) : undefined;
+    return {
+      rows: withDiff,
+      closure: {
+        name: 'Balance (in − out − Δstorage)',
+        lid: closeLid, rpt: closeRpt,
+        lidPct: (100 * closeLid) / base,
+        rptPct: closeRpt === undefined ? null : (100 * closeRpt) / base,
+      },
+    };
+  }, [unit, ctrl, rptSummary]);
 
   const stack = useMemo(() => buildStack(ctrl), [ctrl]);
-  const rateMax = Math.max(maxima[V.inflow], maxima[V.drain], maxima[V.runoff], maxima[V.storExfil], 1e-9);
+  const rateMax = Math.max(maxima[V.inflow], maxima[V.drain], maxima[V.runoff], maxima[V.storExfil], maxima[V.surfInfil], 1e-9);
 
   // stack geometry
-  const W = 340, PAD = 60, STACKW = 170;
+  const W = 360, PAD = 76, STACKW = 168;
   const totalTh = stack.reduce((s, l) => s + Math.max(l.thickness, 1), 0) || 1;
   const stackH = 300;
-  let yCursor = 60;
+  let yCursor = 58;
   const layerRects = stack.map((l) => {
-    const h = Math.max(26, (Math.max(l.thickness, 1) / totalTh) * stackH);
+    const h = Math.max(30, (Math.max(l.thickness, 1) / totalTh) * stackH);
     const r = { ...l, y: yCursor, h };
     yCursor += h;
     return r;
   });
-  const svgH = yCursor + 70;
+  const svgH = yCursor + 62;
 
   if (!report) {
     const off = lidUsage.filter((u) => !u.rptFile || u.rptFile === '*');
@@ -374,6 +469,7 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
 
   const soilWp = ctrl?.layers.SOIL?.[3] ?? 0;
   const soilPor = ctrl?.layers.SOIL?.[1] ?? 0.5;
+  const hasStorage = layerRects.some((l) => l.name === 'STORAGE' || l.name === 'DRAINMAT');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -420,93 +516,117 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
             onChange={(e) => { setPlaying(false); setTime(parseFloat(e.target.value)); }}
             className="flex-1 min-w-[160px]" data-testid="lid-scrubber"
           />
-          <span className="text-sm font-mono text-[#2a2a3e] w-24 text-right" data-testid="lid-time-readout">{hhmm(time)}</span>
+          <span className="text-sm font-mono text-[#2a2a3e] w-28 text-right" data-testid="lid-time-readout">{elapsedLabel(time)}</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* layer stack */}
           <div className="bg-[#f8f8fa] border border-[#d0d0d8] rounded p-2">
             <svg viewBox={`0 0 ${W} ${svgH}`} width="100%" data-testid="lid-stack-svg">
-              {/* inflow arrow */}
-              <FluxArrow x={PAD + STACKW / 2} y={16} dir="down" rate={cur[V.inflow]} max={rateMax} label={`In ${fmt(cur[V.inflow])}`} />
-              {/* evap arrow */}
-              <FluxArrow x={PAD + STACKW / 2 + 46} y={52} dir="up" rate={cur[V.evap]} max={rateMax} label={`Evap ${fmt(cur[V.evap])}`} />
+              {/* inflow / evap at the top of the stack */}
+              <FluxArrow x={PAD + 34} y={16} dir="down" rate={cur[V.inflow]} max={rateMax} color={C.inflow} label={`In ${fmt(cur[V.inflow])}`} />
+              <FluxArrow x={PAD + STACKW - 20} y={52} dir="up" rate={cur[V.evap]} max={rateMax} color={C.evap} label={`Evap ${fmt(cur[V.evap])}`} />
               {layerRects.map((l) => {
-                let fill = l.color;
-                let waterFrac = 0;
-                if (l.name === 'SURFACE' && l.thickness > 0) waterFrac = Math.min(1, cur[V.surfLevel] / l.thickness);
-                if (l.name === 'PAVEMENT' && l.thickness > 0) waterFrac = Math.min(1, cur[V.paveLevel] / l.thickness);
-                if ((l.name === 'STORAGE' || l.name === 'DRAINMAT') && l.thickness > 0) waterFrac = Math.min(1, cur[V.storLevel] / l.thickness);
-                if (l.name === 'SOIL') fill = soilColor(cur[V.soilMoist], soilWp, soilPor);
+                const levelVal: number | undefined =
+                  l.name === 'SURFACE' ? cur[V.surfLevel]
+                  : l.name === 'PAVEMENT' ? cur[V.paveLevel]
+                  : (l.name === 'STORAGE' || l.name === 'DRAINMAT') ? cur[V.storLevel]
+                  : undefined;
+                const waterFrac = levelVal !== undefined && l.thickness > 0
+                  ? Math.max(0, Math.min(1, levelVal / l.thickness)) : 0;
+                const fill = l.name === 'SOIL' ? soilColor(cur[V.soilMoist], soilWp, soilPor) : l.color;
+                const satFrac = l.name === 'SOIL'
+                  ? Math.max(0, Math.min(1, (cur[V.soilMoist] - soilWp) / Math.max(soilPor - soilWp, 1e-6)))
+                  : 0;
                 return (
                   <g key={l.name}>
-                    <rect x={PAD} y={l.y} width={STACKW} height={l.h} fill={fill} stroke="#55556a" strokeWidth={1} opacity={0.55} />
+                    <rect x={PAD} y={l.y} width={STACKW} height={l.h} fill={fill} stroke="#55556a" strokeWidth={1} opacity={l.name === 'SOIL' ? 0.95 : 0.55} />
                     {waterFrac > 0 && (
-                      <rect x={PAD} y={l.y + l.h * (1 - waterFrac)} width={STACKW} height={l.h * waterFrac} fill="#4a9fd8" opacity={0.75} />
+                      <rect x={PAD} y={l.y + l.h * (1 - waterFrac)} width={STACKW} height={l.h * waterFrac} fill={C.water} opacity={0.78} />
                     )}
                     <text x={PAD + 4} y={l.y + 13} fontSize={10} fontWeight={600} fill="#2a2a3e">{l.name}</text>
-                    <text x={PAD + STACKW - 4} y={l.y + 13} fontSize={9} fill="#2a2a3e" textAnchor="end">{fmt(l.thickness, 0)} {depthU}</text>
+                    {/* current / capacity so geometry and state are not conflated */}
+                    <text x={PAD + STACKW - 4} y={l.y + 13} fontSize={9} fill="#2a2a3e" textAnchor="end">
+                      {levelVal !== undefined ? `${fmt(levelVal, 1)} / ${fmt(l.thickness, 0)} ${depthU}` : `${fmt(l.thickness, 0)} ${depthU}`}
+                    </text>
                     {l.name === 'SOIL' && (
-                      <text x={PAD + 4} y={l.y + l.h - 5} fontSize={9} fill="#1a1a2e">θ = {fmt(cur[V.soilMoist])}</text>
-                    )}
-                    {waterFrac > 0 && l.name !== 'SOIL' && (
-                      <text x={PAD + 4} y={l.y + l.h - 5} fontSize={9} fill="#0b3d61">
-                        {fmt(l.name === 'SURFACE' ? cur[V.surfLevel] : l.name === 'PAVEMENT' ? cur[V.paveLevel] : cur[V.storLevel])} {depthU}
-                      </text>
+                      <>
+                        <text x={PAD + 4} y={l.y + l.h - 6} fontSize={9} fill="#1a1a2e">
+                          θ {fmt(cur[V.soilMoist])} (wp {fmt(soilWp, 2)} → n {fmt(soilPor, 2)})
+                        </text>
+                        {/* saturation bar so the moisture shade is readable quantitatively */}
+                        <rect x={PAD + STACKW - 54} y={l.y + l.h - 16} width={50} height={6} fill="#ffffff" stroke="#55556a" strokeWidth={0.5} opacity={0.8} />
+                        <rect x={PAD + STACKW - 54} y={l.y + l.h - 16} width={50 * satFrac} height={6} fill={C.water} opacity={0.9} />
+                      </>
                     )}
                   </g>
                 );
               })}
-              {/* inter-layer + outlet arrows */}
+              {/* pathway arrows, coloured to match the chart legend */}
               {layerRects.map((l, i) => {
-                const below = layerRects[i + 1];
-                const xMid = PAD + STACKW / 2 - 40;
+                const isBottom = i === layerRects.length - 1;
+                const xMid = PAD + 34;
+                const parts: JSX.Element[] = [];
                 if (l.name === 'SURFACE') {
-                  return (
-                    <g key={`fx-${l.name}`}>
-                      <FluxArrow x={xMid} y={l.y + l.h - 10} dir="down" rate={cur[V.surfInfil]} max={rateMax} label={`Infil ${fmt(cur[V.surfInfil])}`} />
-                      <FluxArrow x={PAD + STACKW + 6} y={l.y + l.h / 2} dir="right" rate={cur[V.runoff]} max={rateMax} label={`Runoff ${fmt(cur[V.runoff])}`} />
-                    </g>
-                  );
+                  if (!isBottom) parts.push(<FluxArrow key="infil" x={xMid} y={l.y + l.h - 12} dir="down" rate={cur[V.surfInfil]} max={rateMax} color={C.infil} label={`Infil ${fmt(cur[V.surfInfil])}`} />);
+                  parts.push(<FluxArrow key="runoff" x={PAD + STACKW + 4} y={l.y + l.h / 2} dir="right" rate={cur[V.runoff]} max={rateMax} color={C.runoff} label={`Runoff ${fmt(cur[V.runoff])}`} />);
+                } else if (l.name === 'PAVEMENT' && !isBottom) {
+                  parts.push(<FluxArrow key="pperc" x={xMid} y={l.y + l.h - 12} dir="down" rate={cur[V.pavePerc]} max={rateMax} color={C.perc} label={`Perc ${fmt(cur[V.pavePerc])}`} />);
+                } else if (l.name === 'SOIL' && !isBottom) {
+                  parts.push(<FluxArrow key="sperc" x={xMid} y={l.y + l.h - 12} dir="down" rate={cur[V.soilPerc]} max={rateMax} color={C.perc} label={`Perc ${fmt(cur[V.soilPerc])}`} />);
                 }
-                if (l.name === 'PAVEMENT') return <FluxArrow key={`fx-${l.name}`} x={xMid} y={l.y + l.h - 10} dir="down" rate={cur[V.pavePerc]} max={rateMax} label={`Perc ${fmt(cur[V.pavePerc])}`} />;
-                if (l.name === 'SOIL' && below) return <FluxArrow key={`fx-${l.name}`} x={xMid} y={l.y + l.h - 10} dir="down" rate={cur[V.soilPerc]} max={rateMax} label={`Perc ${fmt(cur[V.soilPerc])}`} />;
-                if (l.name === 'STORAGE' || (l.name === 'DRAINMAT' && !layerRects.some((x) => x.name === 'STORAGE'))) {
-                  return (
-                    <g key={`fx-${l.name}`}>
-                      <FluxArrow x={xMid} y={l.y + l.h + 4} dir="down" rate={cur[V.storExfil]} max={rateMax} label={`Exfil ${fmt(cur[V.storExfil])}`} />
-                      <FluxArrow x={PAD + STACKW + 6} y={l.y + l.h - 12} dir="right" rate={cur[V.drain]} max={rateMax} label={`Drain ${fmt(cur[V.drain])}`} />
-                    </g>
-                  );
+                // The bottom layer is where water leaves the unit, whatever it
+                // is: a bio-cell may end at SOIL (no storage), in which case
+                // SWMM reports the soil-to-native-soil flow as StorExfil.
+                if (isBottom) {
+                  parts.push(<FluxArrow key="exfil" x={xMid} y={l.y + l.h + 2} dir="down" rate={cur[V.storExfil]} max={rateMax} color={C.exfil} label={`Exfil ${fmt(cur[V.storExfil])}`} />);
+                  parts.push(<FluxArrow key="drain" x={PAD + STACKW + 4} y={l.y + l.h - 14} dir="right" rate={cur[V.drain]} max={rateMax} color={C.drain} label={`Drain ${fmt(cur[V.drain])}`} />);
                 }
-                return null;
+                return parts.length ? <g key={`fx-${l.name}`}>{parts}</g> : null;
               })}
+              {/* native soil hatch under the stack when exfiltration is possible */}
+              {hasStorage && (
+                <text x={PAD + 34 + 14} y={svgH - 12} fontSize={9} fill="#9a9aa8">native soil</text>
+              )}
             </svg>
           </div>
 
-          {/* right column: strip chart + continuity */}
+          {/* right column: strip chart + mass balance */}
           <div className="flex flex-col gap-3">
-            <StripChart unit={unit!} time={time} maxima={maxima} depthU={depthU} rateU={rateU} />
+            <StripChart
+              unit={unit!} time={time} maxima={maxima} depthU={depthU} rateU={rateU}
+              onSeek={(h) => { setPlaying(false); setTime(h); }}
+            />
             <div className="bg-[#f8f8fa] border border-[#d0d0d8] rounded p-2 text-xs" data-testid="lid-continuity-panel">
-              <div className="font-semibold text-[#2c3e6b] mb-1">Approximate mass check vs report ({depthU})</div>
+              <div className="font-semibold text-[#2c3e6b] mb-1">Mass balance vs report ({depthU})</div>
               <table className="w-full">
                 <thead>
-                  <tr className="text-[#6b6b7b]"><th className="text-left font-normal">Component</th><th className="text-right font-normal">.lid ∫</th><th className="text-right font-normal">.rpt</th><th className="text-right font-normal">Δ%in</th></tr>
+                  <tr className="text-[#6b6b7b]"><th className="text-left font-normal">Component</th><th className="text-right font-normal">.lid</th><th className="text-right font-normal">.rpt</th><th className="text-right font-normal">Δ%in</th></tr>
                 </thead>
                 <tbody>
-                  {continuity?.map((r) => (
+                  {massBalance?.rows.map((r) => (
                     <tr key={r.name} className="text-[#2a2a3e]">
                       <td>{r.name}</td>
                       <td className="text-right font-mono">{fmt(r.lid, 2)}</td>
                       <td className="text-right font-mono">{r.rpt === undefined ? '—' : fmt(r.rpt, 2)}</td>
-                      <td className={`text-right font-mono ${r.diffPct !== null && Math.abs(r.diffPct) > 2 ? 'text-red-600 font-semibold' : 'text-green-700'}`}>
-                        {r.diffPct === null ? '—' : fmt(r.diffPct, 2)}
-                      </td>
+                      <td className={`text-right font-mono ${severityClass(r.diffPct)}`}>{r.diffPct === null ? '—' : fmt(r.diffPct, 2)}</td>
                     </tr>
                   ))}
+                  {massBalance && (
+                    <tr className="border-t border-[#d0d0d8] font-semibold text-[#2a2a3e]">
+                      <td>{massBalance.closure.name}</td>
+                      <td className={`text-right font-mono ${severityClass(massBalance.closure.lidPct)}`}>{fmt(massBalance.closure.lid, 2)}</td>
+                      <td className={`text-right font-mono ${severityClass(massBalance.closure.rptPct)}`}>{massBalance.closure.rpt === undefined ? '—' : fmt(massBalance.closure.rpt, 2)}</td>
+                      <td className={`text-right font-mono ${severityClass(massBalance.closure.lidPct)}`}>{fmt(massBalance.closure.lidPct, 2)}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
-              <div className="text-[#6b6b7b] mt-1">Approximate: .lid rows are integrated between reported time steps only (the file omits long dry periods, and storage change is not included). Δ% is relative to total inflow; |Δ| &gt; 2% flagged.</div>
+              <div className="text-[#6b6b7b] mt-1">
+                .lid values are integrated between reported time steps (long dry periods are omitted from the file, so they
+                contribute nothing); storage change comes from the first and last reported state. Δ% is relative to total
+                inflow — green ≤1%, amber ≤5%, red above.
+              </div>
             </div>
           </div>
         </div>
@@ -515,52 +635,136 @@ export default function LidViewerDialog({ open, onOpenChange, results, lidUsage 
   );
 }
 
+function severityClass(pct: number | null | undefined): string {
+  if (pct === null || pct === undefined || !isFinite(pct)) return 'text-[#6b6b7b]';
+  const a = Math.abs(pct);
+  if (a <= 1) return 'text-green-700';
+  if (a <= 5) return 'text-amber-600 font-semibold';
+  return 'text-red-600 font-semibold';
+}
+
 // ---------------------------------------------------------------------------
 // Strip chart: rates + levels over the run, with a time cursor
 // ---------------------------------------------------------------------------
-const CHART_SERIES: { vi: number; label: string; color: string; group: 'rate' | 'depth' }[] = [
-  { vi: V.inflow, label: 'Inflow', color: '#2f6fb5', group: 'rate' },
-  { vi: V.runoff, label: 'Runoff', color: '#c0392b', group: 'rate' },
-  { vi: V.drain, label: 'Drain', color: '#8e44ad', group: 'rate' },
-  { vi: V.storExfil, label: 'Exfil', color: '#16a085', group: 'rate' },
-  { vi: V.surfLevel, label: 'Surf lvl', color: '#4a9fd8', group: 'depth' },
+type ScaleMode = 'norm' | 'abs' | 'log';
+type SeriesGroup = 'rate' | 'depth' | 'frac';
+
+const CHART_SERIES: { vi: number; label: string; color: string; group: SeriesGroup }[] = [
+  { vi: V.inflow, label: 'Inflow', color: C.inflow, group: 'rate' },
+  { vi: V.runoff, label: 'Runoff', color: C.runoff, group: 'rate' },
+  { vi: V.drain, label: 'Drain', color: C.drain, group: 'rate' },
+  { vi: V.storExfil, label: 'Exfil', color: C.exfil, group: 'rate' },
+  { vi: V.surfInfil, label: 'Infil', color: C.infil, group: 'rate' },
+  { vi: V.evap, label: 'Evap', color: C.evap, group: 'rate' },
+  { vi: V.surfLevel, label: 'Surf lvl', color: C.water, group: 'depth' },
   { vi: V.storLevel, label: 'Stor lvl', color: '#b8860b', group: 'depth' },
+  { vi: V.soilMoist, label: 'Soil θ', color: '#a9805a', group: 'frac' },
 ];
 
-function StripChart({ unit, time, maxima, depthU, rateU }: { unit: LidUnitSeries; time: number; maxima: number[]; depthU: string; rateU: string }) {
-  const [visible, setVisible] = useState<Set<number>>(new Set(CHART_SERIES.map((s) => s.vi)));
-  const W = 460, H = 180, PL = 8, PR = 8, PT = 8, PB = 18;
+const DEFAULT_VISIBLE = [V.inflow, V.runoff, V.drain, V.storExfil, V.storLevel];
+
+function StripChart({ unit, time, maxima, depthU, rateU, onSeek }: {
+  unit: LidUnitSeries; time: number; maxima: number[]; depthU: string; rateU: string;
+  onSeek: (hours: number) => void;
+}) {
+  const [visible, setVisible] = useState<Set<number>>(new Set(DEFAULT_VISIBLE));
+  const [mode, setMode] = useState<ScaleMode>('norm');
+  const [hover, setHover] = useState<{ h: number; i: number; px: number } | null>(null);
+  const W = 460, H = 190, PL = 8, PR = 8, PT = 8, PB = 20;
   const t0 = unit.t[0] ?? 0, tEnd = unit.t[unit.t.length - 1] ?? 1;
   const xOf = (h: number) => PL + ((h - t0) / (tEnd - t0 || 1)) * (W - PL - PR);
+  const hOf = (px: number) => t0 + ((px - PL) / (W - PL - PR)) * (tEnd - t0 || 1);
   const toggle = (vi: number) => setVisible((s) => { const n = new Set(s); n.has(vi) ? n.delete(vi) : n.add(vi); return n; });
+
+  const shown = CHART_SERIES.filter((s) => visible.has(s.vi));
+  // group maxima for the shared-scale modes
+  const groupMax: Record<SeriesGroup, number> = {
+    rate: Math.max(1e-9, ...shown.filter((s) => s.group === 'rate').map((s) => maxima[s.vi])),
+    depth: Math.max(1e-9, ...shown.filter((s) => s.group === 'depth').map((s) => maxima[s.vi])),
+    frac: 1,
+  };
+  const scaleOf = (s: { vi: number; group: SeriesGroup }, v: number): number => {
+    if (mode === 'norm') return v / Math.max(maxima[s.vi], 1e-9);
+    const gm = groupMax[s.group];
+    if (mode === 'abs') return v / gm;
+    return Math.log10(1 + Math.max(v, 0)) / Math.log10(1 + gm);   // log
+  };
+
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * W;
+    if (px < PL || px > W - PR) { setHover(null); return; }
+    const h = hOf(px);
+    setHover({ h, i: nearestIndex(unit, h), px });
+  };
+
   return (
-    <div className="bg-[#f8f8fa] border border-[#d0d0d8] rounded p-2" data-testid="lid-strip-chart">
-      <div className="flex flex-wrap gap-2 text-[10px] mb-1">
+    <div className="bg-[#f8f8fa] border border-[#d0d0d8] rounded p-2 relative" data-testid="lid-strip-chart">
+      <div className="flex flex-wrap items-center gap-2 text-[10px] mb-1">
         {CHART_SERIES.map((s) => (
           <button key={s.vi} onClick={() => toggle(s.vi)}
             className={`px-1.5 py-0.5 rounded border ${visible.has(s.vi) ? 'border-transparent text-white' : 'border-[#d0d0d8] text-[#6b6b7b] bg-white'}`}
             style={visible.has(s.vi) ? { backgroundColor: s.color } : undefined}
-          >{s.label} ({s.group === 'rate' ? rateU : depthU})</button>
+            data-testid={`lid-series-${s.vi}`}
+          >{s.label}{s.group === 'frac' ? '' : ` (${s.group === 'rate' ? rateU : depthU})`}</button>
         ))}
+        <span className="ml-auto flex gap-1">
+          {(['norm', 'abs', 'log'] as ScaleMode[]).map((m) => (
+            <button key={m} onClick={() => setMode(m)}
+              className={`px-1.5 py-0.5 rounded border ${mode === m ? 'bg-[#2c3e6b] text-white border-[#2c3e6b]' : 'border-[#d0d0d8] text-[#2a2a3e] bg-white'}`}
+              data-testid={`lid-scale-${m}`}
+              title={m === 'norm' ? 'Each series scaled to its own maximum (compare shape)' : m === 'abs' ? 'True magnitude, shared scale per unit group' : 'Log scale, shared per unit group'}
+            >{m === 'norm' ? 'Norm' : m === 'abs' ? 'Abs' : 'Log'}</button>
+          ))}
+        </span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%">
+      <svg
+        viewBox={`0 0 ${W} ${H}`} width="100%"
+        onMouseMove={handleMove} onMouseLeave={() => setHover(null)}
+        onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); onSeek(hOf(((e.clientX - rect.left) / rect.width) * W)); }}
+        style={{ cursor: 'crosshair' }}
+      >
         <rect x={PL} y={PT} width={W - PL - PR} height={H - PT - PB} fill="white" stroke="#d0d0d8" />
-        {CHART_SERIES.filter((s) => visible.has(s.vi)).map((s) => {
-          const max = Math.max(maxima[s.vi], 1e-9);
+        {shown.map((s) => {
           const n = unit.t.length;
-          const stride = Math.max(1, Math.ceil(n / 1500));
+          const stride = Math.max(1, Math.ceil(n / MAX_CHART_POINTS));
           const pts: string[] = [];
           for (let i = 0; i < n; i += stride) {
-            const y = PT + (1 - unit.vars[s.vi][i] / max) * (H - PT - PB);
+            const y = PT + (1 - scaleOf(s, unit.vars[s.vi][i])) * (H - PT - PB);
             pts.push(`${xOf(unit.t[i]).toFixed(1)},${y.toFixed(1)}`);
           }
           return <polyline key={s.vi} points={pts.join(' ')} fill="none" stroke={s.color} strokeWidth={1.2} opacity={0.9} />;
         })}
         <line x1={xOf(time)} y1={PT} x2={xOf(time)} y2={H - PB} stroke="#e74c3c" strokeWidth={1.5} />
-        <text x={PL} y={H - 5} fontSize={9} fill="#6b6b7b">{hhmm(t0)}</text>
-        <text x={W - PR} y={H - 5} fontSize={9} fill="#6b6b7b" textAnchor="end">{hhmm(tEnd)}</text>
+        {hover && <line x1={hover.px} y1={PT} x2={hover.px} y2={H - PB} stroke="#6b6b7b" strokeWidth={0.8} strokeDasharray="3 3" />}
+        {mode !== 'norm' && (
+          <text x={PL + 3} y={PT + 9} fontSize={8} fill="#6b6b7b">
+            max {fmt(groupMax.rate, 2)} {rateU}{shown.some((s) => s.group === 'depth') ? ` · ${fmt(groupMax.depth, 1)} ${depthU}` : ''}
+          </text>
+        )}
+        <text x={PL} y={H - 6} fontSize={9} fill="#6b6b7b">{axisLabel(t0)}</text>
+        <text x={W - PR} y={H - 6} fontSize={9} fill="#6b6b7b" textAnchor="end">{axisLabel(tEnd)}</text>
       </svg>
-      <div className="text-[10px] text-[#6b6b7b]">Each series normalized to its own run maximum. Red line = current time.</div>
+      {hover && (
+        <div
+          className="absolute z-10 bg-white border border-[#d0d0d8] rounded shadow px-2 py-1 text-[10px] text-[#2a2a3e] pointer-events-none"
+          style={{ left: `calc(${(hover.px / W) * 100}% + 8px)`, top: 30 }}
+          data-testid="lid-chart-tooltip"
+        >
+          <div className="font-semibold text-[#2c3e6b]">{elapsedLabel(unit.t[hover.i])}</div>
+          {shown.map((s) => (
+            <div key={s.vi} className="flex gap-2 justify-between">
+              <span style={{ color: s.color }}>{s.label}</span>
+              <span className="font-mono">{fmt(unit.vars[s.vi][hover.i], 3)}{s.group === 'frac' ? '' : ` ${s.group === 'rate' ? rateU : depthU}`}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="text-[10px] text-[#6b6b7b]">
+        {mode === 'norm' ? 'Each series scaled to its own maximum — shapes comparable, magnitudes are not.'
+          : mode === 'abs' ? 'True magnitude, one shared scale per unit group.'
+          : 'Log scale, one shared scale per unit group.'} Click the chart to jump the animation there.
+      </div>
     </div>
   );
 }

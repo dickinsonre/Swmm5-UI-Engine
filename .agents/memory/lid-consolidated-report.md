@@ -12,3 +12,7 @@ The vendored SWMM 5.2.4 source (`swmm-engine/Stormwater-Management-Model-5.2.4`)
 - Gates: `node scripts/parity-lid.cjs <model.lid> tests/fixtures/golden-lid` (golden = stock per-unit files for `tests/fixtures/lid_test.inp`, produced by native runswmm) must PASS, and non-LID samples must produce byte-identical `.out` vs previous build.
 - Client: `.lid` text flows as `SimulationResults.lidReportText` (direct + worker SWMM5 paths); viewer = `client/src/components/swmm/LidViewerDialog.tsx` (toolbar `btn-lid-viewer`, only when lidReportText present). Viewer has size budgets (60MB text / 20k rows/unit) — keep them.
 - Native `runswmm` binary is stock — server/local engine runs still write per-unit files and get no viewer.
+
+**`[CONTROLS]` layer-block gotchas when reconstructing a layer stack:**
+- A green roof emits BOTH a `STORAGE` and a `DRAINMAT` block: SWMM copies the drain mat's thickness/void fraction into the storage layer during validation, and the one `StorLevel` column drives both. Render the drain mat only, or the storage is shown twice.
+- The bottom layer of a stack is not always STORAGE/DRAINMAT — a bio-cell may end at SOIL, and SWMM then reports the soil-to-native-soil flow in the `StorExfil` column. Anchor outlet (exfil/drain) rendering to whatever the bottom layer is.

@@ -1,0 +1,27 @@
+## Biggest gap: the animation stops at the surface layer
+
+The whole premise is "layer-by-layer," but only the surface box actually shows water — soil and storage are static tan blocks. Give soil a moisture-shaded fill (tied to θ) and give storage a rising/falling blue fill tied to Stor lvl, the same way the 6 in surface box fills. Right now that's the one place the visual story breaks down, and it's the part users most want to see: watching storage charge during the storm and drain down after.
+
+## Diagram completeness
+
+- **Missing arrows for pathways you're already tracking**: Exfil and Drain both have chart buttons and mass-balance rows, but neither appears as an arrow in the cross-section. Add a downward Exfil arrow at the base of the storage layer (into native soil) and a Drain arrow/pipe icon exiting storage when drain rate > 0 — right now the diagram implies water only leaves via Runoff and Evap, which understates how bioretention cells actually function.
+- **Perc = Infil (0.780 = 0.780) in this frame** — worth double-checking against the source data. It could be a legitimate saturated pass-through state, or it could mean both arrows are reading the same column. Can't tell from a single frame, but I'd sanity-check a few timesteps.
+- The "6 in / 5 in / 48 in" labels read as fixed layer thicknesses, not current levels — once you add the fills above, consider showing both (e.g., "3.2 / 6 in" for current/max) so the static geometry and the dynamic state aren't visually conflated.
+
+## Visual encoding
+
+- Your chart legend already color-codes each rate (blue Inflow, red Runoff, purple Drain, green Exfil...) — reuse those exact colors for the corresponding arrows in the diagram instead of uniform navy. That one change would let someone read the diagram at a glance without matching numbers to labels.
+- Scale arrow width/length with rate magnitude (or animate flow-rate-proportional particles) so relative flow importance is visible without reading text.
+
+## Chart and playback
+
+- "Each series normalized to its own maximum" is great for comparing shape, but it flattens absolute magnitude — which matters a lot for engineers sizing orifices/weirs off peak Inflow vs. baseflow Exfil. A toggle between normalized and true-magnitude (possibly log-scale) view would serve both use cases.
+- Add hover/crosshair tooltips on the chart to read exact values at a point in time, and let clicking the chart jump the animation's current time (currently the only scrubber is the separate slider under the playback controls).
+- "06:01" as the time readout is ambiguous against an axis that spans "01:00" to "2d 00:23" — worth showing it as elapsed sim time explicitly (e.g., "Day 0, 06:01") to match the axis convention.
+
+## Mass balance panel
+
+- Nice that you're already flagging the approximation caveat (dry periods omitted, storage change excluded). Since you're already computing Stor lvl for the diagram/chart, you likely have what's needed to add a Storage Volume Change row and close that gap so Δ% actually ties to zero rather than leaving a known unaccounted term.
+- Consider a color/severity threshold on Δ% (e.g., flag amber/red above some tolerance) rather than always-green, so a real discrepancy would visually stand out.
+
+If you want, I can help mock up the layered-fill animation logic (soil shading by θ, storage fill by Stor lvl) or sketch the color-coded arrow scheme in code — just point me at the repo or the relevant JS/canvas file.
