@@ -5,10 +5,11 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "tsx script/build.ts",
+    "build": "npm run check && npm test && tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "test": "bash tests/run-all.sh"
+    "test": "bash tests/run-all.sh",
+    "test:e2e": "bash tests/run-e2e.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -30,6 +30,12 @@ run_suite "Calibration Parser/Export"   tests/calibration.test.ts
 run_suite "CFL Analysis & Discretize"  tests/cfl.test.ts
 run_suite "Engine Scatter Comparison"  tests/scatter-compare.test.ts
 run_suite "Batch Verdict Comparison"   tests/batch-compare.test.ts
+run_suite "Binary .out Offset Parsing" tests/out-offset.test.ts
+
+# NOTE: tests/e2e/* are deliberately NOT run here. They drive a real browser
+# against a running server (BASE_URL, default http://127.0.0.1:5000), so they
+# would fail in a build/deploy context where nothing is serving.
+# Run them with the app up:  npm run test:e2e
 
 echo ""
 echo "══════════════════════════════════════════"

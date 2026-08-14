@@ -7,7 +7,7 @@ import {
   getNodeVarByKey, getLinkVarByKey, getSubVarByKey, getSystemVarByKey,
 } from '@/lib/swmm-variables';
 import { parseInpFile, projectToInp } from '@/lib/inp-parser';
-import { createMockEngine, createRemoteEngine, createLocalEngine, createWasmEngine, createWasm6Engine, checkRemoteEngine, checkLocalEngine, checkWasmEngine, checkWasm6Engine, engineShortName } from '@/lib/swmm-engine';
+import { createMockEngine, createRemoteEngine, createLocalEngine, createWasmEngine, createWasm6Engine, checkRemoteEngine, checkLocalEngineInfo, checkWasmEngine, checkWasm6Engine, engineShortName } from '@/lib/swmm-engine';
 import { computeCflAnalysis, discretizeProject, getDefaultSettings } from '@/lib/cfl-analysis';
 import type { CflAnalysisResult, DiscretizationSettings, DiscretizationResult } from '@/lib/cfl-analysis';
 import { importCsvNodes, importCsvLinks, parseDxfFile, importDxfEntities, importGeoJsonNodes, importGeoJsonLinks, parseGeoJsonToNetwork, exportNodesCsv, exportLinksCsv, exportDxf } from '@/lib/import-export';
@@ -209,6 +209,12 @@ export default function SwmmUI() {
   const [simProgressMsg, setSimProgressMsg] = useState('');
   const [engineMode, setEngineMode] = useState<'mock' | 'remote' | 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'both56' | 'both56dev' | 'both66'>('mock');
   const [localAvailable, setLocalAvailable] = useState(false);
+  const [localEnginePath, setLocalEnginePath] = useState<string | null>(null);
+  // Where the native EPA SWMM 5.2.4 executable lives on this machine, shown as
+  // a tooltip so the user knows exactly which binary a "Local" run would use.
+  const localEngineTooltip = localEnginePath
+    ? `Local EPA SWMM 5.2.4 executable:\n${localEnginePath}`
+    : 'Local EPA SWMM 5.2.4 executable not found on this machine';
   const [remoteAvailable, setRemoteAvailable] = useState(false);
   const [wasmAvailable, setWasmAvailable] = useState(false);
   const [wasm6Available, setWasm6Available] = useState(false);
@@ -1356,10 +1362,11 @@ export default function SwmmUI() {
   useEffect(() => {
     let localOk = false;
     let wasmOk = false;
-    checkLocalEngine().then(available => {
-      localOk = available;
-      setLocalAvailable(available);
-      if (available) setEngineMode('local');
+    checkLocalEngineInfo().then(info => {
+      localOk = info.found;
+      setLocalAvailable(info.found);
+      setLocalEnginePath(info.path);
+      if (info.found) setEngineMode('local');
     });
     checkWasmEngine().then(available => {
       wasmOk = available;
@@ -2456,7 +2463,7 @@ export default function SwmmUI() {
                   ? 'bg-[rgba(44,110,181,0.12)] border-[#2c6eb5] text-[#2c6eb5]'
                   : 'bg-transparent border-[#d0d0d8] text-[#6b6b7b] hover:text-[#2a2a3e]'
               } cursor-pointer`}
-              title="Cycle engine mode: Local → WASM 5 → WASM 6 rel → WASM 6 dev → Compare 5+6 → Compare 5+6dev → Compare 6rel+6dev → Remote → Mock"
+              title={`Cycle engine mode: Local → WASM 5 → WASM 6 rel → WASM 6 dev → Compare 5+6 → Compare 5+6dev → Compare 6rel+6dev → Remote → Mock${localEngineTooltip ? `\n\n${localEngineTooltip}` : ''}`}
               data-testid="btn-engine-toggle"
             >
               <span className={`w-1.5 h-1.5 rounded-full ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'both56dev' ? 'bg-[#0e7a9e]' : engineMode === 'both66' ? 'bg-[#9e0e7a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />
@@ -3213,6 +3220,7 @@ export default function SwmmUI() {
           />
         )}
         <StatusItem
+          title={engineMode === 'local' ? localEngineTooltip : undefined}
           text={engineMode === 'local' ? 'Local 5.2.4' : engineMode === 'wasm' ? 'WASM 5.2.4' : engineMode === 'wasm6' ? 'WASM 6 rel' : engineMode === 'wasm6dev' ? 'WASM 6 dev' : engineMode === 'both56' ? 'Compare 5+6' : engineMode === 'both56dev' ? 'Compare 5+6dev' : engineMode === 'both66' ? 'Compare 6rel+6dev' : engineMode === 'remote' ? 'Remote 5.2.4' : 'Mock'}
           color={engineMode === 'local' ? '#2a8a4a' : engineMode === 'wasm' ? '#e88a1a' : engineMode === 'wasm6' ? '#8a4ae2' : engineMode === 'wasm6dev' ? '#c24ae2' : engineMode === 'both56' ? '#1a9e8a' : engineMode === 'both56dev' ? '#0e7a9e' : engineMode === 'both66' ? '#9e0e7a' : engineMode === 'remote' ? '#2c6eb5' : '#6b6b7b'}
           icon={<span className={`w-2 h-2 rounded-full inline-block ${engineMode === 'local' ? 'bg-[#2a8a4a]' : engineMode === 'wasm' ? 'bg-[#e88a1a]' : engineMode === 'wasm6' ? 'bg-[#8a4ae2]' : engineMode === 'wasm6dev' ? 'bg-[#c24ae2]' : engineMode === 'both56' ? 'bg-[#1a9e8a]' : engineMode === 'both56dev' ? 'bg-[#0e7a9e]' : engineMode === 'both66' ? 'bg-[#9e0e7a]' : engineMode === 'remote' ? 'bg-[#2c6eb5]' : 'bg-[#9090a0]'}`} />}
@@ -4827,10 +4835,11 @@ function ThemeCombo({ label, value, onChange, options, groups, testId }: {
   );
 }
 
-function StatusItem({ text, color, bold, icon, onClick }: { text: string; color?: string; bold?: boolean; icon?: React.ReactNode; onClick?: () => void }) {
+function StatusItem({ text, color, bold, icon, onClick, title }: { text: string; color?: string; bold?: boolean; icon?: React.ReactNode; onClick?: () => void; title?: string }) {
   return (
     <div
       onClick={onClick}
+      title={title}
       className={`px-2 py-0.5 text-[10px] flex items-center gap-1 ${onClick ? 'cursor-pointer hover:bg-black/[0.06] rounded transition-colors' : ''}`}
       style={{
         color: color || '#6b6b7b',

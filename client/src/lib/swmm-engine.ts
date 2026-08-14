@@ -37,15 +37,31 @@ export async function checkRemoteEngine(): Promise<boolean> {
   }
 }
 
-export async function checkLocalEngine(): Promise<boolean> {
+/**
+ * Probe the native (locally installed) EPA SWMM 5.2.4 executable and report
+ * both availability and the absolute path it was found at, so the UI can show
+ * the user exactly which binary would run.
+ */
+export async function checkLocalEngineInfo(): Promise<{ found: boolean; path: string | null }> {
   try {
     const resp = await fetch('/api/swmm/status');
-    if (!resp.ok) return false;
+    if (!resp.ok) return { found: false, path: null };
     const data = await resp.json();
-    return data.found === true;
+    const found = data.found === true;
+    // The endpoint reports the path it probed even when nothing is there, so
+    // only surface it once the binary actually exists and is executable —
+    // otherwise the tooltip would point at an engine that cannot run.
+    return {
+      found,
+      path: found && typeof data.path === 'string' && data.path ? data.path : null,
+    };
   } catch {
-    return false;
+    return { found: false, path: null };
   }
+}
+
+export async function checkLocalEngine(): Promise<boolean> {
+  return (await checkLocalEngineInfo()).found;
 }
 
 let wasmModule: any = null;
