@@ -1,0 +1,15 @@
+I pulled the repo (blobless clone, HEAD `65ee955`) so the suggestions are against what's actually in it, not the README — which, by the way, is the most out-of-date thing in the project. It still says "upload and parse `.inp`" with no mention of SWMM6, the two WASM engines, the MCP endpoint, phase space, the 3D viewer, or the consolidated LID report. Anyone landing on the repo sees about 20% of what you built.
+
+Ranked by what I think actually changes the product:
+
+**1. Make the Companion Apps launcher pass the model.** Right now `AppsLauncherDialog.tsx` is a localStorage bookmark list rendering an iframe — the app inside can't see the `.inp` you have open. That's tabs, not consolidation. A ~20-line `postMessage` contract fixes it: parent sends `{type:'swmm:model', inp, out}` on iframe load; the child replies `{type:'swmm:ready', accepts:['inp','out']}`. Then add the same shim to the single-file apps as they get pulled in — Phase Space, the 3D Viewer, the Lengthening Advisor, the SVD spectrum, Solver Anatomy. Each one becomes a lens on the model you're already working on instead of a page that asks you to re-drop files. This is the difference between hosting 100 apps and having one.
+
+**2. Give the MCP server a session.** `server/mcp.ts` exposes two tools and both take the full `.inp` text and re-run the engine every call — so Claude has to ship 20 MB to ask about one node. Add `load_model` returning a handle, then `get_series(handle, element, variable)`, `compare_engines(handle)` returning the 5-vs-6 deltas, and `validate_swmm6_options(inp)` wrapping the gating rules you already encoded. That turns it from a demo into the thing Claude Code drives overnight.
+
+**3. Make AIAssistPanel actually call Claude.** It has no Anthropic call in it — it's rules-based with "coming soon" text at the bottom. You have a server, so a `/api/ai` route with the real `.rpt` error/warning lines, continuity block, and a model summary as context gets you "explain why node J14 floods in *this* run," which is the thing nobody else ships. Grounded in the report, not general chat.
+
+**4. A corpus regression gate.** You already have `roundtrip-audit.ts`, `regression-compare.ts`, `batch-compare.ts` and both engines in-browser. Add a Suite tab that runs the 1729-model corpus through 5 and 6, stores a signed baseline, and flags drift. That's the 2030 suite living inside the tool instead of beside it.
+
+**5. Exportable run manifest.** `ProvenanceBadge`, `IntegrityStatus` and `SyntheticWarning` are already there — extend them to a downloadable manifest: engine name and version read from the `.rpt` header, plus SHA-256 of inp/rpt/out. Every screenshot out of the app becomes self-certifying, and it plugs straight into the Notarized Twin hashing.
+
+Two fast ones while you're in there: the `HANDOVER.md` / `handover.md` pair still collides on any case-insensitive checkout, and the two literal Windows-path filenames at root will break clone on Windows.

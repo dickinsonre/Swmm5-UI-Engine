@@ -1,87 +1,136 @@
 # 🌊 SWMM5 UI Engine
 
-![SWMM5](https://img.shields.io/badge/SWMM5-Engine-blue)
+![SWMM](https://img.shields.io/badge/EPA%20SWMM-5.2.4-blue)
+![OpenSWMM](https://img.shields.io/badge/OpenSWMM-6-8a4ae2)
+![WASM](https://img.shields.io/badge/Engines-WebAssembly-654FF0)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Client-3178C6)
-![C](https://img.shields.io/badge/C-Engine-555555)
 ![Vite](https://img.shields.io/badge/Build-Vite-646CFF)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-A browser-based **UI engine for the EPA Storm Water Management Model (SWMM5)** — load, process, run, and manage SWMM projects through a modern web interface backed by a native SWMM computational engine (with WebAssembly support in progress).
+A browser-based modelling workbench for the **EPA Storm Water Management Model**. Open a `.inp` file, edit the model, run it on any of five engines — including **EPA SWMM 5.2.4 and OpenSWMM 6 compiled to WebAssembly, running entirely in the browser** — then interrogate the results with tools that go well past the standard report: phase-space diagnostics, a calculation-level engine inspector, LID unit animation, 3D network playback, and side-by-side engine comparison.
 
-## About
+No desktop install, no upload step for the in-browser engines: the model never leaves the tab unless you ask it to.
 
-SWMM5 UI Engine pairs a TypeScript/Vite front end with a C-based SWMM5 engine and a server layer that handles `.inp` file parsing, simulation orchestration, and results management. It is designed to make working with SWMM `.inp` models possible directly in the browser — no traditional desktop install required — while still relying on the authentic SWMM5 computational core rather than a re-implementation.
+---
 
-The engine supports extended modeling features including **snow accumulation/melt, pollutant buildup and washoff, and LID (Low Impact Development) controls**, and has been updated to parse newer SWMM input file versions, including engine-side updates to the LID solver logic.
+## Engines
 
-This project is part of Robert Dickinson's broader SWMM5 tooling ecosystem, which spans SWMM3 through SWMM6, XPSWMM, ICM SWMM, and InfoDrainage development.
+The engine is switchable at runtime from the toolbar chip (bottom status bar shows which one is live). Each produces the same `.rpt` / `.out` artifacts, so every downstream view works regardless of which engine ran.
 
-## Architecture
+| Mode | Engine | Runs where |
+|---|---|---|
+| **WASM 5.2.4** | EPA SWMM 5.2.4 compiled to WebAssembly | In the browser, in a web worker |
+| **WASM 6 rel** | OpenSWMM 6 (`swmm6_rel`) compiled to WebAssembly | In the browser, in a web worker |
+| **WASM 6 dev** | OpenSWMM 6 (develop branch) compiled to WebAssembly | In the browser, in a web worker |
+| **Local 5.2.4** | Native `swmm-engine/runswmm` binary | On the machine serving the app |
+| **Remote 5.2.4** | Cloud batch runner service | Off-box, for long or bulk runs |
+| **Mock** | Synthetic results generator | In the browser (UI development only — results are clearly badged as synthetic) |
 
-The system is organized into three cooperating layers:
+Three **comparison modes** run two engines on the same model in one pass and diff the outcome: SWMM 5 vs SWMM 6 release, SWMM 5 vs SWMM 6 develop, and SWMM 6 release vs develop. Differences surface as scatter plots (node depth, link flow, continuity) plus a verdict — match, differs, or inconclusive.
 
-- **Client (`client/`)** — TypeScript + Vite + Tailwind CSS single-page app. Handles `.inp` upload, model editing (subcatchments, nodes, links, LID controls, options), map/table views, and results visualization (time series, profiles, summary tables).
-- **Server (`server/`)** — Node-based orchestration layer using Drizzle ORM for data persistence. Parses uploaded `.inp` files, invokes the native engine, tracks simulation status (exit code, `.out`/`.rpt` validity), and serves results back to the client. Also exposes an MCP (Model Context Protocol) server for programmatic/AI-assisted interaction with models.
-- **Engine (`swmm-engine/`)** — The native SWMM5 computational core written in C (with C++/CMake build support), compiled and invoked as a subprocess or bound module rather than reimplemented in JavaScript, preserving numerical fidelity with the reference EPA SWMM5 engine.
-
-## What's Inside
-
-| Folder | Purpose |
-|---|---|
-| `client/` | Front-end application (TypeScript, Vite, Tailwind CSS) — model editor, map/table views, results viewer |
-| `server/` | Back-end logic for `.inp` parsing, simulation orchestration, MCP server, results management |
-| `swmm-engine/` | Core native SWMM5 engine implementation (C/C++), including updated LID solver logic |
-| `shared/` | Shared TypeScript types and utilities used by both client and server |
-| `script/` & `scripts/` | Build, install, and simulation-support scripts |
-| `docs/` | Documentation, including engine graph variable references |
-| `tests/` | Automated tests, including end-to-end tests (e.g., Table View context-menu keyboard navigation) |
-| `attached_assets/` | Project roadmap, screenshots, and supporting assets |
-| `.agents/` | Handover notes and agent/automation documentation (e.g., git-subrepl remotes) |
-
-## Tech Stack
-
-- **Frontend:** TypeScript, Vite, Tailwind CSS
-- **Backend:** Node.js server layer with Drizzle ORM; MCP server for tool/AI integration
-- **Engine:** SWMM5 core in C, with C++/CMake build support
-- **Languages:** HTML (65%), TypeScript (17%), C (16%), JavaScript, CSS, C++
+> **SWMM 6 LID caveat.** The OpenSWMM 6 port's LID module is incomplete: several control parameters are unconverted and its flux equations are unit-inconsistent. **Do not trust LID results from the SWMM 6 engines.** Use WASM 5.2.4 or the native engine for any LID work. See `.agents/memory/swmm6-lid-port-gaps.md`.
 
 ## Features
 
-- Upload and parse SWMM5 `.inp` input files, with support for newer file format versions
-- Run full SWMM simulations via the bundled native C engine (not a JS reimplementation)
-- Strict simulation success classification — checks exit code, `.out` file size, and result validity rather than assuming success
-- Extended variable support for **snow**, **pollutant**, and **LID** simulations, including updated LID solver logic
-- Browser-based model editor and table/map views for managing subcatchments, nodes, links, and controls
-- MCP server integration for AI-assisted or scripted model interaction
-- Bundled demo/sample projects for quick evaluation
+**Model editing**
+- Full `.inp` parse and write, with a round-trip audit that reports anything the writer changes
+- Property editor, section grid views, group edit, transect and curve/time-series editors
+- Network map with theming, profile plots, find-object, split-screen compare
+- Import from CSV (nodes/links), DXF and GeoJSON; export to CSV and DXF
+- Autosave, undo/redo, and provenance badges tracking where each result came from
+- 20 bundled sample models (EPA Extran 1–10, Greenville US/SI, User 1–5)
+- Open models straight from a GitHub repository by browsing its folders
 
-## Getting Started
+**Results and visualisation**
+- Time-series and table views, frequency analysis, statistics reports, calibration overlays
+- **Phase-space diagnostics** — flow–depth trajectories, derivative fields and instability indexes that expose oscillation, chatter and reversals that ordinary time-series plots hide, plus an attention sweep that ranks the worst-behaved links
+- **3D viewer** — the network rendered in three dimensions with animated results playback and GIF export
+- **LID viewer** — reads the consolidated `.lid` detailed-output report (one file covering every LID unit) and animates each unit's water balance layer by layer: surface, pavement, soil, storage, drain
+- Diagram gallery and schematic image export
 
-```
-# Clone the repository
+**Diagnostics**
+- **Engine Health** dashboard — continuity errors, timestep explorer, and the assumptions the engine actually applied, parsed from the `.rpt`
+- **Engine Inspector** — a calculation microscope that reproduces the engine's own arithmetic for a chosen element so you can see how a number was reached
+- **Model Health** — pre-run checks for the classic SWMM modelling mistakes
+- **CFL analysis** — Courant-based stable-timestep estimates per conduit, with discretisation suggestions
+- **Round-trip audit** — reparses everything the app writes and reports any field it altered, omitted or invented
+- **Diff tool** — compare two `.inp` files section by section
+- **Batch runner** — queue many models across engines, with cancel, run in a worker so the UI stays responsive
+- **AI Assist** panel — rule-based model review that runs locally; no external service, no data leaves the browser
+
+## MCP endpoint
+
+The server exposes a Model Context Protocol endpoint at **`POST /mcp`**, so an AI agent can run SWMM directly:
+
+| Tool | Purpose |
+|---|---|
+| `run_swmm_simulation` | Run a full `.inp` on the native engine; returns status, error/warning lines and continuity errors, optionally the whole `.rpt` |
+| `get_report_section` | Run a model and return only named report sections (e.g. "Node Depth Summary", "Flow Routing Continuity") |
+| `engine_status` | Report whether the native engine is available on this server |
+
+Set the `MCP_API_KEY` secret to require it as a bearer token. **If it is unset the endpoint accepts unauthenticated calls**, so set it before exposing a deployment publicly.
+
+## HTTP API
+
+| Route | Purpose |
+|---|---|
+| `GET /api/swmm/status` | Native engine availability and the path it was probed at |
+| `POST /api/swmm/run` | Run a model on the native engine |
+| `POST /api/swmm/run-or-proxy` | Run natively, or forward to the cloud runner if the native engine is absent |
+| `GET /api/swmm/out/:id` | Fetch a parked large `.out` result as gzip |
+| `/api/swmm-proxy/*` | Cloud batch runner: upload, start, status, results |
+| `GET /api/github-browse`, `GET /api/fetch-github` | Browse and load `.inp` files from a GitHub repository |
+
+## Repository layout
+
+| Folder | Purpose |
+|---|---|
+| `client/` | React + Vite front end (`client/src/pages/swmm-ui.tsx` is the workbench shell) |
+| `client/public/` | WASM engines (`swmm_engine.wasm`, `wasm6/`, `wasm6dev/`), the 3D viewer, sample models, help content |
+| `server/` | Express server: engine orchestration, cloud proxy, GitHub browsing, MCP |
+| `swmm-engine/` | Native SWMM sources and the `runswmm` binary, plus engine patches |
+| `shared/` | Types shared by client and server |
+| `script/`, `scripts/` | Build script; parity and post-merge helpers |
+| `tests/` | Automated suites — see below |
+| `docs/` | Reference notes (e.g. engine graph variables) |
+| `.agents/memory/` | Engineering notes on engine quirks, file formats and build recipes |
+
+## Getting started
+
+```bash
 git clone https://github.com/dickinsonre/Swmm5-UI-Engine.git
 cd Swmm5-UI-Engine
-
-# Install dependencies
 npm install
-
-# Start the development server
-npm run dev
+npm run dev          # serves the app on http://localhost:5000
 ```
 
-> Check `package.json` for the exact available scripts (`dev`, `build`, `preview`). The native engine in `swmm-engine/` may require a C/C++ toolchain (CMake) for local builds.
+The in-browser WASM engines work immediately. The **Local** engine additionally needs `swmm-engine/runswmm` built for your platform; if it is missing, the app falls back to WASM and the engine tooltip tells you where it looked.
 
-## Testing
+| Script | Does |
+|---|---|
+| `npm run dev` | Development server (client + API on port 5000) |
+| `npm run check` | TypeScript typecheck |
+| `npm test` | Six headless suites: round-trip audit, calibration, CFL, engine scatter, batch verdict, binary `.out` offsets |
+| `npm run test:e2e` | Browser end-to-end suites — requires the app already running |
+| `npm run build` | Typecheck, run tests, then bundle. A failing check or suite blocks the build |
 
-Automated tests live in `tests/`, covering both engine behavior and UI interactions (e.g., keyboard navigation in the Table View context menu). Run tests via the script defined in `package.json` (check for a `test` entry) before submitting changes.
+## Tech stack
 
-## Roadmap
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Radix UI, wouter, TanStack Query, Recharts
+- **Backend:** Node 20 + Express (TypeScript, run through `tsx`). Stateless — no database
+- **Engines:** EPA SWMM 5.2.4 (C) and OpenSWMM 6 (C++), native and compiled to WebAssembly via Emscripten
+- **3D:** three.js
 
-See `attached_assets/` and `.agents/` for the current roadmap and handover notes, which cover planned engine enhancements (e.g., WebAssembly builds), UI improvements, and MCP server capabilities.
+## Known limitations
 
-## Contributing
+- Binary `.out` results are loaded up to **5,000 reporting steps**; longer runs are currently truncated
+- Pollutant columns are read from the `.out` header but water-quality series are not yet surfaced in the UI
+- LID results from the SWMM 6 engines are not trustworthy (see above)
+- Large results are held per server instance, so a horizontally scaled deployment can lose track of one
 
-This is currently a single-maintainer project with Replit Agent assistance for iterative development. Issues and pull requests are welcome; please review `HANDOVER.md` and `.agents/` documentation for context on in-progress work before contributing.
+## Credits
+
+EPA SWMM is developed by the US Environmental Protection Agency; OpenSWMM 6 by the HydroCouple/OpenSWMM project. This project is part of Robert Dickinson's broader SWMM tooling ecosystem.
 
 ## License
 

@@ -10,3 +10,4 @@
 - [Consolidated .lid report + LID viewer](lid-consolidated-report.md) — SWMM5 WASM writes ONE .lid file for all LID units; parity gates via scripts/parity-lid.cjs before shipping any engine rebuild.
 - [Dead subrepl remotes break the Git pane](git-subrepl-remotes.md) — "Unknown Git Error" while shell git is fine means dead `subrepl-*` remotes hanging `fetch --all`; remove them.
 - [SWMM .rpt heading parsing](rpt-heading-parsing.md) — match headings with startsWith (trailing column labels!) and never break on the **** underline before content; critical-elements lists mix Node and Link rows.
+- [Companion app model handshake](companion-app-handshake.md) — swmm:ready/swmm:model contract; never auto-send binary .out, one auto-delivery per document, match e.source not e.origin.

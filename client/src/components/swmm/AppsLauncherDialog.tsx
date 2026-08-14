@@ -1,12 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { LayoutGrid, ExternalLink, Plus, Trash2, Pencil, Check, X, Globe } from 'lucide-react';
+import { LayoutGrid, ExternalLink, Plus, Trash2, Pencil, Check, X, Globe, Share2 } from 'lucide-react';
+import type { SwmmProject, SimulationResults } from '@/lib/swmm-types';
+import { projectToInp } from '@/lib/inp-parser';
 
 interface AppLink {
   name: string;
   url: string;
 }
+
+/**
+ * Companion-app model handshake
+ * ------------------------------------------------------------------
+ * A companion app announces itself once it can accept data:
+ *
+ *   parent.postMessage({ type: 'swmm:ready', accepts: ['inp', 'out'] }, '*')
+ *
+ * and this dialog replies to that frame with the model currently open:
+ *
+ *   { type: 'swmm:model', name, engine, inp?, rpt?, out?, lid? }
+ *
+ * `accepts` filters the payload (omit it to receive everything available).
+ * `out` arrives as a Uint8Array via structured clone — no base64 round trip.
+ *
+ * Nothing is sent to a frame that has not asked for it: these are
+ * user-supplied third-party URLs, so the model only leaves the tab on a
+ * child's explicit request or the user's explicit "Send model" click.
+ * Documented for app authors in docs/companion-app-contract.md.
+ */
+type ShareStatus = 'idle' | 'ready' | 'sent' | 'no-model';
 
 const DEFAULT_APPS: AppLink[] = [
   { name: 'SWMM5/SWMM6 Phase Space', url: 'https://swmm5-swmm6-phase-space.netlify.app/' },
@@ -39,9 +62,12 @@ function isValidUrl(u: string): boolean {
   } catch { return false; }
 }
 
-export default function AppsLauncherDialog({ open, onOpenChange }: {
+export default function AppsLauncherDialog({ open, onOpenChange, project, results, projectName }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  project?: SwmmProject | null;
+  results?: SimulationResults | null;
+  projectName?: string;
 }) {
   const [apps, setApps] = useState<AppLink[]>(loadApps);
   const [activeUrl, setActiveUrl] = useState<string | null>(null);
@@ -49,6 +75,64 @@ export default function AppsLauncherDialog({ open, onOpenChange }: {
   const [editName, setEditName] = useState('');
   const [editUrl, setEditUrl] = useState('');
   const [urlError, setUrlError] = useState(false);
+  const [shareStatus, setShareStatus] = useState<ShareStatus>('idle');
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const autoSentRef = useRef(false);
+  // Latest model/results without re-registering the message listener on every edit.
+  const modelRef = useRef({ project, results, projectName });
+  modelRef.current = { project, results, projectName };
+
+  const sendModel = (accepts?: string[], opts?: { includeBinary?: boolean }) => {
+    const win = iframeRef.current?.contentWindow;
+    const { project: proj, results: res, projectName: pName } = modelRef.current;
+    if (!win || !proj) { setShareStatus('no-model'); return; }
+    const includeBinary = opts?.includeBinary === true;
+    const want = (k: string) =>
+      (!Array.isArray(accepts) || accepts.length === 0 || accepts.includes(k)) &&
+      (k !== 'out' || includeBinary);
+    try {
+      const payload: Record<string, unknown> = {
+        type: 'swmm:model',
+        name: (pName || proj.title?.[0] || 'model') + '.inp',
+        engine: res?.engineUsed ?? null,
+      };
+      if (want('inp')) payload.inp = projectToInp(proj);
+      if (want('rpt') && res?.reportContent) payload.rpt = res.reportContent;
+      if (want('out') && res?.outRaw) payload.out = res.outRaw;
+      if (want('lid') && res?.lidReportText) payload.lid = res.lidReportText;
+      // Companion apps are third-party origins (and the sandbox gives them an
+      // opaque one), so '*' is the only workable target here. We only ever get
+      // to this line for a frame that asked, or a send the user clicked.
+      win.postMessage(payload, '*');
+      setShareStatus('sent');
+    } catch (e) {
+      console.warn('Companion apps: failed to send model', e);
+    }
+  };
+
+  // Listen for a companion app announcing that it can take the model.
+  useEffect(() => {
+    if (!open) return;
+    const onMsg = (e: MessageEvent) => {
+      // The only usable authentication for an opaque-origin sandboxed frame:
+      // its WindowProxy. A nested frame inside it has a different one.
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const d = e.data;
+      if (!d || typeof d !== 'object' || d.type !== 'swmm:ready') return;
+      // One automatic delivery per document. Serializing the model is not
+      // cheap, so a frame that repeats the announcement (buggy or hostile)
+      // must not be able to make the parent do it over and over.
+      if (autoSentRef.current) return;
+      autoSentRef.current = true;
+      setShareStatus('ready');
+      sendModel(Array.isArray(d.accepts) ? d.accepts : undefined);
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [open]);
+
+  // A different app (or a reopened dialog) starts from a clean handshake.
+  useEffect(() => { setShareStatus('idle'); autoSentRef.current = false; }, [activeUrl, open]);
 
   useEffect(() => {
     if (open) {
@@ -208,14 +292,32 @@ export default function AppsLauncherDialog({ open, onOpenChange }: {
                 </div>
                 <iframe
                   key={activeUrl}
+                  ref={iframeRef}
                   src={activeUrl}
                   title="Companion app"
                   className="flex-1 w-full border-0"
                   sandbox="allow-scripts allow-forms allow-popups allow-downloads"
                   data-testid="iframe-app"
                 />
-                <div className="shrink-0 px-3 py-1 border-t border-[#e0e0e8] bg-[#f8f8fa] text-[9.5px] text-[#8a8a96]">
-                  If the app appears blank, its host may block embedding — use "Open in new tab" instead.
+                <div className="shrink-0 flex items-center gap-2 px-3 py-1 border-t border-[#e0e0e8] bg-[#f8f8fa] text-[9.5px] text-[#8a8a96]">
+                  <span className="flex-1 truncate" data-testid="text-app-share-status">
+                    {shareStatus === 'sent'
+                      ? `Sent ${projectName || 'the open model'} to this app.`
+                      : shareStatus === 'no-model'
+                        ? 'No model open to send.'
+                        : shareStatus === 'ready'
+                          ? 'App is ready for the model…'
+                          : 'This app has not asked for the model. If it appears blank, its host may block embedding — use "Open in new tab".'}
+                  </span>
+                  <button
+                    onClick={() => sendModel(undefined, { includeBinary: true })}
+                    disabled={!project}
+                    className="flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded border border-[#c0c8d8] text-[9.5px] text-[#2c6eb5] hover:bg-[#eef2f8] disabled:opacity-40 disabled:hover:bg-transparent"
+                    title="Push the open model into this app, including the binary .out results (which are never sent automatically)"
+                    data-testid="btn-app-send-model"
+                  >
+                    <Share2 className="w-3 h-3" /> Send model
+                  </button>
                 </div>
               </>
             ) : (

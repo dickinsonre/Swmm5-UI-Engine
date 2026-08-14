@@ -4583,6 +4583,9 @@ export default function SwmmUI() {
       <AppsLauncherDialog
         open={openDialog === 'appsLauncher'}
         onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
+        results={results}
+        projectName={fileName?.replace(/\.inp$/i, '')}
       />
 
       <HelpTutorialDialog

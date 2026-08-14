@@ -39,6 +39,7 @@ run_suite "Batch Worker & Cancel"       tests/e2e/batch-worker.test.ts
 run_suite "Report Summary Gating"       tests/e2e/report-summary-gating.ts
 run_suite "LID Viewer Resize"           tests/e2e/lid-viewer-resize.ts
 run_suite "Table Context Menu Keyboard" tests/e2e/table-context-menu-kbd.ts
+run_suite "Companion App Handshake"     tests/e2e/companion-app-handshake.ts
 
 echo ""
 echo "══════════════════════════════════════════"
