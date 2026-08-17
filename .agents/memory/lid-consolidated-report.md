@@ -10,6 +10,8 @@ The vendored SWMM 5.2.4 source (`swmm-engine/Stormwater-Management-Model-5.2.4`)
 **How to apply / verify after any engine rebuild:**
 - Rebuild `client/public/swmm_engine.js|.wasm` with emcc classic (NOT MODULARIZE) preserving the existing `_swmm_*` export list (pre-mod backup in `swmm-engine/backup/`).
 - Gates: `node scripts/parity-lid.cjs <model.lid> tests/fixtures/golden-lid` (golden = stock per-unit files for `tests/fixtures/lid_test.inp`, produced by native runswmm) must PASS, and non-LID samples must produce byte-identical `.out` vs previous build.
+- The automated gate **runs the WASM live** (classic Emscripten build loads fine under node via a `vm` sandbox with a pre-seeded `Module`: `wasmBinary`, `noInitialRun`, `locateFile` → the real .wasm; ~50ms for the fixture model). Regenerate the committed consolidated fixture only as provenance.
+- **Never build a parity gate that reconstructs one side from the goldens it compares against** — it is self-fulfilling and cannot detect engine drift, which is the only thing it exists to catch. Two genuinely different engines must sit on the two sides.
 - Client: `.lid` text flows as `SimulationResults.lidReportText` (direct + worker SWMM5 paths); viewer = `client/src/components/swmm/LidViewerDialog.tsx` (toolbar `btn-lid-viewer`, only when lidReportText present). Viewer has size budgets (60MB text / 20k rows/unit) — keep them.
 - Native `runswmm` binary is stock — server/local engine runs still write per-unit files and get no viewer.
 

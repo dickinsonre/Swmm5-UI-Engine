@@ -43,7 +43,8 @@ import DiffToolDialog from '@/components/swmm/DiffToolDialog';
 import BatchRunnerDialog from '@/components/swmm/BatchRunnerDialog';
 import type { BatchEngineId } from '@/lib/batch-compare';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
-import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark, ReportSummaryBanner, ReportSummaryLabel, ReportSummaryNotice, REPORT_SUMMARY_MESSAGE, TruncatedResultsBanner, TruncatedResultsLabel, TruncatedResultsNotice, getTruncationInfo, truncationMessage } from '@/components/swmm/SyntheticWarning';
+import { SyntheticResultsBanner, SyntheticResultsLabel, drawSyntheticWatermark, ReportSummaryBanner, ReportSummaryLabel, ReportSummaryNotice, REPORT_SUMMARY_MESSAGE, TruncatedResultsBanner, TruncatedResultsLabel, TruncatedResultsNotice, getTruncationInfo, truncationMessage } from '@/components/swmm/SyntheticWarning';
+import { isSyntheticResults, syntheticFilename, markSyntheticText } from '@/lib/synthetic-export';
 import { medianStepSec, stepWeightsSec } from '@/lib/step-timing';
 import { shouldWarnSwmm6Lid, SWMM6_LID_WARNING_TITLE, SWMM6_LID_WARNING_MESSAGE } from '@/lib/swmm6-lid-warning';
 import { computeIntegrityInfo, IntegrityChip, IntegrityReportDialog, RecoveryDialog } from '@/components/swmm/IntegrityStatus';
@@ -856,12 +857,12 @@ export default function SwmmUI() {
   const handleExit = useCallback(() => {
     const doExit = () => {
       const base = (fileName || 'model').replace(/\.inp$/i, '');
-      const synthetic = results?.engineUsed === 'mock';
+      const synthetic = isSyntheticResults(results);
       const files: { name: string; data: BlobPart; type: string }[] = [];
       const text = projectToInp(project);
       files.push({ name: `${base}.inp`, data: text, type: 'text/plain' });
       const rpt = results?.reportContent ?? reportContent;
-      if (rpt) files.push({ name: `${base}${synthetic ? '_SYNTHETIC' : ''}.rpt`, data: rpt, type: 'text/plain' });
+      if (rpt) files.push({ name: syntheticFilename(base, '.rpt', synthetic), data: markSyntheticText(rpt, synthetic), type: 'text/plain' });
       if (results?.outRaw && results.outRaw.length > 0 && !synthetic) {
         // Copy into a plain ArrayBuffer so the Blob is backed by exactly these bytes.
         files.push({ name: `${base}.out`, data: results.outRaw.slice().buffer as ArrayBuffer, type: 'application/octet-stream' });
@@ -1170,7 +1171,7 @@ export default function SwmmUI() {
     const mapCanvas = networkMapRef.current?.getCanvas();
     if (!mapCanvas) return null;
 
-    const isMock = results?.engineUsed === 'mock';
+    const isMock = isSyntheticResults(results);
 
     if (!includeLegend) {
       if (!isMock) return mapCanvas;
@@ -4143,7 +4144,7 @@ export default function SwmmUI() {
               onClick={() => {
                 const src = reportViewMode === 'inp' ? activeInpContent : activeReportContent;
                 if (src) {
-                  const text = reportViewMode !== 'inp' && results?.engineUsed === 'mock' ? SYNTHETIC_TEXT_HEADER + src : src;
+                  const text = markSyntheticText(src, reportViewMode !== 'inp' && isSyntheticResults(results));
                   navigator.clipboard.writeText(text);
                   toast({ title: 'Copied', description: reportViewMode === 'inp' ? 'Generated .inp copied to clipboard' : 'Report copied to clipboard' });
                 }
@@ -4160,14 +4161,17 @@ export default function SwmmUI() {
                 const isInp = reportViewMode === 'inp';
                 const src = isInp ? activeInpContent : activeReportContent;
                 if (src) {
-                  const isMock = !isInp && results?.engineUsed === 'mock';
-                  const text = isMock ? SYNTHETIC_TEXT_HEADER + src : src;
+                  const isMock = !isInp && isSyntheticResults(results);
+                  const text = markSyntheticText(src, isMock);
                   const blob = new Blob([text], { type: 'text/plain' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
                   const engineSuffix = compareReportContent ? (reportEngineTab === '6' ? compareInfo.suffixB : compareInfo.suffixA) : '';
-                  a.download = (fileName || 'model').replace(/\.inp$/i, '') + engineSuffix + (isInp ? '_generated.inp' : isMock ? '_SYNTHETIC.rpt' : '.rpt');
+                  const base = (fileName || 'model').replace(/\.inp$/i, '');
+                  a.download = isInp
+                    ? `${base}${engineSuffix}_generated.inp`
+                    : syntheticFilename(base, '.rpt', isMock, engineSuffix);
                   a.click();
                   URL.revokeObjectURL(url);
                 }

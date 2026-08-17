@@ -34,6 +34,12 @@ run_suite "Binary .out Offset Parsing" tests/out-offset.test.ts
 run_suite "SWMM6 LID Trust Warning"    tests/swmm6-lid-warning.test.ts
 run_suite "Long-Run .out Decimation"   tests/out-truncation.test.ts
 run_suite "Sampled-Series Step Timing" tests/step-timing.test.ts
+run_suite "Engine Fallback & Limits"   tests/engine-fallback.test.ts
+run_suite "Synthetic Export Marking"   tests/synthetic-export.test.ts
+run_suite "No Fabricated Time Series"  tests/no-fabricated-series.test.ts
+run_suite "SWMM6 Option Gating"        tests/swmm6-option-gating.test.ts
+run_suite "Report Parsing (5 and 6)"   tests/rpt-parsing.test.ts
+run_suite "LID Parity Gate"            tests/lid-parity.test.ts
 
 # NOTE: tests/e2e/* are deliberately NOT run here. They drive a real browser
 # against a running server (BASE_URL, default http://127.0.0.1:5000), so they

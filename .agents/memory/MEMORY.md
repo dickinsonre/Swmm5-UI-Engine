@@ -11,4 +11,5 @@
 - [Dead subrepl remotes break the Git pane](git-subrepl-remotes.md) — "Unknown Git Error" while shell git is fine means dead `subrepl-*` remotes hanging `fetch --all`; remove them.
 - [SWMM .rpt heading parsing](rpt-heading-parsing.md) — match headings with startsWith (trailing column labels!) and never break on the **** underline before content; critical-elements lists mix Node and Link rows.
 - [Companion app model handshake](companion-app-handshake.md) — swmm:ready/swmm:model contract; never auto-send binary .out, one auto-delivery per document, match e.source not e.origin.
+- [Booting the server from tests](server-bootstrap-in-tests.md) — never gate startup on import.meta entrypoint detection (esbuild CJS erases it → dead deploy); tests bind loopback or .replit grows port entries.
 - [Sampled time series](sampled-time-series.md) — long .out runs are decimated (uneven spacing!), never cut; never turn sample counts into durations with one derived dt.

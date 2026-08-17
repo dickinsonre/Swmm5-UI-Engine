@@ -8,7 +8,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table2, ArrowUpAZ, ArrowDownAZ, Copy, Columns3, AlignJustify, FileText, Filter, Printer, LineChart, BarChart3, ScatterChart, Activity, RefreshCw, X } from 'lucide-react';
 import { LineChart as RLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ScatterChart as RScatterChart, Scatter } from 'recharts';
 import ProvenanceBadge from './ProvenanceBadge';
-import { SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, TruncatedResultsLabel, getTruncationInfo } from './SyntheticWarning';
+import { SyntheticResultsLabel, TruncatedResultsLabel, getTruncationInfo } from './SyntheticWarning';
+import { isSyntheticResults, markSyntheticText } from '@/lib/synthetic-export';
 import type { VarScope } from '@/lib/swmm-variables';
 import { engineShortName } from '@/lib/swmm-engine';
 
@@ -239,7 +240,7 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
       rows.push(Array.from(tr.querySelectorAll('td')).map(td => td.textContent || ''));
     });
     const body = rows.map(r => r.join('\t')).join('\n');
-    const text = results.engineUsed === 'mock' ? SYNTHETIC_TEXT_HEADER + body : body;
+    const text = markSyntheticText(body, isSyntheticResults(results));
     navigator.clipboard.writeText(text).catch(() => {});
   }, [results, closeCtx]);
 

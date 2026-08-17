@@ -859,7 +859,7 @@ export function createRemoteEngine(): SwmmEngine {
  * and time-series features are gated in the UI via the 'report-summary'
  * fidelity flag.
  */
-function parseRptToResults(rptText: string, project: SwmmProject): SimulationResults {
+export function parseRptToResults(rptText: string, project: SwmmProject): SimulationResults {
   let runoffCE = 0;
   let flowCE = 0;
   const ce = extractContinuityErrors(rptText);

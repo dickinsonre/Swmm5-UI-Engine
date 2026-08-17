@@ -61,9 +61,19 @@ function parseContinuityBlock(lines: string[], startIdx: number): { errorPct: nu
   return { errorPct, rows };
 }
 
+// The heading of a diagnostic list is boxed by "****" rows, so startIdx points
+// at the heading's own underline. Skip that leading underline, but stop at the
+// NEXT "****" row — otherwise the scan runs into the following section and
+// misattributes its rows (e.g. an instability "Link C1 (1)" leaking into an
+// empty "Time-Step Critical Elements" list).
+function isSectionDivider(line: string): boolean {
+  return /^\s*\*{4,}\s*$/.test(line);
+}
+
 function parseIdPctList(lines: string[], startIdx: number, kind: 'Node' | 'Link'): { id: string; pct: number }[] {
   const out: { id: string; pct: number }[] = [];
   for (let i = startIdx; i < Math.min(lines.length, startIdx + 20); i++) {
+    if (isSectionDivider(lines[i])) { if (out.length > 0 || i > startIdx) break; else continue; }
     const m = lines[i].match(new RegExp(`^\\s+${kind}\\s+(\\S+)\\s+\\(([-\\d.]+)%?\\)`));
     if (m) out.push({ id: m[1], pct: parseFloat(m[2]) });
     else if (out.length > 0) break;
@@ -75,6 +85,7 @@ function parseIdPctList(lines: string[], startIdx: number, kind: 'Node' | 'Link'
 function parseCriticalElements(lines: string[], startIdx: number): { id: string; pct: number; kind: 'node' | 'link' }[] {
   const out: { id: string; pct: number; kind: 'node' | 'link' }[] = [];
   for (let i = startIdx; i < Math.min(lines.length, startIdx + 20); i++) {
+    if (isSectionDivider(lines[i])) { if (out.length > 0 || i > startIdx) break; else continue; }
     const m = lines[i].match(/^\s+(Node|Link)\s+(\S+)\s+\(([-\d.]+)%?\)/);
     if (m) out.push({ id: m[2], pct: parseFloat(m[3]), kind: m[1].toLowerCase() as 'node' | 'link' });
     else if (out.length > 0) break;
@@ -125,6 +136,7 @@ export function parseRptEngineMetrics(rpt: string): RptEngineMetrics {
   idx = findHeading('Highest Flow Instability Indexes');
   if (idx >= 0) {
     for (let i = idx + 1; i < Math.min(lines.length, idx + 20); i++) {
+      if (isSectionDivider(lines[i])) { if (metrics.instabilityLinks.length > 0 || i > idx + 1) break; else continue; }
       const m = lines[i].match(/^\s+Link\s+(\S+)\s+\((\d+)\)/);
       if (m) metrics.instabilityLinks.push({ id: m[1], index: parseInt(m[2], 10) });
       else if (metrics.instabilityLinks.length > 0) break;
