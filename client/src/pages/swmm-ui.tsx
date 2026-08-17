@@ -43,7 +43,8 @@ import DiffToolDialog from '@/components/swmm/DiffToolDialog';
 import BatchRunnerDialog from '@/components/swmm/BatchRunnerDialog';
 import type { BatchEngineId } from '@/lib/batch-compare';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
-import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark, ReportSummaryBanner, ReportSummaryLabel, ReportSummaryNotice, REPORT_SUMMARY_MESSAGE } from '@/components/swmm/SyntheticWarning';
+import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark, ReportSummaryBanner, ReportSummaryLabel, ReportSummaryNotice, REPORT_SUMMARY_MESSAGE, TruncatedResultsBanner, TruncatedResultsLabel, TruncatedResultsNotice, getTruncationInfo, truncationMessage } from '@/components/swmm/SyntheticWarning';
+import { medianStepSec, stepWeightsSec } from '@/lib/step-timing';
 import { shouldWarnSwmm6Lid, SWMM6_LID_WARNING_TITLE, SWMM6_LID_WARNING_MESSAGE } from '@/lib/swmm6-lid-warning';
 import { computeIntegrityInfo, IntegrityChip, IntegrityReportDialog, RecoveryDialog } from '@/components/swmm/IntegrityStatus';
 import { buildModelHealthReport } from '@/lib/model-health';
@@ -585,6 +586,10 @@ export default function SwmmUI() {
   // Report-summary results (rpt-only, no binary .out) have NO time series;
   // all time-series analysis tools are gated off with an explanatory toast.
   const reportSummaryOnly = results?.fidelity === 'report-summary';
+  // Non-null only when the engine wrote more reporting periods than were loaded.
+  const truncationInfo = useMemo(() => getTruncationInfo(results), [results]);
+  // A comparison run can be sampled independently of the primary run.
+  const compareTruncationInfo = useMemo(() => getTruncationInfo(compareResults), [compareResults]);
   const blockReportSummaryTool = useCallback((feature: string) => {
     toast({ title: `${feature} Unavailable`, description: REPORT_SUMMARY_MESSAGE });
   }, [toast]);
@@ -2337,6 +2342,16 @@ export default function SwmmUI() {
                 No time series — report summary only
               </span>
             )}
+            {truncationInfo && (
+              <span
+                className="text-[9px] sm:text-[10px] font-bold shrink-0 px-2 py-0.5 rounded-sm"
+                style={{ background: '#eef4fd', border: '1px solid #9dbde8', color: '#1c4b8a' }}
+                title={truncationMessage(truncationInfo)}
+                data-testid="text-animation-sampled"
+              >
+                Sampled 1-in-{truncationInfo.stride}
+              </span>
+            )}
             {results && results.timeSteps.length > 0 && (
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <input
@@ -2712,6 +2727,7 @@ export default function SwmmUI() {
 
       {results?.engineUsed === 'mock' && <SyntheticResultsBanner />}
       {results?.fidelity === 'report-summary' && <ReportSummaryBanner />}
+      {truncationInfo && <TruncatedResultsBanner info={truncationInfo} />}
 
       <div className="flex-1 flex overflow-hidden relative">
         {isMobile && mobilePanel !== 'none' && (
@@ -4172,6 +4188,7 @@ export default function SwmmUI() {
               <ArrowLeftRight className="w-4 h-4" /> Profile Plot
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
               {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
+              {truncationInfo && <TruncatedResultsLabel info={truncationInfo} />}
             </DialogTitle>
             <DialogDescription>Select conduits to define a longitudinal path and view the profile.</DialogDescription>
           </DialogHeader>
@@ -4188,6 +4205,8 @@ export default function SwmmUI() {
               <TrendingUp className="w-4 h-4" /> Time Series Graph
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
               {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
+              {truncationInfo && <TruncatedResultsLabel info={truncationInfo} />}
+              {compareTruncationInfo && <TruncatedResultsLabel info={compareTruncationInfo} scope="compare" testId="label-truncated-compare" />}
             </DialogTitle>
             <DialogDescription>View simulation results over time for any node, link, or subcatchment.</DialogDescription>
           </DialogHeader>
@@ -4237,6 +4256,7 @@ export default function SwmmUI() {
               <Calculator className="w-4 h-4" /> Statistics Report
               {results?.engineUsed === 'mock' && <SyntheticResultsLabel />}
               {results?.fidelity === 'report-summary' && <ReportSummaryLabel />}
+              {truncationInfo && <TruncatedResultsLabel info={truncationInfo} />}
             </DialogTitle>
             <DialogDescription>Define statistical analysis parameters for simulation results.</DialogDescription>
           </DialogHeader>
@@ -5067,6 +5087,7 @@ function StatisticsReportContent({ project, results, selectedObj }: {
     : 'node'
   );
   const [objectName, setObjectName] = useState(selectedObj?.id || '');
+  const statsTruncation = useMemo(() => getTruncationInfo(results), [results]);
   const [variable, setVariable] = useState('');
   const [eventPeriod, setEventPeriod] = useState<'daily' | 'monthly' | 'event'>('daily');
   const [statistic, setStatistic] = useState('mean');
@@ -5183,7 +5204,10 @@ function StatisticsReportContent({ project, results, selectedObj }: {
       return;
     }
 
-    const dtHours = values.length > 1 ? (values[1].time - values[0].time) / 3600 : 1;
+    // Median gap, not the first one: a decimated series (long runs are sampled)
+    // ends on a short interval that would skew every event duration.
+    const dtHours = (medianStepSec(values, 3600) / 3600) || 1;
+    const sampleHours = stepWeightsSec(values, 3600).map(s => s / 3600);
 
     const events: { startIdx: number; endIdx: number; values: number[] }[] = [];
 
@@ -5208,14 +5232,17 @@ function StatisticsReportContent({ project, results, selectedObj }: {
     } else {
       let inEvent = false;
       let currentEvent: { startIdx: number; endIdx: number; values: number[] } | null = null;
-      let gapSteps = 0;
-      const sepSteps = Math.max(1, Math.round(sepHours / dtHours));
+      // Elapsed time since the last above-threshold sample, compared directly
+      // with the separation setting. Counting samples instead would misjudge
+      // the ragged closing interval of a decimated series.
+      const sepSec = sepHours * 3600;
 
       for (let i = 0; i < values.length; i++) {
         const aboveThresh = Math.abs(values[i].val) > varThresh;
         if (aboveThresh) {
           if (!inEvent) {
-            if (currentEvent && gapSteps < sepSteps) {
+            const gapSec = currentEvent ? values[i].time - values[currentEvent.endIdx].time : Infinity;
+            if (currentEvent && gapSec < sepSec) {
               for (let g = currentEvent.endIdx + 1; g <= i; g++) currentEvent.values.push(values[g].val);
               currentEvent.endIdx = i;
             } else {
@@ -5227,28 +5254,25 @@ function StatisticsReportContent({ project, results, selectedObj }: {
             currentEvent.endIdx = i;
             currentEvent.values.push(values[i].val);
           }
-          gapSteps = 0;
         } else {
-          if (inEvent) {
-            inEvent = false;
-            gapSteps = 0;
-          }
-          gapSteps++;
+          inEvent = false;
         }
       }
       if (currentEvent) events.push(currentEvent);
     }
 
-    const filteredEvents = events.filter(e => {
-      const eventVol = e.values.reduce((s, v) => s + Math.abs(v), 0) * dtHours;
-      return eventVol >= volThresh;
-    });
+    // e.values[k] is the sample at index e.startIdx + k, so each contributes the
+    // hours IT represents — correct on an unevenly sampled (decimated) series.
+    const eventIntegral = (e: { startIdx: number; values: number[] }, abs: boolean) =>
+      e.values.reduce((s, v, k) => s + (abs ? Math.abs(v) : v) * (sampleHours[e.startIdx + k] ?? dtHours), 0);
+
+    const filteredEvents = events.filter(e => eventIntegral(e, true) >= volThresh);
 
     const eventRows = filteredEvents.map(e => {
       const peak = e.values.reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a, 0);
       const mean = e.values.reduce((s, v) => s + v, 0) / e.values.length;
-      const total = e.values.reduce((s, v) => s + v, 0) * dtHours;
-      const duration = (e.endIdx - e.startIdx) * dtHours;
+      const total = eventIntegral(e, false);
+      const duration = (values[e.endIdx].time - values[e.startIdx].time) / 3600;
       let statVal = 0;
       if (statistic === 'mean') statVal = mean;
       else if (statistic === 'peak') statVal = peak;
@@ -5268,9 +5292,9 @@ function StatisticsReportContent({ project, results, selectedObj }: {
     if (statistic === 'interEvent') {
       const interEvents: typeof eventRows = [];
       for (let i = 1; i < filteredEvents.length; i++) {
-        const midPrev = (filteredEvents[i - 1].startIdx + filteredEvents[i - 1].endIdx) / 2;
-        const midCurr = (filteredEvents[i].startIdx + filteredEvents[i].endIdx) / 2;
-        const gap = (midCurr - midPrev) * dtHours;
+        const midTime = (e: { startIdx: number; endIdx: number }) =>
+          (values[e.startIdx].time + values[e.endIdx].time) / 2;
+        const gap = (midTime(filteredEvents[i]) - midTime(filteredEvents[i - 1])) / 3600;
         interEvents.push({
           start: values[filteredEvents[i - 1].endIdx].dateTime,
           end: values[filteredEvents[i].startIdx].dateTime,
@@ -5453,6 +5477,7 @@ function StatisticsReportContent({ project, results, selectedObj }: {
 
       {reportData && (
         <div className="space-y-3" data-testid="stats-results">
+          {statsTruncation && <TruncatedResultsNotice info={statsTruncation} what="This report" />}
           <div className="border border-[#d0d0d8] rounded p-3 bg-[#f8f9fc]">
             <div className="text-[11px] font-bold text-[#2c3e6b] mb-2">Summary Statistics</div>
             <div className="grid grid-cols-3 gap-x-6 gap-y-1">

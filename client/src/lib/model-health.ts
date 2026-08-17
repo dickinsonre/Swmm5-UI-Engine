@@ -1,4 +1,5 @@
 import type { SwmmProject, SimulationResults, Conduit } from './swmm-types';
+import { stepWeightsSec } from './step-timing';
 
 export type HealthSeverity = 'error' | 'warning' | 'info';
 
@@ -466,26 +467,30 @@ export function analyzeResultConsequences(project: SwmmProject, results: Simulat
   const fu = (project.options['FLOW_UNITS'] || 'CFS').toUpperCase();
   const vHigh = metric ? 3.0 : 10;
   const vSevere = metric ? 4.5 : 15;
-  const stepHours = steps.length > 1 ? Math.max((steps[1].time - steps[0].time), 0) / 3600 : 0;
+  // Simulated hours each sample stands for. Derived from the real gaps so a
+  // decimated series (long runs are sampled) still reports true durations.
+  const stepHoursAt = stepWeightsSec(steps, 0).map(s => s / 3600);
 
   const nodes = collectNodes(project);
 
   // Flooding
   const floodMax = new Map<string, number>();
-  const floodSteps = new Map<string, number>();
-  const surchargeSteps = new Map<string, number>();
+  const floodHours = new Map<string, number>();
+  const surchargeHours = new Map<string, number>();
   const maxDepthByNode = new Map<string, number>();
 
-  for (const ts of steps) {
+  for (let i = 0; i < steps.length; i++) {
+    const ts = steps[i];
+    const hrs = stepHoursAt[i] || 0;
     for (const [nid, nr] of Object.entries(ts.nodes || {})) {
       if (nr.flooding > 0) {
         floodMax.set(nid, Math.max(floodMax.get(nid) || 0, nr.flooding));
-        floodSteps.set(nid, (floodSteps.get(nid) || 0) + 1);
+        floodHours.set(nid, (floodHours.get(nid) || 0) + hrs);
       }
       maxDepthByNode.set(nid, Math.max(maxDepthByNode.get(nid) || 0, nr.depth));
       const info = nodes.get(nid);
       if (info && info.type === 'junction' && info.maxDepth > 0 && nr.depth >= info.maxDepth * 0.999) {
-        surchargeSteps.set(nid, (surchargeSteps.get(nid) || 0) + 1);
+        surchargeHours.set(nid, (surchargeHours.get(nid) || 0) + hrs);
       }
     }
   }
@@ -494,7 +499,7 @@ export function analyzeResultConsequences(project: SwmmProject, results: Simulat
   if (floodSorted.length > 0) {
     add('error', `${floodSorted.length} node(s) flooded during the simulation`, undefined, undefined, `${floodSorted.length}`);
     for (const [nid, peak] of floodSorted.slice(0, 10)) {
-      const hrs = (floodSteps.get(nid) || 0) * stepHours;
+      const hrs = floodHours.get(nid) || 0;
       add('error', `Node "${nid}" floods at up to ${peak.toFixed(2)} ${fu}${hrs > 0 ? ` for ~${hrs.toFixed(1)} h` : ''}`, nid, nodes.get(nid)?.type || 'junction', `${peak.toFixed(2)} ${fu}`);
     }
   } else {
@@ -502,9 +507,9 @@ export function analyzeResultConsequences(project: SwmmProject, results: Simulat
   }
 
   // Surcharged nodes (full depth, not necessarily flooding)
-  const surchargeOnly = Array.from(surchargeSteps.entries()).filter(([nid]) => !floodMax.has(nid)).sort((a, b) => b[1] - a[1]);
-  for (const [nid, cnt] of surchargeOnly.slice(0, 10)) {
-    add('warning', `Node "${nid}" is surcharged (at full depth) for ${(cnt * stepHours).toFixed(1)} h`, nid, nodes.get(nid)?.type || 'junction');
+  const surchargeOnly = Array.from(surchargeHours.entries()).filter(([nid]) => !floodMax.has(nid)).sort((a, b) => b[1] - a[1]);
+  for (const [nid, hrs] of surchargeOnly.slice(0, 10)) {
+    add('warning', `Node "${nid}" is surcharged (at full depth) for ${hrs.toFixed(1)} h`, nid, nodes.get(nid)?.type || 'junction');
   }
 
   // Link stats: d/D, velocity, reverse flow, capacity exceedance
@@ -554,11 +559,11 @@ export function analyzeResultConsequences(project: SwmmProject, results: Simulat
   for (const o of project.outfalls) {
     let peak = 0;
     let vol = 0;
-    for (const ts of steps) {
-      const nr = ts.nodes?.[o.id];
+    for (let i = 0; i < steps.length; i++) {
+      const nr = steps[i].nodes?.[o.id];
       if (nr) {
         peak = Math.max(peak, nr.totalInflow ?? 0);
-        vol += (nr.totalInflow ?? 0) * stepHours * 3600;
+        vol += (nr.totalInflow ?? 0) * (stepHoursAt[i] || 0) * 3600;
       }
     }
     if (peak > 0) outfallPeaks.push({ id: o.id, peak, volume: vol });

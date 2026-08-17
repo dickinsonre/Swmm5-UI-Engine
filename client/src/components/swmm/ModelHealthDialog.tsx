@@ -4,6 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChevronDown, ChevronRight, TriangleAlert, AlertTriangle, CheckCircle, HeartPulse, Lock } from 'lucide-react';
 import type { SwmmProject, SimulationResults } from '@/lib/swmm-types';
 import { buildModelHealthReport, type HealthFinding, type HealthSection, type HealthSeverity } from '@/lib/model-health';
+import { TruncatedResultsNotice, getTruncationInfo } from './SyntheticWarning';
 
 interface Props {
   open: boolean;
@@ -63,6 +64,7 @@ function groupFindings(findings: HealthFinding[]): FindingGroup[] {
 
 export default function ModelHealthDialog({ open, onOpenChange, project, results, onSelectObject }: Props) {
   const report = useMemo(() => (open ? buildModelHealthReport(project, results) : null), [open, project, results]);
+  const truncationInfo = useMemo(() => getTruncationInfo(results), [results]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -117,6 +119,9 @@ export default function ModelHealthDialog({ open, onOpenChange, project, results
 
         <ScrollArea className="flex-1 min-h-0 border-t border-[#e0e0e8]">
           <div className="p-3 space-y-2">
+            {truncationInfo && report?.hasResults && (
+              <TruncatedResultsNotice info={truncationInfo} what="Post-run diagnostics" />
+            )}
             {report?.sections.map(sec => {
               const { e, w } = sectionCounts(sec);
               const locked = sec.requiresResults && !report.hasResults;

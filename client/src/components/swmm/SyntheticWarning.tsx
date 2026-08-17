@@ -92,6 +92,93 @@ export function ReportSummaryNotice({ feature = 'This view' }: { feature?: strin
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * Decimated (sampled) results — the run produced more reporting periods
+ * than the browser loads, so the series spans the whole run but skips
+ * intermediate periods.
+ * ------------------------------------------------------------------ */
+
+export interface TruncationInfo {
+  actual: number;
+  loaded: number;
+  stride: number;
+}
+
+/** Pull the truncation facts off a results object, or null when nothing was dropped. */
+export function getTruncationInfo(results: {
+  isTruncated?: boolean;
+  actualReportingSteps?: number;
+  loadedReportingSteps?: number;
+  samplingStride?: number;
+} | null | undefined): TruncationInfo | null {
+  if (!results?.isTruncated) return null;
+  const actual = results.actualReportingSteps ?? 0;
+  const loaded = results.loadedReportingSteps ?? 0;
+  if (actual <= loaded) return null;
+  return { actual, loaded, stride: results.samplingStride ?? 1 };
+}
+
+export function truncationMessage({ actual, loaded, stride }: TruncationInfo): string {
+  return `This run wrote ${actual.toLocaleString()} reporting periods — more than the browser loads at once. ` +
+    `Every ${stride === 2 ? '2nd' : stride === 3 ? '3rd' : `${stride}th`} period was sampled, giving ${loaded.toLocaleString()} steps ` +
+    `that span the full simulation. Peaks between sampled periods are not shown; read exact peak values from the SWMM report.`;
+}
+
+export function TruncatedResultsBanner({ info }: { info: TruncationInfo }) {
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-1.5 shrink-0"
+      style={{ background: '#eef4fd', borderBottom: '1px solid #9dbde8', color: '#1c4b8a' }}
+      data-testid="banner-truncated-results"
+    >
+      <AlertTriangle className="w-4 h-4 shrink-0" />
+      <span className="text-[11px] font-semibold tracking-wide">
+        SAMPLED TIME SERIES — {truncationMessage(info)}
+      </span>
+    </div>
+  );
+}
+
+export function TruncatedResultsLabel({ info, compact = false, scope, testId }: {
+  info: TruncationInfo;
+  compact?: boolean;
+  /** Which run this describes, when more than one is on screen (e.g. "compare"). */
+  scope?: string;
+  testId?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-sm font-bold tracking-wide ${compact ? 'px-1.5 py-0 text-[8px]' : 'px-2 py-0.5 text-[10px]'}`}
+      style={{ background: '#eef4fd', border: '1px solid #9dbde8', color: '#1c4b8a' }}
+      title={`${scope ? `${scope}: ` : ''}${truncationMessage(info)}`}
+      data-testid={testId || 'label-truncated-results'}
+    >
+      <AlertTriangle className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
+      {scope ? `${scope.toUpperCase()} ` : ''}SAMPLED 1-IN-{info.stride}
+    </span>
+  );
+}
+
+/**
+ * In-surface notice for analysis views (statistics, model health) whose numbers
+ * are integrated over the loaded series.
+ */
+export function TruncatedResultsNotice({ info, what }: { info: TruncationInfo; what: string }) {
+  return (
+    <div
+      className="rounded-sm px-3 py-2 text-[11px] leading-snug"
+      style={{ background: '#eef4fd', border: '1px solid #9dbde8', color: '#1c4b8a' }}
+      data-testid="notice-truncated-results"
+    >
+      <span className="font-bold">Sampled results — </span>
+      {what} is computed from {info.loaded.toLocaleString()} of this run&apos;s {info.actual.toLocaleString()} reporting
+      periods (every {info.stride === 2 ? '2nd' : info.stride === 3 ? '3rd' : `${info.stride}th`} period).
+      Durations and volumes use the real gaps between samples, but short spikes falling between them are not counted.
+      Check the SWMM report for exact peaks and totals.
+    </div>
+  );
+}
+
 export function SyntheticResultsLabel({ compact = false }: { compact?: boolean }) {
   return (
     <span

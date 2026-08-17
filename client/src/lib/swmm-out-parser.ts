@@ -12,6 +12,13 @@ const SUBCATCH_VARS = ['rainfall', 'snowDepth', 'evap', 'infiltration', 'runoff'
 const NODE_VARS = ['depth', 'head', 'volume', 'lateralInflow', 'totalInflow', 'flooding'] as const;
 const LINK_VARS = ['flow', 'depth', 'velocity', 'volume', 'capacity'] as const;
 
+/**
+ * Ceiling on reporting periods held in memory from a single .out file. Runs
+ * longer than this are decimated (see `samplingStride` on SimulationResults),
+ * never cut short.
+ */
+export const MAX_LOADED_PERIODS = 5000;
+
 export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): SimulationResults {
   const view = new DataView(buffer);
   let offset = 0;
@@ -133,12 +140,25 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
   }
   if (actualPeriods <= 0) actualPeriods = 0;
 
-  const maxPeriods = Math.min(actualPeriods, 5000);
+  // A long run (or a short reporting step) can produce far more periods than
+  // the browser can hold. Rather than hard-cutting at MAX_LOADED_PERIODS —
+  // which silently drops the entire tail of the run, including any late peak —
+  // sample uniformly so the loaded series still spans the full simulation. The
+  // final period is always kept so the run's end state is never invented.
+  const stride = actualPeriods > MAX_LOADED_PERIODS
+    ? Math.ceil(actualPeriods / MAX_LOADED_PERIODS)
+    : 1;
+
+  const periodIndices: number[] = [];
+  for (let p = 0; p < actualPeriods; p += stride) periodIndices.push(p);
+  if (actualPeriods > 0 && periodIndices[periodIndices.length - 1] !== actualPeriods - 1) {
+    periodIndices.push(actualPeriods - 1);
+  }
 
   const timeSteps: TimeStepResults[] = [];
   const simStartMs = getSimStartMs(project);
 
-  for (let p = 0; p < maxPeriods; p++) {
+  for (const p of periodIndices) {
     offset = startOfResults + p * bytesPerStep;
 
     const dateVal = readFloat64();
@@ -200,10 +220,15 @@ export function parseSwmmOut(buffer: ArrayBuffer, project: SwmmProject): Simulat
   const flowCE = 0;
 
   return {
+    actualReportingSteps: actualPeriods,
+    loadedReportingSteps: timeSteps.length,
+    isTruncated: timeSteps.length < actualPeriods,
+    samplingStride: stride,
     timeSteps,
     summary: {
-      totalDuration: maxPeriods * reportStep,
-      reportingSteps: maxPeriods,
+      // True wall-clock span of the run, not the span of what was loaded.
+      totalDuration: actualPeriods * reportStep,
+      reportingSteps: timeSteps.length,
       routingModel: project.options['FLOW_ROUTING'] || 'DYNWAVE',
       continuityErrors: {
         runoff: runoffCE,

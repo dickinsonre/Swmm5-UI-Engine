@@ -9,6 +9,7 @@ import type {
 import { projectToInp } from './inp-parser';
 import { parseSwmmOut } from './swmm-out-parser';
 import { getSimStartMs, formatSimDateTime, extractContinuityErrors } from './sim-time';
+import { stepDeltasSec } from './step-timing';
 
 function applyRptContinuity(parsed: SimulationResults, rptText: string | undefined): void {
   if (!rptText || !parsed.summary?.continuityErrors) return;
@@ -1069,12 +1070,13 @@ export function computeExtendedVariables(project: SwmmProject, results: Simulati
   const cumInfil = new Map<string, number>();
   const cumRain = new Map<string, number>();
   let prevStorage = 0;
-  const dt = results.timeSteps.length > 1
-    ? Math.max(1, (results.timeSteps[1].time - results.timeSteps[0].time))
-    : 30;
+  // Per-sample gaps, not one derived dt: a decimated series (long runs are
+  // sampled) is not evenly spaced, and every derivative below divides by dt.
+  const stepDeltas = stepDeltasSec(results.timeSteps, 30);
 
   for (let tIdx = 0; tIdx < results.timeSteps.length; tIdx++) {
     const ts = results.timeSteps[tIdx];
+    const dt = Math.max(1, stepDeltas[tIdx]);
     const prevTs = tIdx > 0 ? results.timeSteps[tIdx - 1] : null;
 
     for (const [nodeId, nr] of Object.entries(ts.nodes)) {

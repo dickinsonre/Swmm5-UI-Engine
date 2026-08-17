@@ -123,7 +123,7 @@ The in-browser WASM engines work immediately. The **Local** engine additionally 
 
 ## Known limitations
 
-- Binary `.out` results are loaded up to **5,000 reporting steps**; longer runs are currently truncated
+- Binary `.out` results are loaded up to **5,000 reporting steps**. Longer runs are *sampled* uniformly (every Nth period, always including the final one) so the series still spans the whole simulation, and the UI labels the results as sampled — but peaks falling between sampled periods are not plotted. Read exact peaks from the `.rpt` report.
 - Pollutant columns are read from the `.out` header but water-quality series are not yet surfaced in the UI
 - LID results from the SWMM 6 engines are not trustworthy (see above)
 - Large results are held per server instance, so a horizontally scaled deployment can lose track of one

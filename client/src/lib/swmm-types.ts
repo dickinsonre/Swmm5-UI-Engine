@@ -453,6 +453,21 @@ export interface SimulationResults {
   inpUsed?: string;
   engineUsed?: 'local' | 'wasm' | 'wasm6' | 'wasm6dev' | 'remote' | 'mock';
   fidelity?: ResultsFidelity;
+  /**
+   * Reporting periods the engine actually wrote to the .out file. May exceed
+   * `loadedReportingSteps` — the parser caps how much it holds in memory.
+   */
+  actualReportingSteps?: number;
+  /** Reporting periods present in `timeSteps` (always equals `timeSteps.length`). */
+  loadedReportingSteps?: number;
+  /** True when the engine produced more reporting periods than were loaded. */
+  isTruncated?: boolean;
+  /**
+   * When decimated, every Nth reporting period was loaded (N > 1). The loaded
+   * series still spans the whole run; intermediate periods are absent, so peaks
+   * between samples can be missed.
+   */
+  samplingStride?: number;
 }
 
 export type SelectedObject = {

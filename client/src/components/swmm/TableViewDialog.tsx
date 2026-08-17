@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table2, ArrowUpAZ, ArrowDownAZ, Copy, Columns3, AlignJustify, FileText, Filter, Printer, LineChart, BarChart3, ScatterChart, Activity, RefreshCw, X } from 'lucide-react';
 import { LineChart as RLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ScatterChart as RScatterChart, Scatter } from 'recharts';
 import ProvenanceBadge from './ProvenanceBadge';
-import { SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER } from './SyntheticWarning';
+import { SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, TruncatedResultsLabel, getTruncationInfo } from './SyntheticWarning';
 import type { VarScope } from '@/lib/swmm-variables';
 import { engineShortName } from '@/lib/swmm-engine';
 
@@ -118,6 +118,9 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
   const [filterActive, setFilterActive] = useState(false);
   const [contextColKey, setContextColKey] = useState('');
   const tableRef = useRef<HTMLTableElement>(null);
+
+  const truncationInfo = useMemo(() => getTruncationInfo(results), [results]);
+  const compareTruncationInfo = useMemo(() => getTruncationInfo(compareResults), [compareResults]);
 
   const ids = useMemo(() => {
     if (category === 'node') return getNodeIds(project);
@@ -402,6 +405,8 @@ export default function TableViewDialog({ open, onOpenChange, project, results, 
           <DialogTitle className="text-[#2c3e6b] flex items-center gap-2">
             <Table2 className="w-4 h-4" /> Table — {mode === 'byObject' ? 'By Object' : 'By Variable'}
             {results.engineUsed === 'mock' && <SyntheticResultsLabel />}
+            {truncationInfo && <TruncatedResultsLabel info={truncationInfo} />}
+            {compareTruncationInfo && <TruncatedResultsLabel info={compareTruncationInfo} scope="compare" testId="label-truncated-compare" />}
           </DialogTitle>
           <DialogDescription>
             {mode === 'byObject' ? 'View all timesteps for a single object.' : 'View all objects for a single variable at the current timestep.'}
