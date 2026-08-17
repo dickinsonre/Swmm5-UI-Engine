@@ -13,6 +13,7 @@ import {
 } from '@/lib/batch-compare';
 import type { BatchEngineId, BatchFileResult, EngineRun, ComparisonSummary, FileComparison } from '@/lib/batch-compare';
 import EngineScatterCompare from '@/components/swmm/EngineScatterCompare';
+import { shouldWarnSwmm6Lid, SWMM6_LID_WARNING_MESSAGE } from '@/lib/swmm6-lid-warning';
 
 interface Props {
   open: boolean;
@@ -63,6 +64,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
   const [currentLabel, setCurrentLabel] = useState('');
   const [comparison, setComparison] = useState<ComparisonSummary | null>(null);
   const [partialNotice, setPartialNotice] = useState<string | null>(null);
+  const [lidNotice, setLidNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const cancelRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -80,6 +82,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
     setProgress({});
     setComparison(null);
     setPartialNotice(null);
+    setLidNotice(null);
     setExpanded(new Set());
     reportCacheRef.current.clear();
     reportCacheSizeRef.current = 0;
@@ -127,6 +130,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
     const engineRuns: EngineRun[] = [];
     const completedEngines: EngineRun[] = []; // only fully-completed engine passes
     let cancelled = false;
+    let lidModelSeen = false;
 
     for (const engineId of selectedEngines) {
       const results: BatchFileResult[] = [];
@@ -145,6 +149,9 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
         const t0 = performance.now();
         try {
           const project = parseInpFile(file.text);
+          // SWMM6's LID solver is an incomplete port — flag the pass rather
+          // than the file, so one notice covers the whole batch.
+          if (shouldWarnSwmm6Lid(engineId, project)) lidModelSeen = true;
           let res: SimulationResults;
           if (engineId === 'wasm' || engineId === 'wasm6' || engineId === 'wasm6dev') {
             // In-browser engines run in a dedicated web worker: the UI stays
@@ -207,6 +214,7 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
         `Batch cancelled — showing ${completedEngines.length} of ${selectedEngines.length} engine pass(es); ${skipped} pass(es) incomplete or skipped.`
       );
     }
+    if (lidModelSeen) setLidNotice(SWMM6_LID_WARNING_MESSAGE);
     const toCompare = cancelled ? completedEngines : engineRuns;
     if (toCompare.length > 0) setComparison(buildComparison(toCompare));
   }, [files, selectedEngines, invalidateResults]);
@@ -316,6 +324,9 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
           </div>
           {running && currentLabel && (
             <p className="text-xs text-muted-foreground" data-testid="text-batch-progress">Running — {currentLabel} (Cancel stops in-browser engine runs immediately)</p>
+          )}
+          {lidNotice && (
+            <p className="text-xs px-2 py-1.5 rounded bg-red-500/15 text-red-700 dark:text-red-400 font-medium" data-testid="text-batch-lid-warning">⚠ {lidNotice}</p>
           )}
           {partialNotice && (
             <p className="text-xs px-2 py-1.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400" data-testid="text-batch-partial">{partialNotice}</p>

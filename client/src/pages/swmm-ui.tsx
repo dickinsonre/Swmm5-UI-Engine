@@ -44,6 +44,7 @@ import BatchRunnerDialog from '@/components/swmm/BatchRunnerDialog';
 import type { BatchEngineId } from '@/lib/batch-compare';
 import ProvenanceBadge from '@/components/swmm/ProvenanceBadge';
 import { SyntheticResultsBanner, SyntheticResultsLabel, SYNTHETIC_TEXT_HEADER, drawSyntheticWatermark, ReportSummaryBanner, ReportSummaryLabel, ReportSummaryNotice, REPORT_SUMMARY_MESSAGE } from '@/components/swmm/SyntheticWarning';
+import { shouldWarnSwmm6Lid, SWMM6_LID_WARNING_TITLE, SWMM6_LID_WARNING_MESSAGE } from '@/lib/swmm6-lid-warning';
 import { computeIntegrityInfo, IntegrityChip, IntegrityReportDialog, RecoveryDialog } from '@/components/swmm/IntegrityStatus';
 import { buildModelHealthReport } from '@/lib/model-health';
 import { saveSnapshot, getRecoverableSnapshot, setRecoveryBaseline, clearSnapshots, type AutosaveSnapshot } from '@/lib/autosave';
@@ -972,6 +973,10 @@ export default function SwmmUI() {
       }
     }
 
+    // SWMM6's LID solver is an incomplete port — warn once per run when this
+    // model uses LID and any leg of the run is SWMM6. Never blocks the run.
+    const swmm6LidWarning = shouldWarnSwmm6Lid(engineMode, project);
+
     setSimStatus('running');
     setSimProgress(0);
     setSimProgressMsg('Initializing...');
@@ -1030,12 +1035,13 @@ export default function SwmmUI() {
         }
         setSimStatus('current');
         setTimeStep(0);
+        const compareBody = bothNative
+          ? `${primaryName}: ${res5.timeSteps.length} steps · ${six}: ${res6.timeSteps.length} steps. Graphs and tables now overlay both engines.`
+          : 'At least one engine produced summary-only results, so the time-series overlay is unavailable. SWMM5 results are shown; check each engine\u2019s report for summary comparison.';
         toast({
-          title: 'Comparison Run Complete',
-          description: bothNative
-            ? `${primaryName}: ${res5.timeSteps.length} steps · ${six}: ${res6.timeSteps.length} steps. Graphs and tables now overlay both engines.`
-            : 'At least one engine produced summary-only results, so the time-series overlay is unavailable. SWMM5 results are shown; check each engine\u2019s report for summary comparison.',
-          variant: bothNative ? undefined : 'destructive',
+          title: swmm6LidWarning ? SWMM6_LID_WARNING_TITLE : 'Comparison Run Complete',
+          description: swmm6LidWarning ? `${SWMM6_LID_WARNING_MESSAGE} ${compareBody}` : compareBody,
+          variant: bothNative && !swmm6LidWarning ? undefined : 'destructive',
         });
       } catch (e: any) {
         if (e.reportContent != null && e.reportContent !== '') {
@@ -1090,10 +1096,20 @@ export default function SwmmUI() {
       // Label by the engine that ACTUALLY ran (local can silently fall back).
       const usedEngine = res.engineUsed || engine.mode;
       const engineLabel = usedEngine === 'local' ? 'EPA SWMM 5.2.4 (Local)' : usedEngine === 'wasm' ? 'EPA SWMM 5.2.4 (WASM)' : usedEngine === 'wasm6' ? 'OpenSWMM 6 release (WASM)' : usedEngine === 'wasm6dev' ? 'OpenSWMM 6 develop (WASM)' : usedEngine === 'remote' ? 'EPA SWMM 5.2.4 (Remote)' : 'Mock Engine';
+      // Warn on the engine that ACTUALLY ran, not the requested mode.
+      const lidWarn = shouldWarnSwmm6Lid(usedEngine, project);
       if (res.fidelity === 'report-summary') {
+        const summaryBody = `${REPORT_SUMMARY_MESSAGE} Summary tables and continuity errors are available; time-series animation and graphs are not (${engineLabel}).`;
         toast({
-          title: 'Simulation Complete — Report Summary Only',
-          description: `${REPORT_SUMMARY_MESSAGE} Summary tables and continuity errors are available; time-series animation and graphs are not (${engineLabel}).`,
+          title: lidWarn ? SWMM6_LID_WARNING_TITLE : 'Simulation Complete — Report Summary Only',
+          description: lidWarn ? `${SWMM6_LID_WARNING_MESSAGE} ${summaryBody}` : summaryBody,
+          variant: lidWarn ? 'destructive' : undefined,
+        });
+      } else if (lidWarn) {
+        toast({
+          title: SWMM6_LID_WARNING_TITLE,
+          description: `${SWMM6_LID_WARNING_MESSAGE} (${res.timeSteps.length} time steps computed by ${engineLabel}.)`,
+          variant: 'destructive',
         });
       } else {
         toast({ title: 'Simulation Complete', description: `${res.timeSteps.length} time steps computed (${engineLabel})` });
