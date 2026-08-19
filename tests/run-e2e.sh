@@ -40,6 +40,9 @@ run_suite "Report Summary Gating"       tests/e2e/report-summary-gating.ts
 run_suite "LID Viewer Resize"           tests/e2e/lid-viewer-resize.ts
 run_suite "Table Context Menu Keyboard" tests/e2e/table-context-menu-kbd.ts
 run_suite "Companion App Handshake"     tests/e2e/companion-app-handshake.ts
+run_suite "Mode Switching"              tests/e2e/mode-switching.ts
+run_suite "Batch Cancel Verdicts"       tests/e2e/batch-cancel-verdicts.ts
+run_suite "SWMM6 LID Warning"           tests/e2e/swmm6-lid-warning.ts
 
 echo ""
 echo "══════════════════════════════════════════"

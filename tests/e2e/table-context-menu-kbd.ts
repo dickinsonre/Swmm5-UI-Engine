@@ -45,10 +45,20 @@ async function main() {
 
     console.log('2. Ensure Mock engine');
     const engineBtn = page.locator('[data-testid="btn-engine-toggle"]');
-    for (let i = 0; i < 5 && !(await engineBtn.innerText()).includes('Mock'); i++) {
+    // The toggle cycles the whole engine list, and Mock is LAST. The bound must
+    // exceed the list length or this can never reach it — a bound of 5 silently
+    // stopped working once the list grew past that. Record what we saw so a
+    // future growth spurt fails with a readable diagnostic instead of a shrug.
+    const seenLabels: string[] = [];
+    for (let i = 0; i < 15; i++) {
+      const label = (await engineBtn.innerText()).replace(/\s+/g, ' ').trim();
+      if (label.includes('Mock')) break;
+      if (!seenLabels.includes(label)) seenLabels.push(label);
       await engineBtn.click();
+      await page.waitForTimeout(150);
     }
-    check('engine set to Mock', (await engineBtn.innerText()).includes('Mock'));
+    check('engine set to Mock', (await engineBtn.innerText()).includes('Mock'),
+      `cycled through ${seenLabels.length}: ${seenLabels.join(' -> ')}`);
 
     console.log('3. Run Mock simulation');
     await page.click('[data-testid="btn-run"]');
