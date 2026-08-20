@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { spawn } from "child_process";
 import { writeFile, readFile, mkdir, rm, stat } from "fs/promises";
-import { join } from "path";
+import { join, dirname } from "path";
 import { randomUUID } from "crypto";
 import { existsSync, createReadStream } from "fs";
 import { createGzip } from "zlib";
@@ -154,7 +154,24 @@ function sendEngineUnavailable(res: Response, detail?: string) {
 
 // Shared simulation service used by both run endpoints:
 // validate → execute → timeout → cleanup → normalized errors → engine metadata.
-async function runLocalSimulation(inpText: string, req: Request, res: Response): Promise<void> {
+/** A companion data file the .inp references, uploaded alongside the model. */
+interface CompanionFile { name: string; data: string }
+
+/**
+ * Companion file names come from the browser, so they are treated as untrusted
+ * path input: anything that could escape the scratch directory is rejected
+ * rather than sanitised, because a silently renamed file would not be found by
+ * the engine anyway.
+ */
+function safeCompanionName(name: string): string | null {
+  const n = (name || '').trim().replace(/\\/g, '/');
+  if (!n || n.startsWith('/') || /^[A-Za-z]:/.test(n)) return null;
+  if (n.split('/').some(seg => seg === '..' || seg === '.')) return null;
+  if (n.length > 255 || /[\0]/.test(n)) return null;
+  return n;
+}
+
+async function runLocalSimulation(inpText: string, req: Request, res: Response, companions: CompanionFile[] = []): Promise<void> {
   // Rate limiting lives here so every run route (run, run-or-proxy, and any
   // future route) is covered by the same per-IP cooldown.
   const rateCheck = checkSimRateLimit(req);
@@ -195,6 +212,23 @@ async function runLocalSimulation(inpText: string, req: Request, res: Response):
 
   try {
     await writeFile(inpPath, inpText, 'utf-8');
+
+    // Companion data files sit in the scratch directory beside the model, which
+    // is the layout desktop SWMM expects: the engine opens them by the relative
+    // name written in the .inp.
+    for (const c of companions) {
+      const rel = safeCompanionName(c.name);
+      if (!rel) {
+        await cleanup();
+        releaseSimSlot();
+        res.status(400).json({ error: `Rejected data file name "${c.name}" — must be a relative path beside the model.` });
+        return;
+      }
+      const dest = join(tmpDir, rel);
+      if (rel.includes('/')) await mkdir(dirname(dest), { recursive: true });
+      await writeFile(dest, Buffer.from(c.data, 'base64'));
+    }
+
     const proc = spawn(SWMM_ENGINE_PATH, [inpPath, rptPath, outPath]);
     let stdout = '';
     let stderr = '';
@@ -449,6 +483,27 @@ export async function registerRoutes(
 
   app.post("/api/swmm/run-or-proxy", async (req: Request, res: Response) => {
     try {
+      // A model with companion data files arrives as a JSON envelope; a plain
+      // model still arrives as raw .inp text, unchanged.
+      //
+      // The JSON branch must be taken BEFORE reading the raw stream: the global
+      // express.json() middleware has already consumed the body for this
+      // content type, so a raw read here would wait forever on a stream that
+      // will never emit.
+      if ((req.headers['content-type'] || '').includes('application/json')) {
+        const envelope = (req.body || {}) as { inp?: string; files?: CompanionFile[] };
+        if (typeof envelope.inp !== 'string' || !envelope.inp) {
+          res.status(400).json({ error: 'Simulation request is missing the model.' });
+          return;
+        }
+        const files = Array.isArray(envelope.files) ? envelope.files : [];
+        if (files.some(f => typeof f?.name !== 'string' || typeof f?.data !== 'string')) {
+          res.status(400).json({ error: 'Malformed data file entry in simulation request.' });
+          return;
+        }
+        await runLocalSimulation(envelope.inp, req, res, files);
+        return;
+      }
       const body = await readBodyWithLimit(req);
       await runLocalSimulation(body.toString('utf-8'), req, res);
     } catch (error: any) {

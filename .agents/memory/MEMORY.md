@@ -13,4 +13,5 @@
 - [Companion app model handshake](companion-app-handshake.md) — swmm:ready/swmm:model contract; never auto-send binary .out, one auto-delivery per document, match e.source not e.origin.
 - [Booting the server from tests](server-bootstrap-in-tests.md) — never gate startup on import.meta entrypoint detection (esbuild CJS erases it → dead deploy); tests bind loopback or .replit grows port entries.
 - [Named refs in .inp token slots](inp-named-token-slots.md) — several sections hide a NAME in a numeric slot (CUSTOM curve, STREET, FILE gage station/units); parseFloat turns it into 0 and the writer ships a broken file.
+- [External data files beside the .inp](companion-data-files.md) — a model missing its FILE rainfall can run DRY with no error; run paths that can't carry attachments must refuse, and express.json eats raw-body reads.
 - [Sampled time series](sampled-time-series.md) — long .out runs are decimated (uneven spacing!), never cut; never turn sample counts into durations with one derived dt.

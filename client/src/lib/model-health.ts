@@ -1,5 +1,6 @@
 import type { SwmmProject, SimulationResults, Conduit } from './swmm-types';
 import { stepWeightsSec } from './step-timing';
+import { hasAttachment } from './external-files';
 
 export type HealthSeverity = 'error' | 'warning' | 'info';
 
@@ -171,7 +172,13 @@ export function analyzeInputIntegrity(project: SwmmProject): HealthFinding[] {
     // silently produce a dry model.
     if ((rg.sourceType || '').toUpperCase() === 'FILE') {
       const fn = (rg.sourceName || '').trim().replace(/^"|"$/g, '');
-      add('warning', `Rain gage "${rg.id}" reads rainfall from external file ${fn || '(unnamed)'}, which is not part of the .inp — in-browser (WASM) runs cannot open it, and server-side engines only find it if it sits alongside the model`, rg.id, 'raingage', fn);
+      // Desktop SWMM resolves this next to the .inp; the browser has no such
+      // folder, so the file has to be attached before any engine can open it.
+      if (!fn) {
+        add('warning', `Rain gage "${rg.id}" is a FILE gage but names no data file`, rg.id, 'raingage');
+      } else if (!hasAttachment(fn)) {
+        add('warning', `Rain gage "${rg.id}" reads rainfall from ${fn}, which is not part of the .inp and has not been attached — the run will find no rainfall. Attach it under File > Data Files.`, rg.id, 'raingage', fn);
+      }
     }
   }
   for (const o of project.outfalls) {

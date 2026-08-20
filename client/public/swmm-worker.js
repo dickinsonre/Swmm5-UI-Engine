@@ -99,11 +99,35 @@ function probeSwmm6InitError(mod) {
   }
 }
 
-async function runSwmm5(inpText) {
+// Companion data files (rainfall .dat and friends) named by the .inp. SWMM
+// opens them by the relative name written in the model, so they have to be
+// placed beside model.inp in the worker's filesystem before the run.
+function writeCompanions(mod, companions, prefix) {
+  if (!companions || !companions.length) return;
+  for (var i = 0; i < companions.length; i++) {
+    var c = companions[i];
+    var rel = String(c.path || '');
+    if (!rel) continue;
+    var slash = rel.lastIndexOf('/');
+    if (slash > 0) {
+      var dir = prefix;
+      var segs = rel.slice(0, slash).split('/');
+      for (var j = 0; j < segs.length; j++) {
+        if (!segs[j]) continue;
+        dir = dir ? (dir + (dir.charAt(dir.length - 1) === '/' ? '' : '/') + segs[j]) : segs[j];
+        try { mod.FS.mkdir(dir); } catch (e) {}
+      }
+    }
+    mod.FS.writeFile(prefix + rel, new Uint8Array(c.bytes));
+  }
+}
+
+async function runSwmm5(inpText, companions) {
   post('progress', { pct: 10, msg: 'Initializing SWMM 5.2.4 (worker)...' });
   var mod = await loadSwmm5Module();
   post('progress', { pct: 30, msg: 'Writing model to WASM filesystem...' });
   mod.FS.writeFile('model.inp', inpText);
+  writeCompanions(mod, companions, '');
   try { mod.FS.writeFile('model.rpt', ''); } catch (e) {}
   try { mod.FS.writeFile('model.out', ''); } catch (e) {}
   post('progress', { pct: 35, msg: 'Running SWMM 5.2.4 (WASM)...' });
@@ -118,12 +142,13 @@ async function runSwmm5(inpText) {
   return { errCode: errCode, rptText: rptText, outData: outData, lidText: lidText };
 }
 
-async function runSwmm6(inpText, variant) {
+async function runSwmm6(inpText, variant, companions) {
   post('progress', { pct: 10, msg: 'Initializing OpenSWMM 6 (worker)...' });
   var stderrLog = [];
   var mod = await loadSwmm6Module(variant, stderrLog);
   post('progress', { pct: 30, msg: 'Writing model to WASM filesystem...' });
   mod.FS.writeFile('/model.inp', inpText);
+  writeCompanions(mod, companions, '/');
   post('progress', { pct: 35, msg: variant === 'wasm6dev' ? 'Running OpenSWMM 6 develop (WASM)...' : 'Running OpenSWMM 6 release (WASM)...' });
   var errCode;
   try {
@@ -158,8 +183,8 @@ self.onmessage = async function (e) {
   if (data.type !== 'run') return;
   try {
     var result = (data.engine === 'wasm6' || data.engine === 'wasm6dev')
-      ? await runSwmm6(data.inpText, data.engine)
-      : await runSwmm5(data.inpText);
+      ? await runSwmm6(data.inpText, data.engine, data.companions)
+      : await runSwmm5(data.inpText, data.companions);
     var outBytes = result.outData && result.outData.length
       ? new Uint8Array(result.outData) // copy out of WASM heap before transfer
       : null;

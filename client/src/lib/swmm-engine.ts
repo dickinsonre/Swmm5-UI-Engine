@@ -8,6 +8,14 @@ import type {
 } from './swmm-types';
 import { projectToInp } from './inp-parser';
 import { parseSwmmOut } from './swmm-out-parser';
+import {
+  collectExternalRefs,
+  resolveEngineFiles,
+  writeCompanionFiles,
+  encodeAttachmentsForServer,
+  engineFilesBytes,
+  SERVER_ATTACHMENT_LIMIT,
+} from './external-files';
 import { getSimStartMs, formatSimDateTime, extractContinuityErrors } from './sim-time';
 import { stepDeltasSec } from './step-timing';
 
@@ -152,13 +160,20 @@ export function createWasmEngine(): SwmmEngine {
 
       if (onProgress) onProgress(30, 'Writing model to WASM filesystem...');
 
+      // Companion data files (rainfall .dat and friends) live beside the model
+      // on disk; the WASM filesystem has to be given the same arrangement or
+      // the engine's own relative open fails.
+      const companions = resolveEngineFiles(project);
+      const scratch = ['model.inp', 'model.rpt', 'model.out', 'model.lid', ...companions.map(c => c.path)];
+
       // Purge any stale files from a previous run before writing new ones
       // so that a crash mid-run never lets old results bleed into the next run.
-      for (const f of ['model.inp', 'model.rpt', 'model.out', 'model.lid']) {
+      for (const f of scratch) {
         try { mod.FS.unlink(f); } catch {}
       }
 
       mod.FS.writeFile('model.inp', inpText);
+      writeCompanionFiles(mod.FS, companions, '');
       try { mod.FS.writeFile('model.rpt', ''); } catch {}
       try { mod.FS.writeFile('model.out', ''); } catch {}
 
@@ -170,7 +185,7 @@ export function createWasmEngine(): SwmmEngine {
         errCode = swmm_run('model.inp', 'model.rpt', 'model.out');
       } catch (runErr) {
         // Always clean up even if the engine throws
-        for (const f of ['model.inp', 'model.rpt', 'model.out', 'model.lid']) {
+        for (const f of scratch) {
           try { mod.FS.unlink(f); } catch {}
         }
         throw runErr;
@@ -193,7 +208,7 @@ export function createWasmEngine(): SwmmEngine {
         const errLines = rptText.split('\n').filter((l: string) => /ERROR|WARNING/i.test(l)).slice(0, 5).join('; ');
         const err = new Error(`SWMM error code ${errCode}. ${errLines || 'Check report for details.'}`) as any;
         err.reportContent = rptText;
-        for (const f of ['model.inp', 'model.rpt', 'model.out', 'model.lid']) {
+        for (const f of scratch) {
           try { mod.FS.unlink(f); } catch {}
         }
         throw err;
@@ -218,7 +233,7 @@ export function createWasmEngine(): SwmmEngine {
         parsed = parseRptToResults(rptText, project);
       }
 
-      for (const f of ['model.inp', 'model.rpt', 'model.out', 'model.lid']) {
+      for (const f of scratch) {
         try { mod.FS.unlink(f); } catch {}
       }
 
@@ -385,6 +400,9 @@ export function createWasm6Engine(variant: Wasm6Variant = 'wasm6'): SwmmEngine {
 
       if (onProgress) onProgress(30, 'Writing model to WASM filesystem...');
       mod.FS.writeFile('/model.inp', inpText);
+      // SWMM6 runs from absolute paths at the FS root, so companion files have
+      // to land in that same root for the engine's relative open to find them.
+      writeCompanionFiles(mod.FS, resolveEngineFiles(project), '/');
 
       if (onProgress) onProgress(35, `Running ${v.label}...`);
 
@@ -496,7 +514,8 @@ interface WorkerDone {
 function runInWorker(
   engineId: 'wasm' | 'wasm6' | 'wasm6dev',
   inpText: string,
-  opts: WorkerRunOptions
+  opts: WorkerRunOptions,
+  companions: { path: string; bytes: Uint8Array }[] = []
 ): Promise<WorkerDone> {
   return new Promise<WorkerDone>((resolve, reject) => {
     if (opts.signal?.aborted) {
@@ -527,7 +546,7 @@ function runInWorker(
     worker.onerror = (e) => {
       finish(() => reject(new Error(`WASM worker failed: ${e.message || 'unknown error'}`)));
     };
-    worker.postMessage({ type: 'run', engine: engineId, inpText });
+    worker.postMessage({ type: 'run', engine: engineId, inpText, companions });
   });
 }
 
@@ -557,7 +576,9 @@ export async function runWasmEngineInWorker(
 ): Promise<SimulationResults> {
   const isSwmm6 = engineId === 'wasm6' || engineId === 'wasm6dev';
   const inpText = projectToInp(project, isSwmm6 ? 'swmm6' : 'swmm5');
-  const { errCode, rptText, outData, stderrText, lidText } = await runInWorker(engineId, inpText, opts);
+  const { errCode, rptText, outData, stderrText, lidText } = await runInWorker(
+    engineId, inpText, opts, resolveEngineFiles(project)
+  );
 
   if (isSwmm6) {
     // SWMM6 engines have exited 0 on fatal parses — verify results exist in
@@ -637,11 +658,29 @@ export function createLocalEngine(): SwmmEngine {
 
       if (onProgress) onProgress(5, 'Sending model to SWMM engine...');
 
-      const resp = await fetch('/api/swmm/run-or-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: inpText,
-      });
+      // Companion data files must travel with the model — the server runs the
+      // engine in a scratch directory that holds nothing else. Only send the
+      // JSON envelope when there is something to carry, so the common case
+      // keeps the existing plain-text contract.
+      const companionBytes = engineFilesBytes(project);
+      if (companionBytes > SERVER_ATTACHMENT_LIMIT) {
+        throw new Error(
+          `Attached data files total ${(companionBytes / 1048576).toFixed(1)} MB, over the ${SERVER_ATTACHMENT_LIMIT / 1048576} MB limit for server runs. ` +
+          'Run this model with an in-browser (WASM) engine, which reads the files directly without uploading them.'
+        );
+      }
+      const companions = companionBytes > 0 ? encodeAttachmentsForServer(project) : [];
+      const resp = companions.length > 0
+        ? await fetch('/api/swmm/run-or-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inp: inpText, files: companions }),
+          })
+        : await fetch('/api/swmm/run-or-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: inpText,
+          });
 
       // Structured engine-unavailable response (503 with available:false) from
       // either run endpoint; 404 + useRemote kept for backward compatibility.
@@ -739,6 +778,21 @@ export function createRemoteEngine(): SwmmEngine {
     mode: 'remote' as const,
     async run(project: SwmmProject, onProgress?: (pct: number, msg: string) => void): Promise<SimulationResults> {
       const inpText = projectToInp(project);
+
+      // The cloud runner's upload contract carries the model only. Running
+      // anyway would quietly drop the rainfall file and return a dry,
+      // plausible-looking result — refuse instead.
+      //
+      // The test is every external REFERENCE the model makes, not the files we
+      // happen to hold: an unattached reference is exactly the case that
+      // produces a silently dry run, so it must refuse too.
+      const refs = collectExternalRefs(project);
+      if (refs.length > 0) {
+        throw new Error(
+          `The remote engine cannot receive external data files (${refs.map(r => r.path).join(', ')}), so this model would run without them. ` +
+          'Use the Local or an in-browser (WASM) engine for models with external data files.'
+        );
+      }
 
       if (onProgress) onProgress(0, 'Uploading model to SWMM engine...');
 

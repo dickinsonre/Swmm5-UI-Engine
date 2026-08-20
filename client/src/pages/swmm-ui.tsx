@@ -53,6 +53,8 @@ import { saveSnapshot, getRecoverableSnapshot, setRecoveryBaseline, clearSnapsho
 import { EngineHealthStrip, type HealthHighlight } from '@/components/swmm/EngineHealthPanel';
 import EngineInspectorDialog from '@/components/swmm/EngineInspectorDialog';
 import LidViewerDialog from '@/components/swmm/LidViewerDialog';
+import { DataFilesDialog } from '@/components/swmm/DataFilesDialog';
+import { addAttachment, clearAttachments } from '@/lib/external-files';
 import type { InteractionMode } from '@/components/swmm/SpeedBar';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -62,7 +64,7 @@ import {
   Loader2, Check, AlertTriangle, Copy, ClipboardPaste, RotateCcw, X, BookOpen, LayoutGrid,
   Scissors, ChevronLeft, Folder, File, PanelLeftOpen, PanelRightOpen, Menu,
   Droplets, CloudRain, CheckCircle2, Clock, TrendingUp, Target, Table2, Calculator, Zap, Activity, HeartPulse, Box, ShieldCheck,
-  Moon, Sun, GitCompareArrows, LogOut,
+  Moon, Sun, GitCompareArrows, LogOut, Paperclip,
   Layers,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -228,7 +230,7 @@ export default function SwmmUI() {
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
   const [isAnimating, setIsAnimating] = useState(false);
   const [animSpeed, setAnimSpeed] = useState(150);
-  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'roundtripAudit' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | 'diagramGallery' | 'diffTool' | 'batchRunner' | null>(null);
+  const [openDialog, setOpenDialog] = useState<'file' | 'github' | 'preferences' | 'export' | 'groupEdit' | 'importData' | 'exportData' | 'profilePlot' | 'timeSeries' | 'calibration' | 'analysisOptions' | 'dataEditor' | 'projectDefaults' | 'about' | 'tableView' | 'newProject' | 'mapOptions' | 'frequencyAnalysis' | 'statisticsReport' | 'findObject' | 'helpTopics' | 'helpTutorial' | 'helpErrors' | 'helpManuals' | 'appsLauncher' | 'scatterPlot' | 'transectEditor' | 'splitScreen' | 'engineDiagnostics' | 'modelHealth' | 'roundtripAudit' | 'phaseSpace' | 'projectSummary' | 'projectDetails' | 'viewer3d' | 'diagramGallery' | 'diffTool' | 'batchRunner' | 'dataFiles' | null>(null);
   const [phaseSpaceTarget, setPhaseSpaceTarget] = useState<PhaseSpaceTarget | null>(null);
   // Engine Health dashboard: map highlight driven by clicking a metric card,
   // plus the Engine Inspector (calculation microscope) dialog.
@@ -485,6 +487,7 @@ export default function SwmmUI() {
     try {
       const parsed = parseInpFile(snap.inp);
       justLoadedRef.current = true;
+      clearAttachments();
       auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(snap.fileName);
@@ -557,6 +560,7 @@ export default function SwmmUI() {
           .then(text => {
             const parsed = parseInpFile(text);
             justLoadedRef.current = true;
+            clearAttachments();
             setProject(parsed);
             const name = url.split('/').pop() || 'model.inp';
             setFileName(name);
@@ -565,7 +569,7 @@ export default function SwmmUI() {
           .catch(() => {
             fetch('/samples/Greenville_SI.inp')
               .then(r => r.ok ? r.text() : '')
-              .then(text => { if (text) { justLoadedRef.current = true; setProject(parseInpFile(text)); setFileName('Greenville_SI.inp'); } });
+              .then(text => { if (text) { justLoadedRef.current = true; clearAttachments(); setProject(parseInpFile(text)); setFileName('Greenville_SI.inp'); } });
           });
         return;
       }
@@ -576,6 +580,7 @@ export default function SwmmUI() {
       .then(text => {
         const parsed = parseInpFile(text);
         justLoadedRef.current = true;
+        clearAttachments();
         setProject(parsed);
         setFileName('Greenville_SI.inp');
       })
@@ -613,6 +618,7 @@ export default function SwmmUI() {
       const parsed = parseInpFile(text);
       notifyParseWarnings(parsed);
       justLoadedRef.current = true;
+      clearAttachments();
       auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(file.name);
@@ -633,20 +639,52 @@ export default function SwmmUI() {
     setOpenDialog(null);
   }, [toast, addRecentFile]);
 
+  /**
+   * Accept a batch of dropped or selected files: the .inp is the model, and
+   * anything else is treated as a companion data file the model may reference.
+   * Selecting a model together with the files beside it is the closest the
+   * browser gets to opening a folder the way desktop SWMM does.
+   */
+  const handleFileSet = useCallback(async (fileList: FileList | File[] | null) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    const isInp = (f: File) => /\.inp$/i.test(f.name);
+    const model = files.find(isInp);
+    const companions = files.filter(f => !isInp(f));
+
+    // Open the model FIRST: loading a model clears the previous model's
+    // attachments, so attaching before opening would throw the new files away.
+    if (model) await handleFileOpen(model);
+
+    const attached: string[] = [];
+    for (const f of companions) {
+      try {
+        await addAttachment(f);
+        attached.push(f.name);
+      } catch (err: any) {
+        toast({ title: 'Could not attach file', description: `${f.name}: ${err.message}`, variant: 'destructive' });
+      }
+    }
+    if (attached.length > 0) {
+      toast({
+        title: attached.length === 1 ? 'Data file attached' : `${attached.length} data files attached`,
+        description: `${attached.join(', ')} — will be placed beside the model on every run.`,
+      });
+    } else if (!model) {
+      toast({ title: 'Nothing loaded', description: 'Drop an .inp model, or data files it references.', variant: 'destructive' });
+    }
+  }, [handleFileOpen, toast]);
+
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileOpen(file);
+    void handleFileSet(e.target.files);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [handleFileOpen]);
+  }, [handleFileSet]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const file = e.dataTransfer.files?.[0];
-    if (file && (file.name.endsWith('.inp') || file.name.endsWith('.INP'))) {
-      handleFileOpen(file);
-    }
-  }, [handleFileOpen]);
+    void handleFileSet(e.dataTransfer.files);
+  }, [handleFileSet]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -681,6 +719,7 @@ export default function SwmmUI() {
       notifyParseWarnings(parsed);
       const name = fetchUrl.split('/').pop() || 'github_file.inp';
       justLoadedRef.current = true;
+      clearAttachments();
       auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(name);
@@ -726,6 +765,7 @@ export default function SwmmUI() {
       const parsed = parseInpFile(text);
       notifyParseWarnings(parsed);
       justLoadedRef.current = true;
+      clearAttachments();
       auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(item.name);
@@ -753,6 +793,7 @@ export default function SwmmUI() {
 
   const handleNewProject = useCallback(() => {
     justLoadedRef.current = true;
+    clearAttachments();
     auditWarnSuppressedRef.current = false;
     setProject(createEmptyProject());
     setFileName('Untitled.inp');
@@ -776,6 +817,7 @@ export default function SwmmUI() {
       const parsed = parseInpFile(text);
       notifyParseWarnings(parsed);
       justLoadedRef.current = true;
+      clearAttachments();
       auditWarnSuppressedRef.current = false;
       setProject(parsed);
       setFileName(sampleName);
@@ -2181,7 +2223,9 @@ export default function SwmmUI() {
       onDragOver={handleDragOver}
       data-testid="swmm-ui-root"
     >
-      <input ref={fileInputRef} type="file" accept=".inp,.INP" onChange={handleFileInput} className="hidden" data-testid="file-input" />
+      {/* Multiple, and no .inp filter: the model's companion data files can be
+          selected in the same shot, the way they sit together on disk. */}
+      <input ref={fileInputRef} type="file" multiple onChange={handleFileInput} className="hidden" data-testid="file-input" />
       <input ref={importFileRef} type="file" accept=".csv,.dxf,.geojson,.json" onChange={handleImportFileSelect} className="hidden" data-testid="import-file-input" />
 
       <div className="h-7 flex items-center px-3 text-xs gap-2 shrink-0" style={{ backgroundColor: '#2c3e6b' }}>
@@ -2266,6 +2310,7 @@ export default function SwmmUI() {
             <ToolbarButton icon={<Github className="w-4 h-4" />} label="GitHub" onClick={() => { setOpenDialog('github'); if (ghBrowseItems.length === 0) ghBrowse(''); }} testId="btn-github" />
             <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save" onClick={handleSave} testId="btn-save-file" />
             <ToolbarButton icon={<Save className="w-4 h-4" />} label="Save As" onClick={handleSaveAs} testId="btn-save-as" />
+            <ToolbarButton icon={<Paperclip className="w-4 h-4" />} label="Data Files" onClick={() => setOpenDialog('dataFiles')} testId="btn-data-files" />
             <ToolbarButton icon={<GitCompareArrows className="w-4 h-4" />} label="Diff" onClick={() => setOpenDialog('diffTool')} testId="btn-diff" />
             <ToolbarButton icon={<LogOut className="w-4 h-4" />} label="Exit" onClick={handleExit} testId="btn-exit" />
             <ToolbarButton icon={<Download className="w-4 h-4" />} label="Export" onClick={() => setOpenDialog('exportData')} testId="btn-export" />
@@ -4668,6 +4713,12 @@ export default function SwmmUI() {
         project={project}
         onClose={() => setActiveSubDialog(null)}
         onProjectChange={(p) => { handleUpdateProject(() => p); setActiveSubDialog(null); }}
+      />
+
+      <DataFilesDialog
+        open={openDialog === 'dataFiles'}
+        onOpenChange={v => !v && setOpenDialog(null)}
+        project={project}
       />
 
       <LidViewerDialog

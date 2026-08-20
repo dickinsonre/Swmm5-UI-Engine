@@ -31,6 +31,15 @@
 
 import { parseInpFile, projectToInp } from '../client/src/lib/inp-parser';
 import { analyzeInputIntegrity } from '../client/src/lib/model-health';
+import {
+  attachBytes as attachBytesForTest,
+  clearAttachments,
+  collectExternalRefs,
+  encodeAttachmentsForServer,
+  resolveEngineFiles,
+  writeCompanionFiles,
+  SERVER_ATTACHMENT_LIMIT,
+} from '../client/src/lib/external-files';
 
 let pass = 0;
 let fail = 0;
@@ -103,6 +112,7 @@ shapeCurve1  1.0  1.0
 [TIMESERIES]
 ts1  0:00  0.1
 ts1  1:00  0.2
+tsFile  FILE  "inflow_hydrograph.dat"
 `;
 
 console.log('\n1. FILE rain gage keeps its station ID and units');
@@ -176,19 +186,163 @@ console.log('\n4. Round trip is stable across a second save');
   check('street name survives reopen', reparsed.xsections['LinkStreet']?.geom1 === 'Main_St');
 }
 
-console.log('\n5. A FILE gage is flagged as unreadable by the in-browser engine');
+console.log('\n5. A FILE gage is flagged until its data file is attached');
 {
   const project = parseInpFile(SRC);
-  const issues = analyzeInputIntegrity(project);
-  const hit = issues.filter(i => i.objectId === 'rgFile' && /external file/i.test(i.message));
-  check('FILE gage raises exactly one external-file notice', hit.length === 1, issues.map(i => i.message));
-  check('notice names the data file', hit[0]?.message.includes('rg_bellinge_Jun2010_Aug2021.dat'), hit[0]?.message);
+  const DAT = 'rg_bellinge_Jun2010_Aug2021.dat';
+  const noticesFor = (id: string) =>
+    analyzeInputIntegrity(project).filter(i => i.objectId === id && /rainfall from/i.test(i.message));
+
+  clearAttachments();
+  const hit = noticesFor('rgFile');
+  check('unattached FILE gage raises exactly one notice', hit.length === 1, analyzeInputIntegrity(project).map(i => i.message));
+  check('notice names the data file', hit[0]?.message.includes(DAT), hit[0]?.message);
   check('notice is a warning, not a hard error', hit[0]?.severity === 'warning', hit[0]?.severity);
+  check('notice points at where to fix it', /Data Files/.test(hit[0]?.message || ''), hit[0]?.message);
 
   // The notice must be specific to FILE gages: a TIMESERIES gage that resolves
   // fine should stay silent, or the warning is just noise on every model.
-  const tsNoise = issues.filter(i => i.objectId === 'rgTs' && /external file/i.test(i.message));
-  check('TIMESERIES gage raises no external-file notice', tsNoise.length === 0, tsNoise);
+  check('TIMESERIES gage raises no notice', noticesFor('rgTs').length === 0, noticesFor('rgTs'));
+
+  // Attaching the file must silence it — a warning that never clears trains
+  // users to ignore the health panel.
+  attachBytesForTest(DAT, new Uint8Array([49, 10, 50]));
+  check('attached FILE gage raises no notice', noticesFor('rgFile').length === 0, noticesFor('rgFile'));
+
+  // Name matching follows SWMM's own resolution: base name, case-insensitive.
+  clearAttachments();
+  attachBytesForTest(DAT.toUpperCase(), new Uint8Array([49]));
+  check('case-differing file name still counts as attached', noticesFor('rgFile').length === 0);
+
+  clearAttachments();
+  attachBytesForTest('some_other_gage.dat', new Uint8Array([49]));
+  check('an unrelated attachment does not silence the notice', noticesFor('rgFile').length === 1);
+  clearAttachments();
+}
+
+console.log('\n5b. Attached files are handed to the engine beside the model');
+{
+  const project = parseInpFile(SRC);
+  const DAT = 'rg_bellinge_Jun2010_Aug2021.dat';
+  clearAttachments();
+  check('nothing is shipped when nothing is attached', resolveEngineFiles(project).length === 0);
+
+  attachBytesForTest(DAT, new Uint8Array([1, 2, 3]));
+  attachBytesForTest('unreferenced.dat', new Uint8Array([9]));
+  const shipped = resolveEngineFiles(project);
+  check('only referenced files are shipped', shipped.length === 1, shipped.map(f => f.path));
+  check('shipped under the name the .inp uses', shipped[0]?.path === DAT, shipped[0]?.path);
+  check('shipped with its real bytes', shipped[0]?.bytes.length === 3, shipped[0]?.bytes);
+
+  // The engine opens the path written in the model, so a directory in the
+  // reference has to be preserved rather than flattened.
+  const nested = parseInpFile(SRC.replace(DAT, `data/${DAT}`));
+  check('a relative sub-path is preserved for the engine', resolveEngineFiles(nested)[0]?.path === `data/${DAT}`, resolveEngineFiles(nested)[0]?.path);
+
+  // An absolute path from the author's machine can never resolve in a sandbox
+  // filesystem; falling back to the bare name is what "next to the .inp" means.
+  const abs = parseInpFile(SRC.replace(DAT, `C:\\models\\${DAT}`));
+  check('a foreign absolute path falls back to the bare name', resolveEngineFiles(abs)[0]?.path === DAT, resolveEngineFiles(abs)[0]?.path);
+
+  // Emscripten FS stand-in: prove the writer actually places the file and
+  // creates intermediate directories rather than throwing them away.
+  const placed: string[] = [];
+  const dirs: string[] = [];
+  const fakeFS = {
+    writeFile: (p: string, _d: Uint8Array) => { placed.push(p); },
+    mkdir: (p: string) => { dirs.push(p); },
+  };
+  writeCompanionFiles(fakeFS, resolveEngineFiles(nested), '/');
+  check('companion written at the absolute engine path', placed[0] === `/data/${DAT}`, placed);
+  check('intermediate directory created first', dirs.includes('/data'), dirs);
+  clearAttachments();
+}
+
+console.log('\n5c. A [TIMESERIES] FILE is an external reference too');
+{
+  const project = parseInpFile(SRC);
+  const TS = 'inflow_hydrograph.dat';
+  clearAttachments();
+
+  // Fixture guard: a resolver test is worthless if the model stopped having
+  // the reference it is supposed to find.
+  check('sample really does declare a FILE time series (fixture still valid)',
+    Object.values(project.timeseriesFiles || {}).some(f => f.includes(TS)), project.timeseriesFiles);
+
+  const refs = collectExternalRefs(project);
+  const tsRef = refs.find(r => r.kind === 'timeseries');
+  check('the FILE time series is collected as an external reference', !!tsRef, refs);
+  check('its quoted path is unquoted', tsRef?.path === TS, tsRef?.path);
+  check('it is attributed to the series, not a gage', tsRef?.ownerId === 'tsFile', tsRef?.ownerId);
+
+  // Both a gage file and a series file must ship — an engine that receives one
+  // and not the other still runs on incomplete forcing data.
+  attachBytesForTest(TS, new Uint8Array([7]));
+  attachBytesForTest('rg_bellinge_Jun2010_Aug2021.dat', new Uint8Array([8]));
+  const shipped = resolveEngineFiles(project).map(f => f.path).sort();
+  check('both external files are shipped together', shipped.length === 2, shipped);
+  check('the time series file is among them', shipped.includes(TS), shipped);
+  clearAttachments();
+}
+
+console.log('\n5e. A reference is model data, not a trusted path');
+{
+  const ORIG = 'FILE  "rg_bellinge_Jun2010_Aug2021.dat"';
+  // Guard: a string replacement that silently matches nothing would make every
+  // assertion below a test of the untouched fixture.
+  check('fixture guard: the FILE gage line is where these variants expect it',
+    SRC.includes(ORIG), ORIG);
+
+  const traversal = parseInpFile(SRC.replace(ORIG, 'FILE  "../../etc/passwd"'));
+  clearAttachments();
+  attachBytesForTest('passwd', new Uint8Array([1]));
+  const escaped = resolveEngineFiles(traversal).map(f => f.path);
+  check('a climbing path collapses to its bare name',
+    escaped.every(p => !p.includes('..')), escaped);
+
+  // A reference naming the run's own model file would have the companion
+  // writer clobber the model just written for the engine.
+  const collide = parseInpFile(SRC.replace(ORIG, 'FILE  "model.inp"'));
+  clearAttachments();
+  attachBytesForTest('model.inp', new Uint8Array([1]));
+  check('a reference to the run\'s own model file is refused',
+    resolveEngineFiles(collide).length === 0, resolveEngineFiles(collide).map(f => f.path));
+  clearAttachments();
+}
+
+console.log('\n5d. The server envelope carries the bytes intact');
+{
+  const project = parseInpFile(SRC);
+  const DAT = 'rg_bellinge_Jun2010_Aug2021.dat';
+  clearAttachments();
+
+  // Bytes above 0x7F and a NUL prove the encoder is not going through a
+  // UTF-8 text path, which would silently mangle a binary data file.
+  const payload = new Uint8Array([0, 1, 127, 128, 200, 255, 10, 13]);
+  attachBytesForTest(DAT, payload);
+  const envelope = encodeAttachmentsForServer(project);
+  check('one entry per shipped file', envelope.length === 1, envelope.map(e => e.name));
+  check('entry is named for the engine path', envelope[0]?.name === DAT, envelope[0]?.name);
+  const decoded = Uint8Array.from(atob(envelope[0].data), c => c.charCodeAt(0));
+  check('base64 round-trips byte-for-byte', decoded.length === payload.length && payload.every((b, i) => decoded[i] === b), decoded);
+
+  // A chunked encoder is easy to get wrong at the chunk seam.
+  clearAttachments();
+  const big = new Uint8Array(0x8000 * 2 + 5);
+  for (let i = 0; i < big.length; i++) big[i] = i % 256;
+  attachBytesForTest(DAT, big);
+  const bigDecoded = Uint8Array.from(atob(encodeAttachmentsForServer(project)[0].data), c => c.charCodeAt(0));
+  check('encoding is correct across chunk boundaries',
+    bigDecoded.length === big.length && bigDecoded[0x8000] === big[0x8000] && bigDecoded[big.length - 1] === big[big.length - 1],
+    { len: bigDecoded.length, expected: big.length });
+
+  // The advertised limit must actually survive base64 inflation inside the
+  // server's own body cap, or the user gets an opaque 413 instead.
+  const SERVER_BODY_CAP = 25 * 1024 * 1024;
+  check('limit leaves room for base64 inflation under the server body cap',
+    Math.ceil(SERVER_ATTACHMENT_LIMIT / 3) * 4 < SERVER_BODY_CAP,
+    { encoded: Math.ceil(SERVER_ATTACHMENT_LIMIT / 3) * 4, cap: SERVER_BODY_CAP });
+  clearAttachments();
 }
 
 console.log('\n6. Negative control: the checks can actually fail');

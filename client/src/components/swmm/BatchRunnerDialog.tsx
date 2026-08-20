@@ -14,6 +14,7 @@ import {
 import type { BatchEngineId, BatchFileResult, EngineRun, ComparisonSummary, FileComparison } from '@/lib/batch-compare';
 import EngineScatterCompare from '@/components/swmm/EngineScatterCompare';
 import { shouldWarnSwmm6Lid, SWMM6_LID_WARNING_MESSAGE } from '@/lib/swmm6-lid-warning';
+import { collectExternalRefs } from '@/lib/external-files';
 
 interface Props {
   open: boolean;
@@ -149,6 +150,17 @@ export default function BatchRunnerDialog({ open, onOpenChange, availableEngines
         const t0 = performance.now();
         try {
           const project = parseInpFile(file.text);
+          // Batch files are independent models, but attachments belong to the
+          // model open in the editor. Handing those files to a batch model
+          // would feed it someone else's data whenever base names collide, and
+          // running without them yields a silently dry result. Refuse instead.
+          const externalRefs = collectExternalRefs(project);
+          if (externalRefs.length > 0) {
+            throw new Error(
+              `Needs external data file(s) not available in a batch run: ${externalRefs.map(r => r.path).join(', ')}. ` +
+              'Open this model on its own and attach them under File > Data Files.'
+            );
+          }
           // SWMM6's LID solver is an incomplete port — flag the pass rather
           // than the file, so one notice covers the whole batch.
           if (shouldWarnSwmm6Lid(engineId, project)) lidModelSeen = true;
