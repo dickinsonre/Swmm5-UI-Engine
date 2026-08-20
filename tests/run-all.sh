@@ -40,6 +40,7 @@ run_suite "No Fabricated Time Series"  tests/no-fabricated-series.test.ts
 run_suite "SWMM6 Option Gating"        tests/swmm6-option-gating.test.ts
 run_suite "Report Parsing (5 and 6)"   tests/rpt-parsing.test.ts
 run_suite "LID Parity Gate"            tests/lid-parity.test.ts
+run_suite "External Refs Fidelity"     tests/external-refs.test.ts
 
 # NOTE: tests/e2e/* are deliberately NOT run here. They drive a real browser
 # against a running server (BASE_URL, default http://127.0.0.1:5000), so they

@@ -7,6 +7,8 @@ export interface RainGage {
   sourceName: string;
   stationId?: string;
   units?: string;
+  /** Optional start date for a FILE gage (ninth token). */
+  startDate?: string;
 }
 
 export interface Subcatchment {
@@ -146,6 +148,8 @@ export interface XSection {
   geom4: number;
   barrels: number;
   culvert?: string;
+  /** Shape-curve name for CUSTOM sections; SWMM reads it from the Geom2 slot. */
+  shapeCurve?: string;
 }
 
 export interface CurvePoint {
@@ -252,7 +256,10 @@ export interface Groundwater {
   a3: number;
   fixedDepth: number;
   threshold: number;
-  params: number[];
+  /** Raw Egwt token, preserved so the literal "*" survives a round trip. */
+  thresholdRaw?: string;
+  /** Optional trailing columns (Ebot, Wgr, Umc), kept verbatim. */
+  params: string[];
 }
 
 export interface Aquifer {
@@ -269,7 +276,8 @@ export interface Aquifer {
   bottomElev: number;
   waterTableElev: number;
   unsatMoisture: number;
-  params: number[];
+  /** Optional trailing evaporation pattern NAME (ETupat), kept verbatim. */
+  params: string[];
 }
 
 export interface Transect {

@@ -1094,7 +1094,16 @@ function GroundwaterEditor({ project, onUpdateProject }: EditorProps) {
   const updateField = useCallback((field: string, value: string) => {
     onUpdateProject(prev => ({
       ...prev,
-      groundwater: prev.groundwater.map((g, i) => i === selected ? { ...g, [field]: isNaN(Number(value)) ? value : Number(value) } : g),
+      groundwater: prev.groundwater.map((g, i) => {
+        if (i !== selected) return g;
+        const updated = { ...g, [field]: isNaN(Number(value)) ? value : Number(value) };
+        // thresholdRaw only exists to round-trip a literal "*" that was never
+        // touched. Once the user edits Egwt their value must win — including a
+        // deliberate 0, which is a legal elevation and indistinguishable from
+        // the parsed placeholder by value alone.
+        if (field === 'threshold') delete (updated as { thresholdRaw?: string }).thresholdRaw;
+        return updated;
+      }),
     }));
   }, [selected, onUpdateProject]);
 

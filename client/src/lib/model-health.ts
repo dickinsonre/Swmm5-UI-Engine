@@ -144,12 +144,34 @@ export function analyzeInputIntegrity(project: SwmmProject): HealthFinding[] {
     }
   }
 
+  // A CUSTOM cross-section is defined by a Shape curve. Without a resolvable
+  // one the engine rejects the link ("undefined object"), and because the
+  // editor can set the shape before the curve exists this is reachable from
+  // normal use, not just from a malformed file.
+  for (const [linkId, xs] of Object.entries(project.xsections || {})) {
+    if ((xs.shape || '').toUpperCase() !== 'CUSTOM') continue;
+    const cn = (xs.shapeCurve || '').trim();
+    if (!cn) {
+      add('error', `Cross-section for "${linkId}" is CUSTOM but names no shape curve`, linkId, 'link');
+    } else if (!curveNames.has(cn)) {
+      add('error', `Cross-section for "${linkId}" references missing shape curve "${cn}"`, linkId, 'link');
+    }
+  }
+
   // Missing time series references
   const tsNames = new Set(Object.keys(project.timeseries || {}));
   for (const rg of project.raingages) {
     if ((rg.sourceType || '').toUpperCase() === 'TIMESERIES') {
       const tn = (rg.sourceName || '').trim();
       if (tn && !tsNames.has(tn)) add('error', `Rain gage "${rg.id}" references missing time series "${tn}"`, rg.id, 'raingage');
+    }
+    // A FILE gage reads rainfall from a separate data file that is NOT part of
+    // the .inp. Nothing ships that file to the engine, so an in-browser run
+    // finds no rainfall at all — better to say so up front than to let the run
+    // silently produce a dry model.
+    if ((rg.sourceType || '').toUpperCase() === 'FILE') {
+      const fn = (rg.sourceName || '').trim().replace(/^"|"$/g, '');
+      add('warning', `Rain gage "${rg.id}" reads rainfall from external file ${fn || '(unnamed)'}, which is not part of the .inp — in-browser (WASM) runs cannot open it, and server-side engines only find it if it sits alongside the model`, rg.id, 'raingage', fn);
     }
   }
   for (const o of project.outfalls) {

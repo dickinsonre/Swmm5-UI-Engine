@@ -36,7 +36,27 @@ import {
 } from './swmm-types';
 
 function splitFields(line: string): string[] {
-  return line.trim().split(/\s+/);
+  const s = line.trim();
+  // Fast path: the overwhelming majority of .inp lines have no quoting, and
+  // this keeps their tokenisation byte-for-byte what it always was.
+  if (!s.includes('"')) return s.split(/\s+/);
+  // A quoted value is ONE token even when it contains spaces — file paths in
+  // [RAINGAGES]/[TIMESERIES] routinely do. Splitting on whitespace slides the
+  // following fields into the wrong slots, which corrupts the line on save.
+  // The quotes are kept in the token so the writer emits them back verbatim.
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (const ch of s) {
+    if (ch === '"') { inQuotes = !inQuotes; cur += ch; continue; }
+    if (!inQuotes && /\s/.test(ch)) {
+      if (cur) { out.push(cur); cur = ''; }
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
 const MAX_PARSE_WARNINGS = 100;
@@ -132,6 +152,9 @@ function parseRaingages(lines: string[]): RainGage[] {
       sourceName: p[5] || '',
       stationId: p[6],
       units: p[7],
+      // A FILE gage may carry a ninth token: the start date to begin reading
+      // the rainfall file from.
+      startDate: p[8],
     };
   }).filter(r => r.id);
 }
@@ -378,11 +401,20 @@ function parseXsections(lines: string[]): Record<string, XSection> {
     const p = splitFields(line);
     if (p[0]) {
       const shape = p[1] || 'CIRCULAR';
+      const shapeU = shape.toUpperCase();
+      // IRREGULAR and STREET carry a NAME in the Geom1 slot (a transect and a
+      // street respectively), and CUSTOM carries a Shape-curve NAME in the
+      // Geom2 slot. Running those through parseFloat2 turns the name into 0 and
+      // the reference is gone for good, which the engine then reports as
+      // "ERROR 209: undefined object 0".
+      const isNamedGeom1 = shapeU === 'IRREGULAR' || shapeU === 'STREET';
+      const isCustom = shapeU === 'CUSTOM';
       result[p[0]] = {
         linkId: p[0],
         shape,
-        geom1: shape === 'IRREGULAR' ? (p[2] || '') : parseFloat2(p[2]),
-        geom2: parseFloat2(p[3]),
+        geom1: isNamedGeom1 ? (p[2] || '') : parseFloat2(p[2]),
+        geom2: isCustom ? 0 : parseFloat2(p[3]),
+        shapeCurve: isCustom ? (p[3] || '') : undefined,
         geom3: parseFloat2(p[4]),
         geom4: parseFloat2(p[5]),
         barrels: parseFloat2(p[6]) || 1,
@@ -680,7 +712,14 @@ function parseGroundwater(lines: string[]): Groundwater[] {
       a3: parseFloat2(p[8]),
       fixedDepth: parseFloat2(p[9]),
       threshold: parseFloat2(p[10]),
-      params: p.slice(11).map(parseFloat2),
+      // Egwt may be the literal "*" (meaning "use the surface elevation").
+      // parseFloat2 turns that into 0, which is a real elevation and a real
+      // behaviour change, so keep the token itself for the writer.
+      thresholdRaw: p[10],
+      // Ebot / Wgr / Umc are optional trailing columns. Keep them as raw
+      // tokens: nothing computes on them, and rewriting them as parsed numbers
+      // (or dropping them, as the writer used to) alters groundwater flow.
+      params: p.slice(11),
     };
   }).filter(g => g.subcatchId);
 }
@@ -702,9 +741,11 @@ function parseAquifers(lines: string[]): Aquifer[] {
       bottomElev: parseFloat2(p[10]),
       waterTableElev: parseFloat2(p[11]),
       unsatMoisture: parseFloat2(p[12]),
-      // Trailing tokens may include an optional monthly pattern *name*
-      // (e.g. "SEASONAL"), so non-numeric values here are not a parse error.
-      params: p.slice(13).map(s => { const v = parseFloat(s); return isNaN(v) ? 0 : v; }),
+      // The trailing token is an optional monthly evaporation PATTERN NAME
+      // (e.g. "SEASONAL"). Coercing it to a number erased the reference, and
+      // the writer emitted nothing at all — so a plain open/save silently
+      // detached the pattern and changed groundwater evaporation.
+      params: p.slice(13),
     };
   }).filter(a => a.id);
 }
@@ -1158,7 +1199,16 @@ export function projectToInp(project: SwmmProject, target: 'swmm5' | 'swmm6' = '
   if (project.raingages.length) {
     lines.push('[RAINGAGES]');
     for (const rg of project.raingages) {
-      lines.push(`${rg.id.padEnd(16)} ${rg.format.padEnd(10)} ${rg.interval.padEnd(10)} ${rg.scf}    ${rg.sourceType}  ${rg.sourceName}`);
+      let rgLine = `${rg.id.padEnd(16)} ${rg.format.padEnd(10)} ${rg.interval.padEnd(10)} ${rg.scf}    ${rg.sourceType}  ${rg.sourceName}`;
+      // A FILE gage is "... FILE Fname Station Units": SWMM requires both
+      // trailing tokens and rejects the line with "ERROR 203: too few items"
+      // without them. The parser reads them in order, so a present units token
+      // always implies a present station ID and appending cannot shift a value
+      // into the wrong slot.
+      if (rg.stationId) rgLine += `  ${rg.stationId}`;
+      if (rg.units) rgLine += `  ${rg.units}`;
+      if (rg.startDate) rgLine += `  ${rg.startDate}`;
+      lines.push(rgLine);
     }
     lines.push('');
   }
@@ -1306,7 +1356,17 @@ export function projectToInp(project: SwmmProject, target: 'swmm5' | 'swmm6' = '
     if (validXsections.length) {
       lines.push('[XSECTIONS]');
       for (const [id, xs] of validXsections) {
-        let xsLine = `${padField(id, 16)} ${padField(xs.shape, 12)} ${padField(xs.geom1, 10)} ${padField(xs.geom2, 10)} ${padField(xs.geom3, 10)} ${padField(xs.geom4, 10)} ${xs.barrels}`;
+        // For CUSTOM sections SWMM reads a Shape-curve NAME out of the Geom2
+        // slot, so writing the numeric geom2 there sends it looking for a curve
+        // called "0" ("ERROR 209: undefined object 0"). Geom3/Geom4 stay as
+        // placeholders to keep barrels in its usual token position.
+        // An EMPTY curve name is not usable — falling back to the numeric slot
+        // keeps the line parseable, and model health reports the missing
+        // reference rather than the writer inventing one.
+        const geom2Field = xs.shape.toUpperCase() === 'CUSTOM' && xs.shapeCurve
+          ? xs.shapeCurve
+          : xs.geom2;
+        let xsLine = `${padField(id, 16)} ${padField(xs.shape, 12)} ${padField(xs.geom1, 10)} ${padField(geom2Field, 10)} ${padField(xs.geom3, 10)} ${padField(xs.geom4, 10)} ${xs.barrels}`;
         if (xs.culvert !== undefined && xs.culvert !== '') xsLine += `    ${xs.culvert}`;
         lines.push(xsLine);
       }
@@ -1384,7 +1444,10 @@ export function projectToInp(project: SwmmProject, target: 'swmm5' | 'swmm6' = '
   if (project.aquifers.length) {
     lines.push('[AQUIFERS]');
     for (const a of project.aquifers) {
-      lines.push(`${a.id.padEnd(16)} ${a.porosity}    ${a.wiltPoint}    ${a.fieldCap}    ${a.conductivity}    ${a.conductSlope}    ${a.tensionSlope}    ${a.upperEvap}    ${a.lowerEvap}    ${a.lowerGWLoss}    ${a.bottomElev}    ${a.waterTableElev}    ${a.unsatMoisture}`);
+      let aqLine = `${a.id.padEnd(16)} ${a.porosity}    ${a.wiltPoint}    ${a.fieldCap}    ${a.conductivity}    ${a.conductSlope}    ${a.tensionSlope}    ${a.upperEvap}    ${a.lowerEvap}    ${a.lowerGWLoss}    ${a.bottomElev}    ${a.waterTableElev}    ${a.unsatMoisture}`;
+      // The optional ETupat evaporation pattern name lives past Umc.
+      if (a.params?.length) aqLine += `    ${a.params.join('    ')}`;
+      lines.push(aqLine);
     }
     lines.push('');
   }
@@ -1392,7 +1455,16 @@ export function projectToInp(project: SwmmProject, target: 'swmm5' | 'swmm6' = '
   if (project.groundwater.length) {
     lines.push('[GROUNDWATER]');
     for (const gw of project.groundwater) {
-      lines.push(`${gw.subcatchId.padEnd(16)} ${gw.aquiferId.padEnd(16)} ${gw.nodeId.padEnd(16)} ${gw.surfElev}    ${gw.a1}    ${gw.b1}    ${gw.a2}    ${gw.b2}    ${gw.a3}    ${gw.fixedDepth}    ${gw.threshold}`);
+      // Keep a non-numeric Egwt (the literal "*") only while the parsed value
+      // still looks untouched; once a user edits the field the number wins.
+      const rawThreshold = gw.thresholdRaw;
+      const thresholdField = (rawThreshold && isNaN(parseFloat(rawThreshold)) && gw.threshold === 0)
+        ? rawThreshold
+        : gw.threshold;
+      let gwLine = `${gw.subcatchId.padEnd(16)} ${gw.aquiferId.padEnd(16)} ${gw.nodeId.padEnd(16)} ${gw.surfElev}    ${gw.a1}    ${gw.b1}    ${gw.a2}    ${gw.b2}    ${gw.a3}    ${gw.fixedDepth}    ${thresholdField}`;
+      // Optional Ebot / Wgr / Umc columns.
+      if (gw.params?.length) gwLine += `    ${gw.params.join('    ')}`;
+      lines.push(gwLine);
     }
     lines.push('');
   }

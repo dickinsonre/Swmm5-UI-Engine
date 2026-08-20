@@ -20,6 +20,8 @@ type FieldDef = {
   step?: number;
   required?: boolean;
   visibleWhen?: { field: string; values: string[] };
+  /** Inverse of visibleWhen: hide the field when the dependency matches. */
+  hiddenWhen?: { field: string; values: string[] };
   subdialogType?: string;
   helpText?: string;
 };
@@ -97,7 +99,12 @@ function getConduitFields(): FieldDef[] {
     { key: 'outOffset', label: 'Outlet Offset', type: 'number', unit: 'ft', section: 'Geometry', precision: 2, min: 0 },
     { key: '_xsShape', label: 'Shape', type: 'select', section: 'Cross-Section', options: ['CIRCULAR', 'FORCE_MAIN', 'FILLED_CIRCULAR', 'RECT_CLOSED', 'RECT_OPEN', 'TRAPEZOIDAL', 'TRIANGULAR', 'HORIZ_ELLIPSE', 'VERT_ELLIPSE', 'ARCH', 'PARABOLIC', 'POWER', 'RECT_TRIANGULAR', 'RECT_ROUND', 'MOD_BASKETHANDLE', 'EGG', 'HORSESHOE', 'GOTHIC', 'CATENARY', 'SEMI_ELLIPTICAL', 'BASKETHANDLE', 'SEMI_CIRCULAR', 'IRREGULAR', 'CUSTOM', 'STREET'], required: true },
     { key: '_xsGeom1', label: 'Max Depth (Geom1)', type: 'number', unit: 'ft', section: 'Cross-Section', precision: 2, min: 0, required: true },
-    { key: '_xsGeom2', label: 'Geom2', type: 'number', section: 'Cross-Section', precision: 2 },
+    // A CUSTOM section stores a Shape-curve NAME in the Geom2 slot, so the
+    // numeric Geom2 editor is meaningless there and offering it produces a
+    // file the engine rejects. Swap in a name field for that shape.
+    { key: '_xsGeom2', label: 'Geom2', type: 'number', section: 'Cross-Section', precision: 2, hiddenWhen: { field: '_xsShape', values: ['CUSTOM', 'IRREGULAR', 'STREET'] } },
+    { key: '_xsShapeCurve', label: 'Shape Curve', type: 'text', section: 'Cross-Section', visibleWhen: { field: '_xsShape', values: ['CUSTOM'] }, required: true },
+    { key: '_xsStreetName', label: 'Street', type: 'text', section: 'Cross-Section', visibleWhen: { field: '_xsShape', values: ['STREET'] }, required: true },
     { key: '_xsGeom3', label: 'Geom3', type: 'number', section: 'Cross-Section', precision: 2 },
     { key: '_xsGeom4', label: 'Geom4', type: 'number', section: 'Cross-Section', precision: 2 },
     { key: '_xsBarrels', label: 'Barrels', type: 'number', section: 'Cross-Section', precision: 0, min: 1 },
@@ -294,7 +301,12 @@ function getObjectData(project: SwmmProject, objType: string, id: string): Recor
         _xsGeom3: xs?.geom3 || 0,
         _xsGeom4: xs?.geom4 || 0,
         _xsBarrels: xs?.barrels || 1,
-        _xsTransect: (xs as any)?.transect || '',
+        // IRREGULAR and STREET keep their reference in the Geom1 slot, and
+        // CUSTOM keeps its curve in the Geom2 slot — read them from where they
+        // actually live rather than from a field that never existed.
+        _xsTransect: xs?.shape === 'IRREGULAR' ? String(xs?.geom1 ?? '') : '',
+        _xsStreetName: xs?.shape === 'STREET' ? String(xs?.geom1 ?? '') : '',
+        _xsShapeCurve: xs?.shape === 'CUSTOM' ? (xs?.shapeCurve ?? '') : '',
         _lossEntry: loss?.entryLoss ?? 0,
         _lossExit: loss?.exitLoss ?? 0,
         _lossAvg: loss?.avgLoss ?? 0,
@@ -428,7 +440,14 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
 
       if (key.startsWith('_xs')) {
         const xsKey = key.replace('_xs', '').replace(/^(.)/, (_, c) => c.toLowerCase()) as string;
-        const realKey = xsKey === 'shape' ? 'shape' : xsKey;
+        // Named references do not live in same-named properties: a transect and
+        // a street are written to the Geom1 slot, a Shape curve to shapeCurve.
+        const NAMED_SLOTS: Record<string, string> = {
+          transect: 'geom1',
+          streetName: 'geom1',
+          shapeCurve: 'shapeCurve',
+        };
+        const realKey = NAMED_SLOTS[xsKey] ?? (xsKey === 'shape' ? 'shape' : xsKey);
         if (Array.isArray(next.xsections)) {
           next.xsections = (next.xsections as any).map((xs: any) =>
             xs.linkId === objId ? { ...xs, [realKey]: value } : xs
@@ -603,6 +622,10 @@ export default function PropertyEditor({ project, selectedObj, onUpdateProject, 
           {sections.map(sec => {
             const sFields = fields.filter(f => f.section === sec);
             const visibleFields = sFields.filter(f => {
+              if (f.hiddenWhen) {
+                const hideVal = data[f.hiddenWhen.field];
+                if (f.hiddenWhen.values.includes(String(hideVal ?? ''))) return false;
+              }
               if (!f.visibleWhen) return true;
               const depVal = data[f.visibleWhen.field];
               return f.visibleWhen.values.includes(String(depVal ?? ''));
