@@ -19,6 +19,8 @@ import ProjectExplorer from '@/components/swmm/ProjectExplorer';
 import AnalysisOptionsDialog from '@/components/swmm/AnalysisOptionsDialog';
 import DataEditorDialog from '@/components/swmm/DataEditors';
 import AboutDialog from '@/components/swmm/AboutDialog';
+import { VerifyReportView } from '@/components/swmm/VerifyReportView';
+import { ReportSplitDiff } from '@/components/swmm/ReportSplitDiff';
 import ProjectDefaultsDialog from '@/components/swmm/ProjectDefaultsDialog';
 import TableViewDialog from '@/components/swmm/TableViewDialog';
 import PropertyEditor from '@/components/swmm/PropertyEditor';
@@ -385,7 +387,14 @@ export default function SwmmUI() {
     ? (compareResults?.inpUsed ?? null)
     : (results?.inpUsed ?? null);
   const [reportSearchTerm, setReportSearchTerm] = useState('');
-  const [reportViewMode, setReportViewMode] = useState<'text' | 'html' | 'inp'>('text');
+  const [reportViewMode, setReportViewMode] = useState<'text' | 'html' | 'inp' | 'verify'>('text');
+  // Verify only exists while there is a second run to compare against. Without
+  // this, leaving Verify selected and then loading or running a single project
+  // strands the dialog on a hidden tab: no report on screen, and Copy/Download
+  // withheld with no visible way back.
+  useEffect(() => {
+    if (reportViewMode === 'verify' && !compareReportContent) setReportViewMode('text');
+  }, [compareReportContent, reportViewMode]);
   const [splitScreenProject, setSplitScreenProject] = useState<{ project: SwmmProject; results: SimulationResults; fileName: string } | null>(null);
   const [regressionBaseline, setRegressionBaseline] = useState<RunSnapshot | null>(null);
   const [isModified, setIsModified] = useState(false);
@@ -4077,14 +4086,18 @@ export default function SwmmUI() {
           )}
           <div className="flex items-center gap-2 mb-1">
             <div className="flex rounded border border-[#d0d0d8] overflow-hidden shrink-0">
-              {(['text', 'html', 'inp'] as const).map(m => (
+              {/* Verify compares two runs, so it only exists once a comparison run has produced a second one. */}
+              {(compareReportContent
+                ? (['text', 'html', 'inp', 'verify'] as const)
+                : (['text', 'html', 'inp'] as const)
+              ).map(m => (
                 <button
                   key={m}
                   className={`px-2.5 py-1.5 text-[10px] font-semibold ${reportViewMode === m ? 'bg-[#2c6eb5] text-white' : 'bg-white text-[#4a4a5a] hover:bg-[#f0f0f4]'}`}
                   onClick={() => setReportViewMode(m)}
                   data-testid={`btn-report-view-${m}`}
                 >
-                  {m === 'text' ? 'Text' : m === 'html' ? 'HTML' : 'Input (.inp)'}
+                  {m === 'text' ? 'Text' : m === 'html' ? 'HTML' : m === 'inp' ? 'Input (.inp)' : 'Verify'}
                 </button>
               ))}
             </div>
@@ -4111,8 +4124,9 @@ export default function SwmmUI() {
                 key={section}
                 className="px-2 py-0.5 text-[9px] rounded border border-[#d0d0d8] hover:bg-[#e8f0fb] text-[#4a4a5a]"
                 onClick={() => {
-                  // Section names exist in the .rpt, not the generated .inp — flip back to the report text view.
-                  if (reportViewMode === 'inp') setReportViewMode('text');
+                  // Section names exist in the .rpt, not the generated .inp and not the Verify
+                  // view — flip back to the report text view before searching.
+                  if (reportViewMode === 'inp' || reportViewMode === 'verify') setReportViewMode('text');
                   setReportSearchTerm(section);
                   setTimeout(() => {
                     // Single view: scroll the report pane. Split view: scroll each engine pane to its own first match.
@@ -4127,7 +4141,8 @@ export default function SwmmUI() {
                     // In the single view the scrollable element is the wrapper div, so use scrollIntoView.
                     const singleMark = document.querySelector('[data-testid="report-content"] mark');
                     if (singleMark) singleMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    document.querySelectorAll('[data-testid^="report-split-pre-"]').forEach(scrollToMark);
+                    // Split view now shares one scroll container across both aligned panes.
+                    document.querySelectorAll('[data-testid="report-split-scroll"]').forEach(scrollToMark);
                   }, 80);
                 }}
                 data-testid={`report-jump-${section.toLowerCase().replace(/\s/g, '-')}`}
@@ -4136,28 +4151,25 @@ export default function SwmmUI() {
               </button>
             ))}
           </div>
-          {reportSplitActive ? (
-            <div className="flex-1 min-h-0 grid grid-cols-2 gap-2" style={{ maxHeight: 'calc(85vh - 200px)' }} data-testid="report-split-view">
-              {([
-                ['5', compareInfo.tabA, reportViewMode === 'inp' ? (results?.inpUsed ?? null) : reportContent, compareInfo.colorA],
-                ['6', compareInfo.tabB, reportViewMode === 'inp' ? (compareResults?.inpUsed ?? null) : compareReportContent, compareInfo.colorB],
-              ] as const).map(([pane, label, content, color]) => (
-                <div key={pane} className="flex flex-col min-h-0 overflow-hidden">
-                  <div className="text-[10px] font-bold px-2 py-1 rounded-t border border-b-0" style={{ color: '#ffffff', backgroundColor: color, borderColor: color }}>{label.replace(/ Report$/, '')}</div>
-                  <pre className="flex-1 text-[10px] leading-[1.4] p-2 rounded-b border bg-[#f8f8fa] whitespace-pre overflow-auto font-mono" style={{ borderColor: color }} data-testid={`report-split-pre-${pane}`}>
-                    {(() => {
-                      const text = content || 'No report available.';
-                      if (!reportSearchTerm) return text;
-                      const escaped = reportSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                      const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
-                      return parts.map((part, i) =>
-                        i % 2 === 1 ? <mark key={i} className="bg-yellow-200 text-[#2a2a3e]">{part}</mark> : part
-                      );
-                    })()}
-                  </pre>
-                </div>
-              ))}
+          {reportViewMode === 'verify' ? (
+            <div className="flex-1 overflow-auto min-h-0 rounded border border-[#d0d0d8] bg-white" style={{ maxHeight: 'calc(85vh - 200px)' }}>
+              <VerifyReportView
+                results={results}
+                compareResults={compareResults}
+                labelA={compareInfo.tabA.replace(/ Report$/, '')}
+                labelB={compareInfo.tabB.replace(/ Report$/, '')}
+              />
             </div>
+          ) : reportSplitActive ? (
+            <ReportSplitDiff
+              aText={reportViewMode === 'inp' ? (results?.inpUsed ?? null) : reportContent}
+              bText={reportViewMode === 'inp' ? (compareResults?.inpUsed ?? null) : compareReportContent}
+              labelA={compareInfo.tabA.replace(/ Report$/, '')}
+              labelB={compareInfo.tabB.replace(/ Report$/, '')}
+              colorA={compareInfo.colorA}
+              colorB={compareInfo.colorB}
+              searchTerm={reportSearchTerm}
+            />
           ) : (
           <div className="flex-1 overflow-auto min-h-0" style={{ maxHeight: 'calc(85vh - 200px)' }}>
             {reportViewMode === 'html' && activeReportContent ? (
@@ -4183,6 +4195,12 @@ export default function SwmmUI() {
           </div>
           )}
           <div className="flex justify-end gap-2 pt-2">
+            {reportViewMode === 'verify' && (
+              <span className="text-[10px] text-[#6b6b7b] mr-auto self-center">
+                Copy and download act on the .rpt — switch to Text or Input to use them.
+              </span>
+            )}
+            {reportViewMode !== 'verify' && (
             <Button
               variant="outline"
               size="sm"
@@ -4199,6 +4217,8 @@ export default function SwmmUI() {
             >
               <Copy className="w-3.5 h-3.5 mr-1.5" /> Copy
             </Button>
+            )}
+            {reportViewMode !== 'verify' && (
             <Button
               variant="outline"
               size="sm"
@@ -4226,6 +4246,7 @@ export default function SwmmUI() {
             >
               <Download className="w-3.5 h-3.5 mr-1.5" /> Download .rpt
             </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

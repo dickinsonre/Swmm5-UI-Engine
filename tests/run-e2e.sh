@@ -44,6 +44,7 @@ run_suite "Mode Switching"              tests/e2e/mode-switching.ts
 run_suite "Batch Cancel Verdicts"       tests/e2e/batch-cancel-verdicts.ts
 run_suite "SWMM6 LID Warning"           tests/e2e/swmm6-lid-warning.ts
 run_suite "External Data Files"         tests/e2e/external-data-files.ts
+run_suite "Report Comparison Views"     tests/e2e/report-verify-view.ts
 
 echo ""
 echo "══════════════════════════════════════════"

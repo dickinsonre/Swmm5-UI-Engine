@@ -1,4 +1,4 @@
-- [SWMM .out binary header layout](swmm-out-format.md) — .out input-property sections are interleaved per object class and a reporting-vars section precedes results; misreading silently falls back to .rpt on small models.
+- [SWMM .out binary header layout](swmm-out-format.md) — property sections interleave per object class; the type slot is an INT4 among REAL4s, so float-reading it turns every link into a conduit.
 - [E2E browser testing in this repl](e2e-browser-testing.md) — playwright-core + Nix chromium works; bundled headless shell lacks glibs; dispatchEvent for context menus (rows re-render constantly).
 - [Deployment proxy response limits](deployment-response-limits.md) — responses over ~32MiB die silently in production; serve large binaries via separate gzip endpoint, never base64-in-JSON.
 - [Radix Dialog Escape vs nested custom menus](radix-dialog-escape.md) — Radix captures Escape on document before React handlers; use DialogContent onEscapeKeyDown + preventDefault to close only a nested menu.
@@ -14,4 +14,6 @@
 - [Booting the server from tests](server-bootstrap-in-tests.md) — never gate startup on import.meta entrypoint detection (esbuild CJS erases it → dead deploy); tests bind loopback or .replit grows port entries.
 - [Named refs in .inp token slots](inp-named-token-slots.md) — several sections hide a NAME in a numeric slot (CUSTOM curve, STREET, FILE gage station/units); parseFloat turns it into 0 and the writer ships a broken file.
 - [External data files beside the .inp](companion-data-files.md) — a model missing its FILE rainfall can run DRY with no error; run paths that can't carry attachments must refuse, and express.json eats raw-body reads.
+- [Building a diff view that can be trusted](diff-views-honesty.md) — pair table tokens by column not content LCS; narrow both-sided noise classes; Hirschberg + anchors; gap markers.
+- [Verification tooling exists twice](verification-tooling-duplication.md) — skill scripts stay dependency-free; app copies are a second impl held to identical (not close) numbers by a parity test.
 - [Sampled time series](sampled-time-series.md) — long .out runs are decimated (uneven spacing!), never cut; never turn sample counts into durations with one derived dt.
