@@ -5,7 +5,8 @@
 ![WASM](https://img.shields.io/badge/Engines-WebAssembly-654FF0)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Client-3178C6)
 ![Vite](https://img.shields.io/badge/Build-Vite-646CFF)
-![License](https://img.shields.io/badge/License-MIT-green)
+![License](https://img.shields.io/badge/App-MIT-green)
+![Engines](https://img.shields.io/badge/Engines-Apache--2.0%20%7C%20MIT%20%7C%20public%20domain-lightgrey)
 
 A browser-based modelling workbench for the **EPA Storm Water Management Model**. Open a `.inp` file, edit the model, run it on any of five engines — including **EPA SWMM 5.2.4 and OpenSWMM 6 compiled to WebAssembly, running entirely in the browser** — then interrogate the results with tools that go well past the standard report: phase-space diagnostics, a calculation-level engine inspector, LID unit animation, 3D network playback, and side-by-side engine comparison.
 
@@ -130,8 +131,26 @@ The in-browser WASM engines work immediately. The **Local** engine additionally 
 
 ## Credits
 
-EPA SWMM is developed by the US Environmental Protection Agency; OpenSWMM 6 by the HydroCouple/OpenSWMM project. This project is part of Robert Dickinson's broader SWMM tooling ecosystem.
+EPA SWMM is developed by the US Environmental Protection Agency; OpenSWMM 6 by the HydroCouple/OpenSWMM project — Caleb Buahin (lead developer), Corinne Wiesner-Friedman (developer, documentation, technical review) and Scott Jeffers (documentation and outreach). This project is part of Robert Dickinson's broader SWMM tooling ecosystem.
 
-## License
+## License and attribution
 
-Released under the **MIT License**.
+SWMM5-UI's **own code** is released under the [MIT License](LICENSE). That covers this interface only — the bundled simulation engines are separate works under their own terms, and those terms travel with any copy of this project.
+
+This project bundles **two builds of the OpenSWMM 6 engine, from two upstream branches under two different licenses**, plus the public-domain EPA engine:
+
+| Bundled engine | Upstream | License |
+|---|---|---|
+| OpenSWMM 6, release (`client/public/wasm6`) | `HydroCouple/openswmm.engine` branch **`swmm6_rel`**, 6.0.0-alpha.3 | **Apache-2.0** © 2026 HydroCouple Developers — [text](licenses/Apache-2.0-OpenSWMM.txt), [NOTICE](NOTICE) |
+| OpenSWMM 6, develop (`client/public/wasm6dev`) | same repo, branch **`develop`** | **MIT** © 2026 Caleb Buahin — [text](licenses/MIT-OpenSWMM-develop.txt) |
+| EPA SWMM 5.2.4 | USEPA | **Public domain**, 17 USC § 105 |
+
+> **Branch trap:** that repository is not one license. `main` is **MIT** (© 2025 HydroCouple); `develop` is **MIT** (© 2026 Caleb Buahin, no NOTICE file); `swmm6_rel`, the 6.0.0 release line, is **Apache-2.0 with a NOTICE file**. GitHub's sidebar shows "Other License" because of the split. Never quote the `main` README's MIT line for a 6.0.0 build, and never copy the release build's Apache notice onto the develop build.
+
+Both engine builds were **modified** before compilation to WebAssembly — Emscripten platform and threading fixes, plus a consolidated LID report in the release build. The patch inserts an Apache-2.0 §4(b) change notice at the top of every file it touches; per-file detail in [`swmm-engine/patches/MODIFICATIONS.md`](swmm-engine/patches/MODIFICATIONS.md).
+
+The exact upstream commit behind each artifact was not recorded at build time — only the branch. Both are moving alpha lines, so record the SHA on the next rebuild.
+
+Portions derive from the USEPA Storm Water Management Model, which is in the public domain under 17 USC § 105. Neither the USEPA nor HydroCouple endorses this product; "EPA", "USEPA", "SWMM", "OpenSWMM" and "HydroCouple" are used solely to describe the origin of the software included here. This is not an official EPA, HydroCouple or OpenSWMM release.
+
+Deploying this app, embedding its engine in a single-file HTML build, or pushing it to a repo or gist is **redistribution**, and the Apache-2.0 §4 conditions apply to all three. Before publishing, work through [`docs/swmm6-attribution.md`](docs/swmm6-attribution.md); `tests/attribution.test.ts` enforces the mechanical half of that checklist on every build.

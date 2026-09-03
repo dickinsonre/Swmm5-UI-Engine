@@ -2,10 +2,10 @@
   "name": "rest-express",
   "version": "1.0.0",
   "type": "module",
-  "license": "MIT",
+  "license": "MIT AND Apache-2.0",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "npm run check && npm test && tsx script/build.ts",
+    "build": "npm run check && npm test && tsx script/build.ts && tsx script/verify-dist-licenses.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "test": "bash tests/run-all.sh",

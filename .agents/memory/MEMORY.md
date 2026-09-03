@@ -4,6 +4,7 @@
 - [Radix Dialog Escape vs nested custom menus](radix-dialog-escape.md) — Radix captures Escape on document before React handlers; use DialogContent onEscapeKeyDown + preventDefault to close only a nested menu.
 - [Typed-array offsets vs binary parsers](typed-array-offset-parsing.md) — never pass view.buffer to parseSwmmOut; normalize with toExactArrayBuffer (worker/Emscripten views may have non-zero byteOffset).
 - [SWMM6-only .inp options gating](swmm6-only-options.md) — never write SWMM6-only lines into SWMM5-target .inp (ERROR 205); carried as `;;SWMM6` comments, which must not be re-preserved as comments.
+- [OpenSWMM 6 licence differs per branch](swmm6-license-branches.md) — swmm6_rel is Apache-2.0+NOTICE, develop/main are MIT; we ship two branches, so one notice can't cover both.
 - [SWMM6 WASM engine](swmm6-wasm-engine.md) — how client/public/wasm6 was built (3 patches, -fexceptions, EM_CACHE) and run rules: fresh instance per run, noInitialRun, never trust exit code.
 - [SWMM5 vs SWMM6 ID case sensitivity](swmm-id-case-sensitivity.md) — SWMM5 matches IDs case-insensitively, SWMM6 doesn't (ERROR 209); parser normalizes refs, check case before blaming special chars.
 - [SWMM6 LID module is an incomplete port](swmm6-lid-port-gaps.md) — unconverted params AND unit-inconsistent flux equations; LID results are garbage, don't build LID features on wasm6.

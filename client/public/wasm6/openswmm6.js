@@ -1,3 +1,20 @@
+/*
+  This file bundles the OpenSWMM 6 engine, compiled to WebAssembly.
+
+  OpenSWMM Engine - Copyright 2026 HydroCouple Developers.
+  Licensed under the Apache License, Version 2.0.
+  https://github.com/HydroCouple/openswmm.engine  (branch swmm6_rel, 6.0.0-alpha.3)
+  Full license text: /licenses/Apache-2.0-OpenSWMM.txt
+  Required NOTICE:   /licenses/NOTICE.txt  (also shown in About > Licenses)
+
+  MODIFIED: the engine sources were changed before compilation (Emscripten
+  platform/threading fixes and a consolidated LID report) by Robert Dickinson,
+  2026-08-09 to 2026-08-13. Per-file detail: swmm-engine/patches/MODIFICATIONS.md
+
+  Portions derive from the USEPA Storm Water Management Model, which is in the
+  public domain under 17 USC section 105. The USEPA does not endorse this
+  product, and neither does HydroCouple.
+*/
 
 var createOswmm6Module = (() => {
   var _scriptDir = typeof document !== 'undefined' && document.currentScript ? document.currentScript.src : undefined;

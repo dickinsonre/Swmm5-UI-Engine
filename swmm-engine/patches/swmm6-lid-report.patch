@@ -1,7 +1,35 @@
+Modifications to the OpenSWMM 6 engine, by Robert Dickinson (SWMM5-UI).
+
+Base:  https://github.com/HydroCouple/openswmm.engine, branch swmm6_rel
+       (Apache License, Version 2.0 - NOT the MIT-licensed main branch)
+Dates: Emscripten build fixes 2026-08-09; consolidated LID report 2026-08-13
+
+Every file below gains a change notice at the top of the file, as required by
+Apache-2.0 section 4(b), so the notice travels with the applied sources and not
+just with this patch. Existing copyright and USEPA-provenance headers are left
+intact (section 4(c)). What and why, per file:
+swmm-engine/patches/MODIFICATIONS.md
+
+git apply ignores this preamble. Upstream has moved on since this patch was
+cut, so it applies with offsets - use  patch -p1 --forward  rather than
+git apply, and check for rejects.
+
 diff --git a/src/engine/core/SWMMEngine.cpp b/src/engine/core/SWMMEngine.cpp
 index cd73bcc..7821949 100644
 --- a/src/engine/core/SWMMEngine.cpp
 +++ b/src/engine/core/SWMMEngine.cpp
+@@ -1,3 +1,11 @@
++// MODIFIED 2026-08-13 by Robert Dickinson (SWMM5-UI):
++// opens the consolidated detailed LID report during start(), and spreads LID
++// runon area over all replicates of a usage row (area * number).
++//
++// Change notice required by the Apache License, Version 2.0, section 4(b).
++// Original file from https://github.com/HydroCouple/openswmm.engine, branch
++// swmm6_rel. The upstream notices below are unmodified.
++
+ // SPDX-License-Identifier: Apache-2.0
+ //
+ // Copyright 2026 Caleb Buahin
 @@ -830,6 +830,10 @@ int SWMMEngine::start(int save_results) noexcept {
      // gated on this in step()/postOutputSnapshot().
      do_routing_ = (ctx_.n_nodes() > 0 && !ctx_.options.ignore_routing);
@@ -61,6 +89,17 @@ diff --git a/src/engine/core/SWMMEngine.hpp b/src/engine/core/SWMMEngine.hpp
 index 51214e7..059faff 100644
 --- a/src/engine/core/SWMMEngine.hpp
 +++ b/src/engine/core/SWMMEngine.hpp
+@@ -1,3 +1,10 @@
++// MODIFIED 2026-08-13 by Robert Dickinson (SWMM5-UI):
++// holds the LIDReport member.
++//
++// Change notice required by the Apache License, Version 2.0, section 4(b).
++// Original file from https://github.com/HydroCouple/openswmm.engine, branch
++// swmm6_rel. The upstream notices below are unmodified.
++
+ // SPDX-License-Identifier: Apache-2.0
+ //
+ // Copyright 2026 Caleb Buahin
 @@ -63,6 +63,7 @@
  #include "../hydrology/Snow.hpp"
  #include "../hydrology/Groundwater.hpp"
@@ -81,6 +120,17 @@ diff --git a/src/engine/hydrology/LID.cpp b/src/engine/hydrology/LID.cpp
 index 411a0ed..1bc2fb1 100644
 --- a/src/engine/hydrology/LID.cpp
 +++ b/src/engine/hydrology/LID.cpp
+@@ -1,3 +1,10 @@
++// MODIFIED 2026-08-13 by Robert Dickinson (SWMM5-UI):
++// exposes the per-unit flux state the consolidated LID report needs.
++//
++// Change notice required by the Apache License, Version 2.0, section 4(b).
++// Original file from https://github.com/HydroCouple/openswmm.engine, branch
++// swmm6_rel. The upstream notices below are unmodified.
++
+ // SPDX-License-Identifier: Apache-2.0
+ //
+ // Copyright 2026 Caleb Buahin
 @@ -26,6 +26,7 @@
  
  #include "LID.hpp"
@@ -366,6 +416,17 @@ diff --git a/src/engine/hydrology/LID.hpp b/src/engine/hydrology/LID.hpp
 index 51d8dd1..3b223e0 100644
 --- a/src/engine/hydrology/LID.hpp
 +++ b/src/engine/hydrology/LID.hpp
+@@ -1,3 +1,10 @@
++// MODIFIED 2026-08-13 by Robert Dickinson (SWMM5-UI):
++// declarations for the per-unit flux state above.
++//
++// Change notice required by the Apache License, Version 2.0, section 4(b).
++// Original file from https://github.com/HydroCouple/openswmm.engine, branch
++// swmm6_rel. The upstream notices below are unmodified.
++
+ // SPDX-License-Identifier: Apache-2.0
+ //
+ // Copyright 2026 Caleb Buahin
 @@ -86,7 +86,8 @@ struct LIDGroupSoA {
  
      std::vector<int> subcatch_idx;     ///< Which subcatchment this unit belongs to
@@ -398,10 +459,17 @@ new file mode 100644
 index 0000000..790267e
 --- /dev/null
 +++ b/src/engine/hydrology/LIDReport.cpp
-@@ -0,0 +1,313 @@
+@@ -0,0 +1,320 @@
 +// SPDX-License-Identifier: Apache-2.0
 +//
-+// Copyright 2026 Caleb Buahin
++// Copyright 2026 Robert Dickinson
++//
++// NEW FILE, not part of upstream HydroCouple/openswmm.engine. Added to the
++// swmm6_rel tree by Robert Dickinson (SWMM5-UI) on 2026-08-13: consolidated
++// detailed LID report (one .lid file covering every reporting LID unit).
++// Contributed under the Apache License, Version 2.0, matching the license of
++// the work it is added to. The report layout follows the USEPA SWMM 5
++// detailed LID report, which is in the public domain under 17 USC 105.
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
 +// you may not use this file except in compliance with the License.
@@ -717,10 +785,17 @@ new file mode 100644
 index 0000000..1a2312a
 --- /dev/null
 +++ b/src/engine/hydrology/LIDReport.hpp
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,133 @@
 +// SPDX-License-Identifier: Apache-2.0
 +//
-+// Copyright 2026 Caleb Buahin
++// Copyright 2026 Robert Dickinson
++//
++// NEW FILE, not part of upstream HydroCouple/openswmm.engine. Added to the
++// swmm6_rel tree by Robert Dickinson (SWMM5-UI) on 2026-08-13: consolidated
++// detailed LID report (one .lid file covering every reporting LID unit).
++// Contributed under the Apache License, Version 2.0, matching the license of
++// the work it is added to. The report layout follows the USEPA SWMM 5
++// detailed LID report, which is in the public domain under 17 USC 105.
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
 +// you may not use this file except in compliance with the License.
@@ -848,6 +923,18 @@ diff --git a/src/engine/output/IOThread.cpp b/src/engine/output/IOThread.cpp
 index 24511b8..c88aa3c 100644
 --- a/src/engine/output/IOThread.cpp
 +++ b/src/engine/output/IOThread.cpp
+@@ -1,3 +1,11 @@
++// MODIFIED 2026-08-09 by Robert Dickinson (SWMM5-UI):
++// under __EMSCRIPTEN__, output write tasks run inline instead of on a
++// std::thread (the WebAssembly build has no threads).
++//
++// Change notice required by the Apache License, Version 2.0, section 4(b).
++// Original file from https://github.com/HydroCouple/openswmm.engine, branch
++// swmm6_rel. The upstream notices below are unmodified.
++
+ // SPDX-License-Identifier: Apache-2.0
+ //
+ // Copyright 2026 Caleb Buahin
 @@ -51,7 +51,13 @@ IOThread::~IOThread() {
  void IOThread::start() {
      if (running_.load(std::memory_order_relaxed)) return;
@@ -891,6 +978,18 @@ diff --git a/src/engine/plugins/PluginFactory.cpp b/src/engine/plugins/PluginFac
 index b039def..42d7c44 100644
 --- a/src/engine/plugins/PluginFactory.cpp
 +++ b/src/engine/plugins/PluginFactory.cpp
+@@ -1,3 +1,11 @@
++// MODIFIED 2026-08-09 by Robert Dickinson (SWMM5-UI):
++// __EMSCRIPTEN__ added to the platform #if so the factory builds without
++// native dynamic-library loading.
++//
++// Change notice required by the Apache License, Version 2.0, section 4(b).
++// Original file from https://github.com/HydroCouple/openswmm.engine, branch
++// swmm6_rel. The upstream notices below are unmodified.
++
+ // SPDX-License-Identifier: Apache-2.0
+ //
+ // Copyright 2026 Caleb Buahin
 @@ -56,7 +56,7 @@
  #if defined(_WIN32)
  #  define WIN32_LEAN_AND_MEAN
@@ -904,6 +1003,21 @@ diff --git a/src/legacy/engine/swmm5.c b/src/legacy/engine/swmm5.c
 index d549ca1..f693fe6 100644
 --- a/src/legacy/engine/swmm5.c
 +++ b/src/legacy/engine/swmm5.c
+@@ -1,3 +1,14 @@
++/*
++ * MODIFIED 2026-08-09 by Robert Dickinson (SWMM5-UI):
++ * removed the duplicate omp_get_max_threads fallback (the one in project.c
++ * is kept); both are linked in the single-object WebAssembly build and
++ * collide.
++ *
++ * Change notice required by the Apache License, Version 2.0, section 4(b).
++ * Original file from https://github.com/HydroCouple/openswmm.engine, branch
++ * swmm6_rel. The upstream notices below are unmodified.
++ */
++
+ /*!
+  * \file swmm5.c
+  * \brief Main module of the computational engine for Version 5 of the
 @@ -93,7 +93,8 @@
   * \brief Dummy function for getting threads available for OpenMP to prevent compiler errors.
   * \return 1

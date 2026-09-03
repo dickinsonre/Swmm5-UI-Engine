@@ -44,6 +44,7 @@ run_suite "External Refs Fidelity"     tests/external-refs.test.ts
 run_suite "Out-Diff Impl Parity"       tests/out-diff-parity.test.ts
 run_suite "Report Side-by-Side Diff"   tests/report-diff.test.ts
 run_suite "Two-Table Consistency"      tests/table-consistency.test.ts
+run_suite "Engine Attribution"         tests/attribution.test.ts
 
 # NOTE: tests/e2e/* are deliberately NOT run here. They drive a real browser
 # against a running server (BASE_URL, default http://127.0.0.1:5000), so they

@@ -1,0 +1,136 @@
+OpenSWMM Engine
+Copyright 2026 HydroCouple Developers
+
+This product includes software developed by the OpenSWMM authors
+(https://github.com/HydroCouple/openswmm.engine).
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full license text.
+
+--------------------------------------------------------------------------------
+PUBLIC DOMAIN MATERIAL
+--------------------------------------------------------------------------------
+
+Portions of this product are derived from the Storm Water Management Model
+(SWMM) developed and released by the United States Environmental Protection
+Agency (USEPA) over the course of several decades. That material was prepared
+by or for the United States Government and resides in the public domain:
+domestic copyright protection is not available for it under 17 USC § 105, and
+no copyright is claimed over it by the OpenSWMM authors.
+
+The Apache License, Version 2.0 applies to the original contributions of the
+OpenSWMM authors. It does not extend copyright to, and places no restriction
+on, the public domain material described above. Recipients retain all rights
+they already hold in that material independently of this License.
+
+Files derived in whole or in part from USEPA SWMM sources are, where
+practical, marked as such in their file headers. The EPA SWMM 5.x sources are
+available from https://www.epa.gov/water-research/storm-water-management-model-swmm.
+
+The USEPA does not endorse this product, and the names "EPA", "USEPA", and
+"SWMM" are used solely to describe the origin of the public domain material.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS
+--------------------------------------------------------------------------------
+
+This product depends on and, in some distribution formats, bundles third-party
+libraries that are licensed separately by their respective copyright holders.
+Dependencies are declared in vcpkg.json. Each such component remains subject to
+its own license terms, which accompany the component in its own distribution.
+
+================================================================================
+ATTRIBUTION ADDED BY THIS PROJECT
+================================================================================
+
+Everything ABOVE this line is reproduced verbatim from the OpenSWMM Engine
+NOTICE file (github.com/HydroCouple/openswmm.engine, branch swmm6_rel),
+retrieved 2026-09-03, as required by Apache License 2.0 section 4(d).
+Do not edit, paraphrase or reorder it.
+
+--------------------------------------------------------------------------------
+
+SWMM5-UI
+Copyright (c) 2026 Robert Dickinson
+
+SWMM5-UI's own source code is licensed under the MIT License; see LICENSE.
+That license covers this project's code only. The engines below are separate
+works under their own terms, which travel with them.
+
+Note that the two OpenSWMM 6 builds shipped here come from DIFFERENT upstream
+branches under DIFFERENT licenses. That is upstream's arrangement, not a
+mistake: swmm6_rel is Apache-2.0 with a NOTICE, develop is MIT.
+
+--------------------------------------------------------------------------------
+BUNDLED ENGINE 1 - OpenSWMM 6, release build (Apache-2.0)
+--------------------------------------------------------------------------------
+
+OpenSWMM Engine, Copyright 2026 HydroCouple Developers, licensed under the
+Apache License, Version 2.0. The full license text ships with this work at
+licenses/Apache-2.0-OpenSWMM.txt (and at /licenses/Apache-2.0-OpenSWMM.txt in
+the deployed application).
+
+  Source:  https://github.com/HydroCouple/openswmm.engine
+  Branch:  swmm6_rel
+  Version: 6.0.0-alpha.3, as reported by the engine in every .rpt header
+  Built:   2026-08-09
+
+  Artifacts: client/public/wasm6/openswmm6.js + openswmm6.wasm
+
+NOTICE OF MODIFICATION (Apache-2.0 section 4(b)): the OpenSWMM engine sources
+were modified before compilation. The modified files, the modifications, who
+made them and when are recorded in swmm-engine/patches/MODIFICATIONS.md; the
+patch in that directory inserts the same notice at the top of each file it
+changes; and the compiled artifact carries it in its own file header.
+
+--------------------------------------------------------------------------------
+BUNDLED ENGINE 2 - OpenSWMM 6, develop build (MIT)
+--------------------------------------------------------------------------------
+
+Copyright 2026 Caleb Buahin, licensed under the MIT License. The full license
+text ships with this work at licenses/MIT-OpenSWMM-develop.txt (and at
+/licenses/MIT-OpenSWMM-develop.txt in the deployed application), and is
+reproduced there in full including the permission notice, as the MIT License
+requires of all copies.
+
+  Source:  https://github.com/HydroCouple/openswmm.engine
+  Branch:  develop  (MIT - this branch carries NO NOTICE file upstream)
+  Built:   2026-08-11
+
+  Artifacts: client/public/wasm6dev/openswmm6dev.js + openswmm6dev.wasm
+
+Modified before compilation in the same way as the release build (Emscripten
+platform and threading fixes); see swmm-engine/patches/MODIFICATIONS.md.
+
+--------------------------------------------------------------------------------
+BUNDLED ENGINE 3 - EPA SWMM 5.2.4 (public domain)
+--------------------------------------------------------------------------------
+
+The Storm Water Management Model (SWMM) 5.2.4 sources under swmm-engine/, the
+native binary swmm-engine/runswmm and the WebAssembly build at
+client/public/swmm_engine.js + swmm_engine.wasm are derived from software
+developed and released by the United States Environmental Protection Agency.
+That material was prepared by or for the United States Government and resides
+in the public domain: domestic copyright protection is not available for it
+under 17 USC section 105.
+
+  Source: https://www.epa.gov/water-research/storm-water-management-model-swmm
+
+--------------------------------------------------------------------------------
+UNRECORDED PROVENANCE
+--------------------------------------------------------------------------------
+
+The exact upstream commit each WebAssembly artifact was built from was not
+recorded at build time; only the branch and, for the release build, the version
+string the engine reports. Both branches are moving alpha lines. The commit
+must be recorded here the next time either engine is rebuilt.
+
+--------------------------------------------------------------------------------
+NO ENDORSEMENT
+--------------------------------------------------------------------------------
+
+Neither the United States Environmental Protection Agency nor HydroCouple
+endorses this product. The names "EPA", "USEPA", "SWMM", "OpenSWMM" and
+"HydroCouple" are used solely to describe the origin of the software this
+product includes. This product is not an official EPA, HydroCouple or OpenSWMM
+release, and is not "SWMM 6" itself.
