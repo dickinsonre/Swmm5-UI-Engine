@@ -6,13 +6,20 @@ description: HydroCouple/openswmm.engine is not one licence — the branch an ar
 `github.com/HydroCouple/openswmm.engine` carries a different licence per branch
 (verified live 2026-09-03):
 
-| Branch | Licence | Copyright | NOTICE file |
+| Artifact | Licence | Copyright | NOTICE file |
 |---|---|---|---|
-| `main` | MIT | 2025 HydroCouple | no |
-| `develop` | MIT | 2026 Caleb Buahin | **no** |
-| `swmm6_rel` (the 6.0.0 release line) | **Apache-2.0** | 2026 HydroCouple Developers | **yes** |
+| `main` branch | MIT | 2025 HydroCouple | no |
+| `develop` branch | MIT | 2026 Caleb Buahin | **no** |
+| `swmm6_rel` branch (the 6.0.0 release line) | **Apache-2.0** | 2026 HydroCouple Developers | **yes** |
+| PyPI wheel `openswmm==6.0.0a3` | MIT | 2026 Caleb Buahin | no |
 
-GitHub's sidebar says "Other License" because of the split.
+GitHub's sidebar says "Other License" because of the split. The two MIT texts
+are not even byte-identical: `develop`'s ends with a 17 USC §105 public-domain
+paragraph that the wheel's `dist-info/licenses/LICENSE` drops. PyPI's own
+license metadata fields are empty — unpack the wheel, don't read the page.
+
+**The rule: honour whatever ships *inside* the artifact you redistribute, and
+record which artifact it was.** Not the repo headline, not the sidebar.
 
 This app ships builds of **two** of them: `client/public/wasm6` from `swmm6_rel`
 (Apache-2.0) and `client/public/wasm6dev` from `develop` (MIT). A notice that is

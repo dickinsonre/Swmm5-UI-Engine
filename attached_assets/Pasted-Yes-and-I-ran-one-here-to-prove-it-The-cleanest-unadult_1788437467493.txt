@@ -1,0 +1,33 @@
+Yes — and I ran one here to prove it.
+
+**The cleanest unadulterated path is the official PyPI wheel.** `pip install openswmm==6.0.0a3` pulls the upstream-built binary from the alpha.3 release — nothing patched, nothing forked. I installed it and ran your VJ smoke test through it:
+
+```
+OPENSWMM ENGINE - VERSION 6.0.0-alpha.3
+Continuity Error (%) .....         0.000
+Virtual Junction Summary
+Name       Upstream   Downstream   Momentum Residual (cfs·ft/s)
+J2         C1         C2              0.000000      0.000000
+```
+
+All four SWMM6 options honored, VJ table present, `HAS_2D` and `HAS_GEOPACKAGE` both True. API is `openswmm.engine.run(inp, rpt, out)`. That's a working alternate engine today, no build step.
+
+**The licensing point that makes this matter: compiling unmodified source is not "modifying files."** §4(b) attaches to changed *files*, not to the act of building. So a clean checkout of `v6.0.0-alpha.3` built native, or the wheel, needs only §4(a), (c), (d) — license copy, retained headers, NOTICE. No per-file change notices, no fork to maintain.
+
+**Only your browser build is adulterated.** The three Emscripten patches (PluginFactory, IOThread, OpenMP dedup) are what pull you into §4(b), and CMake exposes no option that removes them — the option list is tests/benchmarks/install/Python/GeoPackage/2D/GPU, nothing for plugins or threads. Two honest ways out: upstream the patches to `swmm6_rel` (exactly the contribution the alpha program is asking for, and then everyone gets browser SWMM6 from clean source), or try replacing them with build flags — pthread build + COOP/COEP for IOThread, `--allow-multiple-definition` for the symbol collision. That second one is a hypothesis, not a result; it needs a round-trip `.out` diff against the wheel before you'd claim parity.
+
+Either way, keep the wheel installed. It's the reference oracle that lets you *show* your WASM build is faithful instead of asserting it — which is the thing your own testing discipline demands anyway.
+
+**One problem I hit, and it changes the skill you just saved.** The wheel ships `MIT License, Copyright 2026 Caleb Buahin` and no NOTICE file. So upstream now says three different things:
+
+| Artifact | License | Copyright | NOTICE |
+|---|---|---|---|
+| `main` branch | MIT | © 2025 HydroCouple | no |
+| `swmm6_rel` branch | Apache-2.0 | © 2026 HydroCouple Developers | yes |
+| PyPI wheel 6.0.0a3 | MIT | © 2026 Caleb Buahin | no |
+
+Corinne's public statement matches `swmm6_rel`. The workable rule is to honour whatever ships *inside* the artifact you redistribute and record its provenance — but this is worth putting through her feedback form rather than guessing at. It's a genuinely useful alpha-tester finding, and it's the kind of thing she was asking for.
+
+Updated skill is on the review card — adds the three-way table, the §4(b) carve-out, and the verified wheel route.
+
+Sources: [HydroCouple/openswmm.engine](https://github.com/HydroCouple/openswmm.engine) (LICENSE, NOTICE, CMakeLists, releases), [openswmm on PyPI](https://pypi.org/project/openswmm/)

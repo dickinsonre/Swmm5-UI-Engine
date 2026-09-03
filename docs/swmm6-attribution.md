@@ -7,18 +7,41 @@ Upstream `LICENSE` and `NOTICE` last verified live **2026-09-03**.
 
 `github.com/HydroCouple/openswmm.engine` is not one license:
 
-| Branch | LICENSE | Copyright line | Shipped here |
-|---|---|---|---|
-| `main` | MIT | Copyright (c) 2025 HydroCouple | no |
-| `develop` | MIT, **no NOTICE file** | Copyright 2026 Caleb Buahin | yes — `client/public/wasm6dev` |
-| `swmm6_rel` (the 6.0.0 release line) | Apache-2.0 **+ a NOTICE file** | Copyright 2026 HydroCouple Developers | yes — `client/public/wasm6` |
+It is not even one license per *project* — the published artifacts disagree with
+each other. All four rows verified 2026-09-03; the wheel row by unpacking the
+wheel, not by reading its PyPI page (PyPI's own license classifiers are empty).
 
-GitHub's sidebar says "Other License" because of this split. The answer to
-"what license is SWMM6?" is **Apache-2.0, from `swmm6_rel`** — but only for
-`swmm6_rel`. This project ships a `develop` build too, and that one is MIT: it
-needs the MIT copyright and permission notice in the distribution, and it must
-**not** carry the Apache NOTICE, which does not apply to it. Verified live
-2026-09-03. Never quote the `main` README's MIT line for a 6.0.0 build.
+| Artifact | LICENSE | Copyright line | NOTICE | Shipped here |
+|---|---|---|---|---|
+| `main` branch | MIT | Copyright (c) 2025 HydroCouple | no | no |
+| `develop` branch | MIT | Copyright 2026 Caleb Buahin | no | yes — `client/public/wasm6dev` |
+| `swmm6_rel` branch (the 6.0.0 release line) | **Apache-2.0** | Copyright 2026 HydroCouple Developers | **yes** | yes — `client/public/wasm6` |
+| PyPI wheel `openswmm==6.0.0a3` | MIT | Copyright 2026 Caleb Buahin | no | no |
+
+And the two MIT texts are not the same text. The `develop` LICENSE ends with a
+paragraph placing the USEPA-derived material in the public domain under 17 USC
+§ 105; the wheel's `dist-info/licenses/LICENSE` drops it. Same license, same
+holder, different file:
+
+```
+develop LICENSE        sha256 d31d6c5482aabe7a72cced9509b0c73b7fd96f401e7cbb86e066c631980f9b33
+wheel 6.0.0a3 LICENSE  sha256 15e5586cd6ab489ae158245345f604beacc78796a9c45825c1e0cfbb7b23160f
+```
+
+GitHub's sidebar says "Other License" because of this split. So there is no
+answer to "what license is SWMM6?" — only an answer per artifact.
+
+**The working rule: honour whatever ships *inside* the artifact you redistribute,
+and record which artifact it was.** Not the repo's headline license, not the
+sidebar, not what the project said last month. This project ships builds of two
+different branches, so it carries two different sets of terms: the `wasm6`
+build needs the Apache conditions and the NOTICE, the `wasm6dev` build needs the
+MIT copyright and permission notice and must **not** carry the Apache NOTICE,
+which does not apply to it. Never quote the `main` README's MIT line for a
+6.0.0 build.
+
+The divergence is worth reporting upstream rather than guessing at — it is a
+genuine alpha-tester finding, and the project is asking for those.
 
 Before shipping, record the branch **and commit** the code came from, and re-read
 `LICENSE` and `NOTICE` at that commit. An alpha moves.
@@ -34,6 +57,27 @@ this project does the first three:
 - a single-file `.html` with the engine base64-embedded via `SINGLE_FILE` — still
   distribution of Object form, and the easiest one to forget
 - an npm package or zip with the engine inside
+
+**Compiling unmodified source is not "modifying files".** Section 4(b) attaches
+to changed *files*, not to the act of building, so a clean checkout of
+`v6.0.0-alpha.3` built native — or the official PyPI wheel, which is upstream's
+own binary — needs only (a), (c) and (d). No per-file change notices, no fork.
+
+What pulls **this** project into 4(b) is the browser build specifically: the
+three Emscripten patches (`PluginFactory.cpp`, `IOThread.cpp`, the OpenMP
+symbol dedup in `swmm5.c`), plus the LID report added on top. CMake exposes no
+option that removes them. Two ways out, if the obligation is ever worth
+shedding: upstream the Emscripten patches to `swmm6_rel` so everyone gets a
+browser build from clean source, or try replacing them with build flags — a
+pthread build with COOP/COEP headers for `IOThread`, `--allow-multiple-definition`
+for the symbol collision. **The second is a hypothesis, not a result.** It would
+need a round-trip `.out` diff against an unpatched build before anyone claimed
+the engines agree.
+
+That unpatched build is also the reference oracle this project does not
+currently have: `pip install openswmm==6.0.0a3` gives upstream's own binary, so
+the fidelity of the WASM build can be *shown* by diffing `.out` files rather
+than asserted.
 
 ## 3. The four conditions, and where each is satisfied here
 
