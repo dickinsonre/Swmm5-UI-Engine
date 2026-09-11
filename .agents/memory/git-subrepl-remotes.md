@@ -23,6 +23,11 @@ block background gc.
 any stale `.git/*.lock` / `.git/objects/*.lock`. Verify with `time git fetch --all` — it should
 finish in well under a second. Back up `.git/config` first.
 
+**Removing them is not permanent** — the platform recreates a subrepl remote under a *new*
+id, so the same hang returns wearing a different name. The durable fix is
+`git config remote.<name>.skipFetchAll true`, which is exactly what the platform's own
+`gitsafe-backup` remote already sets. Prefer it over deletion.
+
 **Same symptom, other causes** — the pane reports every fatal git error as "UNKNOWN", so work
 through these too:
 
