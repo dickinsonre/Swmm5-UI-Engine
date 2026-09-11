@@ -14,6 +14,16 @@ No desktop install, no upload step for the in-browser engines: the model never l
 
 ---
 
+## Architecture
+
+Three cooperating layers:
+
+- **Client (`client/`)** — TypeScript + Vite + Tailwind single-page app. Handles `.inp` load and edit (subcatchments, nodes, links, LID controls, options), map and table views, and results visualisation. The WASM engines run here, in a web worker, so a model can be simulated without leaving the tab.
+- **Server (`server/`)** — Node + Express orchestration. Invokes the native engine, proxies the cloud batch runner, browses GitHub repositories, and exposes an MCP endpoint for programmatic or AI-assisted interaction. Stateless: results are held per instance, not in a database.
+- **Engines (`swmm-engine/`, `client/public/`)** — the SWMM computational cores in C and C++, compiled native and to WebAssembly. Never reimplemented in JavaScript, so numerical fidelity with the reference engines is preserved.
+
+Modelling coverage follows the underlying engines: rainfall/runoff, hydraulic routing, snow accumulation and melt, pollutant buildup and washoff, and LID controls — with the SWMM 6 LID caveat below.
+
 ## Engines
 
 The engine is switchable at runtime from the toolbar chip (bottom status bar shows which one is live). Each produces the same `.rpt` / `.out` artifacts, so every downstream view works regardless of which engine ran.
@@ -129,9 +139,15 @@ The in-browser WASM engines work immediately. The **Local** engine additionally 
 - LID results from the SWMM 6 engines are not trustworthy (see above)
 - Large results are held per server instance, so a horizontally scaled deployment can lose track of one
 
+## Contributing
+
+A single-maintainer project, developed iteratively with Replit Agent. Issues and pull requests are welcome. Before starting, read [`HANDOVER.md`](HANDOVER.md) for in-progress work and `.agents/memory/` for the engineering notes that explain why several non-obvious things are the way they are — binary `.out` layout, engine build recipes, parser traps. Planned work is tracked in the project task list rather than in this file, so it does not go stale here.
+
+Anything that changes an engine, an engine build, or a parser needs a verification pass, not just a green typecheck: `npm test` must stay green, and engine-facing changes should be checked against the discipline in `.agents/skills/corinne-testing/`.
+
 ## Credits
 
-EPA SWMM is developed by the US Environmental Protection Agency; OpenSWMM 6 by the HydroCouple/OpenSWMM project — Caleb Buahin (lead developer), Corinne Wiesner-Friedman (developer, documentation, technical review) and Scott Jeffers (documentation and outreach). This project is part of Robert Dickinson's broader SWMM tooling ecosystem.
+EPA SWMM is developed by the US Environmental Protection Agency; OpenSWMM 6 by the HydroCouple/OpenSWMM project — Caleb Buahin (lead developer), Corinne Wiesner-Friedman (developer, documentation, technical review) and Scott Jeffers (documentation and outreach). This project is part of Robert Dickinson's broader SWMM tooling ecosystem, which spans SWMM3 through SWMM6, XPSWMM, ICM SWMM and InfoDrainage.
 
 ## License and attribution
 
